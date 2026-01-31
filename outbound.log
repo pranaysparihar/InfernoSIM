@@ -1,0 +1,1 @@
+{"id":"3681a1885b17ef185a2e33f705125677","type":"OutboundCall","timestamp":"2026-01-31T09:10:33.801992548Z","method":"GET","url":"http://worldtimeapi.org/api/timezone/Etc/UTC","duration":118398500,"error":"EOF","headers":{"Accept-Encoding":["gzip"],"User-Agent":["Go-http-client/1.1"]}}

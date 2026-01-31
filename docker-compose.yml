@@ -1,0 +1,10 @@
+version: "3.9"
+
+services:
+  infernosim:
+    build: .
+    privileged: true
+    volumes:
+      - .:/infernosim
+    working_dir: /infernosim
+    command: bash

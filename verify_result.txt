@@ -1,0 +1,1 @@
+VERIFY: PASS (deterministic, isolated, time-controlled)
