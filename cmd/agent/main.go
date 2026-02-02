@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -95,17 +96,46 @@ PHASE 3: REPLAY + SIMULATION
 func runReplay(args []string) {
 	fs := flag.NewFlagSet("replay", flag.ExitOnError)
 
-	incidentDir := fs.String("incident", ".", "Incident directory (contains inbound.log and outbound.log)")
-	timeScale := fs.Float64("time-scale", 1.0, "Time scale: 0.1=10x faster")
-	runs := fs.Int("runs", 10, "Number of replay runs")
+	incidentDir := fs.String(
+		"incident",
+		".",
+		"Incident directory (contains inbound.log and outbound.log)",
+	)
+
+	timeScale := fs.Float64(
+		"time-scale",
+		1.0,
+		"Time scale: 0.1=10x faster, 2.0=2x slower",
+	)
+
+	runs := fs.Int(
+		"runs",
+		10,
+		"Number of replay runs",
+	)
+
+	maxGapStr := fs.String(
+		"max-gap",
+		"0",
+		"Maximum gap between replayed events (e.g. 100ms, 1s). 0 = unlimited",
+	)
 
 	injectFlags := multiFlag{}
-	fs.Var(&injectFlags, "inject",
-		`Injection rule, e.g. --inject "dep=worldtimeapi.org latency=+200ms"`)
+	fs.Var(
+		&injectFlags,
+		"inject",
+		`Injection rule, e.g. --inject "dep=worldtimeapi.org latency=+200ms"`,
+	)
 
 	fs.Parse(args)
 
-	// Resolve log files
+	// ---- parse max-gap ----
+	maxGap, err := time.ParseDuration(*maxGapStr)
+	if err != nil {
+		log.Fatalf("Invalid --max-gap value: %v", err)
+	}
+
+	// ---- resolve logs ----
 	inboundLog := filepath.Join(*incidentDir, "inbound.log")
 	outboundLog := filepath.Join(*incidentDir, "outbound.log")
 
@@ -116,13 +146,13 @@ func runReplay(args []string) {
 		log.Fatalf("Outbound log not found: %s (%v)", outboundLog, err)
 	}
 
-	// Parse injection rules
+	// ---- parse injections ----
 	rules, err := inject.ParseRules(injectFlags)
 	if err != nil {
 		log.Fatalf("Invalid --inject rule: %v", err)
 	}
 
-	// Start stub proxy (dependency isolation + injections)
+	// ---- start stub proxy ----
 	stub, err := stubproxy.New(outboundLog, rules)
 	if err != nil {
 		log.Fatalf("Stub proxy init failed: %v", err)
@@ -140,20 +170,29 @@ func runReplay(args []string) {
 		}
 	}()
 
-	// Give stub proxy time to start
+	// allow stub proxy to bind
 	time.Sleep(300 * time.Millisecond)
 
-	// Replay against inbound proxy target
 	targetBase := "http://localhost:18080"
 
-	log.Printf("Starting deterministic replay | runs=%d timeScale=%.3f", *runs, *timeScale)
+	log.Printf(
+		"Starting deterministic replay | runs=%d timeScale=%.3f maxGap=%s",
+		*runs,
+		*timeScale,
+		maxGap,
+	)
 
 	var ref [32]byte
+
 	for i := 0; i < *runs; i++ {
-		// 🔥 CRITICAL: reset stub per run so it replays the same outbound sequence each time
 		stub.Reset()
 
-		r, err := replaydriver.Replay(inboundLog, targetBase, *timeScale)
+		r, err := replaydriver.Replay(
+			inboundLog,
+			targetBase,
+			*timeScale,
+			maxGap,
+		)
 		if err != nil {
 			log.Fatalf("REPLAY FAIL: %v", err)
 		}
@@ -161,8 +200,24 @@ func runReplay(args []string) {
 		if i == 0 {
 			ref = r.Fingerprint
 		} else if r.Fingerprint != ref {
-			log.Fatalf("REPLAY FAIL: non-deterministic fingerprint on run %d", i+1)
+			log.Fatalf(
+				"REPLAY FAIL: non-deterministic fingerprint on run %d",
+				i+1,
+			)
 		}
+	}
+
+	// ---- persist result ----
+	out := fmt.Sprintf(
+		"REPLAY: PASS\nFINGERPRINT: %x\nRUNS: %d\nTIME_SCALE: %.3f\nMAX_GAP: %s\n",
+		ref,
+		*runs,
+		*timeScale,
+		maxGap,
+	)
+
+	if err := os.WriteFile("replay_result.txt", []byte(out), 0644); err != nil {
+		log.Fatalf("Failed to write replay_result.txt: %v", err)
 	}
 
 	log.Printf("REPLAY PASS (deterministic, simulated)")

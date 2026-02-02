@@ -28,7 +28,7 @@ infernosim replay \
   --time-scale "${TIME_SCALE:-0.1}" \
   ${INJECT_FLAGS:-}
 
-echo "REPLAY: PASS" > replay_result.txt
+echo "REPLAY: PASS" >> replay_result.txt
 
 kill $APP_PID $INBOUND_PID
 wait || true
