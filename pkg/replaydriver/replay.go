@@ -8,8 +8,6 @@ import (
 	"net/http"
 	urlpkg "net/url"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"infernosim/pkg/event"
@@ -19,26 +17,9 @@ type ReplayResult struct {
 	Fingerprint [32]byte
 }
 
-func normalizeIncidentDir(p string) string {
-	// If user passed .../events.log, use its parent
-	if strings.HasSuffix(p, "/events.log") {
-		return filepath.Dir(p)
-	}
-
-	// If it's an existing file, use parent dir
-	if st, err := os.Stat(p); err == nil && !st.IsDir() {
-		return filepath.Dir(p)
-	}
-
-	// Otherwise assume directory
-	return p
-}
-
-// loadInbound reads inbound events from <incident>/events.log
-func loadInbound(incidentDir string) ([]event.Event, error) {
-	logPath := filepath.Join(incidentDir, "events.log")
-
-	f, err := os.Open(logPath)
+// loadInbound reads inbound events from inbound.log (JSON stream)
+func loadInbound(inboundLog string) ([]event.Event, error) {
+	f, err := os.Open(inboundLog)
 	if err != nil {
 		return nil, err
 	}
@@ -64,11 +45,10 @@ func loadInbound(incidentDir string) ([]event.Event, error) {
 }
 
 // Replay replays captured inbound requests deterministically.
-// incidentDir MUST be a directory containing events.log
-// timeScale: 1.0 = real-time, 0.1 = 10x faster
-func Replay(incidentDir string, targetBase string, timeScale float64) (ReplayResult, error) {
-	incidentDir = normalizeIncidentDir(incidentDir)
-	reqs, err := loadInbound(incidentDir)
+// inboundLog MUST point to the inbound.log file.
+// timeScale: 1.0 = real-time, 0.1 = 10x faster, 2.0 = 2x slower
+func Replay(inboundLog string, targetBase string, timeScale float64) (ReplayResult, error) {
+	reqs, err := loadInbound(inboundLog)
 	if err != nil {
 		return ReplayResult{}, err
 	}
@@ -79,7 +59,7 @@ func Replay(incidentDir string, targetBase string, timeScale float64) (ReplayRes
 	h := sha256.New()
 	client := &http.Client{}
 
-	// Logical scheduling baseline
+	// scheduling baseline
 	t0 := reqs[0].Timestamp
 	start := time.Now()
 
@@ -110,7 +90,7 @@ func Replay(incidentDir string, targetBase string, timeScale float64) (ReplayRes
 		if err != nil {
 			return ReplayResult{}, fmt.Errorf("replay request %d failed: %w", i, err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		// --- deterministic fingerprint ---
 		h.Write([]byte(e.Method))
@@ -123,21 +103,18 @@ func Replay(incidentDir string, targetBase string, timeScale float64) (ReplayRes
 	return ReplayResult{Fingerprint: sum}, nil
 }
 
-func VerifyDeterministic(incidentDir, targetBase string, timeScale float64, runs int) error {
+func VerifyDeterministic(inboundLog, targetBase string, timeScale float64, runs int) error {
 	var ref [32]byte
 
 	for i := 0; i < runs; i++ {
-		r, err := Replay(incidentDir, targetBase, timeScale)
+		r, err := Replay(inboundLog, targetBase, timeScale)
 		if err != nil {
 			return err
 		}
 		if i == 0 {
 			ref = r.Fingerprint
 		} else if r.Fingerprint != ref {
-			return fmt.Errorf(
-				"non-deterministic replay: run %d fingerprint mismatch",
-				i+1,
-			)
+			return fmt.Errorf("non-deterministic replay: run %d fingerprint mismatch", i+1)
 		}
 	}
 

@@ -69,7 +69,7 @@ func runAgent() {
 		log.Printf("Inbound proxy active → %s", *forward)
 		<-stop
 		log.Println("Shutting down inbound proxy")
-		server.Close()
+		_ = server.Close()
 
 	case "proxy":
 		server, err := capture.StartForwardProxy(*listen, logger)
@@ -80,7 +80,7 @@ func runAgent() {
 		log.Printf("Outbound proxy active")
 		<-stop
 		log.Println("Shutting down outbound proxy")
-		server.Close()
+		_ = server.Close()
 
 	default:
 		log.Fatalf("Unknown mode: %s", *mode)
@@ -95,7 +95,7 @@ PHASE 3: REPLAY + SIMULATION
 func runReplay(args []string) {
 	fs := flag.NewFlagSet("replay", flag.ExitOnError)
 
-	incidentDir := fs.String("incident", ".", "Incident directory (contains inbound.log and events.log)")
+	incidentDir := fs.String("incident", ".", "Incident directory (contains inbound.log and outbound.log)")
 	timeScale := fs.Float64("time-scale", 1.0, "Time scale: 0.1=10x faster")
 	runs := fs.Int("runs", 10, "Number of replay runs")
 
@@ -105,15 +105,15 @@ func runReplay(args []string) {
 
 	fs.Parse(args)
 
-	// ---- RESOLVE LOG FILES EXPLICITLY (CRITICAL FIX) ----
+	// Resolve log files
 	inboundLog := filepath.Join(*incidentDir, "inbound.log")
-	outboundLog := filepath.Join(*incidentDir, "events.log")
+	outboundLog := filepath.Join(*incidentDir, "outbound.log")
 
 	if _, err := os.Stat(inboundLog); err != nil {
-		log.Fatalf("Inbound log not found: %s", inboundLog)
+		log.Fatalf("Inbound log not found: %s (%v)", inboundLog, err)
 	}
 	if _, err := os.Stat(outboundLog); err != nil {
-		log.Fatalf("Outbound log not found: %s", outboundLog)
+		log.Fatalf("Outbound log not found: %s (%v)", outboundLog, err)
 	}
 
 	// Parse injection rules
@@ -140,19 +140,29 @@ func runReplay(args []string) {
 		}
 	}()
 
-	time.Sleep(500 * time.Millisecond)
+	// Give stub proxy time to start
+	time.Sleep(300 * time.Millisecond)
 
+	// Replay against inbound proxy target
 	targetBase := "http://localhost:18080"
 
 	log.Printf("Starting deterministic replay | runs=%d timeScale=%.3f", *runs, *timeScale)
 
-	if err := replaydriver.VerifyDeterministic(
-		inboundLog,
-		targetBase,
-		*timeScale,
-		*runs,
-	); err != nil {
-		log.Fatalf("REPLAY FAIL: %v", err)
+	var ref [32]byte
+	for i := 0; i < *runs; i++ {
+		// 🔥 CRITICAL: reset stub per run so it replays the same outbound sequence each time
+		stub.Reset()
+
+		r, err := replaydriver.Replay(inboundLog, targetBase, *timeScale)
+		if err != nil {
+			log.Fatalf("REPLAY FAIL: %v", err)
+		}
+
+		if i == 0 {
+			ref = r.Fingerprint
+		} else if r.Fingerprint != ref {
+			log.Fatalf("REPLAY FAIL: non-deterministic fingerprint on run %d", i+1)
+		}
 	}
 
 	log.Printf("REPLAY PASS (deterministic, simulated)")

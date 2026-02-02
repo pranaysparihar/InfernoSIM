@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-test -s events.log || { echo "events.log missing or empty. Run verify.sh first."; exit 1; }
+test -s inbound.log || { echo "inbound.log missing or empty. Run verify.sh first."; exit 1; }
+test -s outbound.log || { echo "outbound.log missing or empty. Run verify.sh first."; exit 1; }
 echo "=== InfernoSIM Replay ==="
 
 echo "[1/2] Building environment"
