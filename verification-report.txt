@@ -1,0 +1,19 @@
+InfernoSIM Replay Verification Report
+=====================================
+
+Incident directory: examples/nodeapp-deterministic
+Supported replay flags: --runs --time-scale --density --min-gap --inject (latency, timeout) default
+
+Matrix:
+- runs: 1 5 10
+- time-scale: 0.1 1.0 2.0
+- density: 1 5 10
+- min-gap: 1ms 2ms
+- injections: none, latency, timeout
+
+Summary:
+- total cases: 163
+- summaries detected: 163
+- missing summaries: 0
+
+InfernoSIM produces actionable output for all supported flag combinations.

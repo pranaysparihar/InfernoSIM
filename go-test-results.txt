@@ -1,0 +1,10 @@
+ok  	infernosim/cmd/agent	1.201s
+?   	infernosim/examples/goapp	[no test files]
+?   	infernosim/examples/goapp-deterministic	[no test files]
+ok  	infernosim/pkg/capture	(cached)
+?   	infernosim/pkg/event	[no test files]
+?   	infernosim/pkg/inject	[no test files]
+?   	infernosim/pkg/replay	[no test files]
+ok  	infernosim/pkg/replaydriver	(cached)
+?   	infernosim/pkg/stubproxy	[no test files]
+?   	infernosim/pkg/timectl	[no test files]

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -17,11 +18,16 @@ import (
 type StubProxy struct {
 	events []event.Event
 	i      int64
+	seen   int64
 
 	rules []inject.Rule
 
 	// per-dep attempt counters (for retry-limit behavior)
 	attempts map[string]int
+
+	mu                 sync.Mutex
+	divergenceReasons  []string
+	unexpectedOutbound bool
 }
 
 func LoadOutboundEvents(path string) ([]event.Event, error) {
@@ -66,7 +72,12 @@ func New(outboundLog string, rules []inject.Rule) (*StubProxy, error) {
 // sequence can be replayed deterministically across runs.
 func (s *StubProxy) Reset() {
 	atomic.StoreInt64(&s.i, 0)
+	atomic.StoreInt64(&s.seen, 0)
 	s.attempts = map[string]int{}
+	s.mu.Lock()
+	s.divergenceReasons = nil
+	s.unexpectedOutbound = false
+	s.mu.Unlock()
 }
 
 // depKey returns a stable dependency identifier from a proxied request.
@@ -86,24 +97,31 @@ func depKey(r *http.Request) string {
 }
 
 func (s *StubProxy) divergence(expected event.Event, got *http.Request, idx int64, why string) {
-	fmt.Fprintf(os.Stderr,
-		"DIVERGENCE at outbound event index=%d why=%s expected={method=%s url=%s} got={method=%s url=%s host=%s}\n",
+	msg := fmt.Sprintf(
+		"DIVERGENCE at outbound event index=%d why=%s expected={method=%s url=%s} got={method=%s url=%s host=%s}",
 		idx, why,
 		expected.Method, expected.URL,
 		got.Method, got.URL.String(), got.Host,
 	)
-	os.Exit(2)
+	fmt.Fprintln(os.Stderr, msg)
+	s.mu.Lock()
+	s.divergenceReasons = append(s.divergenceReasons, msg)
+	s.mu.Unlock()
 }
 
 func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	idx := atomic.LoadInt64(&s.i)
+	atomic.AddInt64(&s.seen, 1)
 
 	if int(idx) >= len(s.events) {
-		fmt.Fprintf(os.Stderr,
-			"DIVERGENCE at outbound event index=%d why=unexpected_outbound_call\n",
-			idx,
-		)
-		os.Exit(2)
+		msg := fmt.Sprintf("DIVERGENCE at outbound event index=%d why=unexpected_outbound_call", idx)
+		fmt.Fprintln(os.Stderr, msg)
+		s.mu.Lock()
+		s.divergenceReasons = append(s.divergenceReasons, msg)
+		s.unexpectedOutbound = true
+		s.mu.Unlock()
+		http.Error(w, "unexpected outbound call", http.StatusBadGateway)
+		return
 	}
 
 	expected := s.events[idx]
@@ -116,7 +134,7 @@ func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	gotURL := r.URL.String()
 	if expected.URL != "" &&
 		!strings.Contains(gotURL, strings.TrimPrefix(expected.URL, "http://")) {
-		// tolerant match for v0
+		s.divergence(expected, r, idx, "url_mismatch")
 	}
 
 	atomic.AddInt64(&s.i, 1)
@@ -154,4 +172,26 @@ func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(status)
+}
+
+func (s *StubProxy) ObservedCount() int {
+	return int(atomic.LoadInt64(&s.seen))
+}
+
+func (s *StubProxy) ExpectedCount() int {
+	return len(s.events)
+}
+
+func (s *StubProxy) DivergenceReasons() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]string, len(s.divergenceReasons))
+	copy(out, s.divergenceReasons)
+	return out
+}
+
+func (s *StubProxy) UnexpectedOutbound() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.unexpectedOutbound
 }
