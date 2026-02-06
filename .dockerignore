@@ -1,0 +1,8 @@
+.git
+.gitignore
+infernosim
+*.log
+replay_result.txt
+verify_result.txt
+.infernosim_last_run.json
+node_modules
