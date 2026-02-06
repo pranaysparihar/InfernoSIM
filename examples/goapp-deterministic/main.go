@@ -12,6 +12,7 @@ func main() {
 	port := getenv("PORT", "8084")
 
 	transport := &http.Transport{
+		Proxy:               http.ProxyFromEnvironment,
 		DisableKeepAlives:   true,
 		MaxIdleConns:        0,
 		MaxIdleConnsPerHost: 1,

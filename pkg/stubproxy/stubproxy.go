@@ -27,6 +27,7 @@ type StubProxy struct {
 
 	// per-dep attempt counters (for retry-limit behavior)
 	attempts map[string]int
+	attemptsMu sync.Mutex
 
 	mu                 sync.Mutex
 	divergenceReasons  []string
@@ -88,7 +89,9 @@ func (s *StubProxy) Reset() {
 	atomic.StoreInt64(&s.i, 0)
 	atomic.StoreInt64(&s.seen, 0)
 	atomic.StoreInt64(&s.maxSeen, 0)
+	s.attemptsMu.Lock()
 	s.attempts = map[string]int{}
+	s.attemptsMu.Unlock()
 	s.mu.Lock()
 	s.divergenceReasons = nil
 	s.unexpectedOutbound = false
@@ -186,7 +189,10 @@ func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	atomic.AddInt64(&s.i, 1)
 
 	dep := depKey(r)
+	s.attemptsMu.Lock()
 	s.attempts[dep]++
+	attemptCount := s.attempts[dep]
+	s.attemptsMu.Unlock()
 
 	rule := inject.Match(dep, s.rules)
 
@@ -204,7 +210,7 @@ func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// --- RETRY COUNT MODIFICATION ---
 	if rule != nil && rule.RetryLimit >= 0 {
-		if s.attempts[dep] <= rule.RetryLimit {
+		if attemptCount <= rule.RetryLimit {
 			http.Error(w, "injected retry-failure", http.StatusBadGateway)
 			return
 		}
@@ -339,8 +345,11 @@ func (s *StubProxy) handleTransparent(conn net.Conn) {
 		time.Sleep(rule.AddLatency)
 	}
 	if rule != nil && rule.RetryLimit >= 0 {
+		s.attemptsMu.Lock()
 		s.attempts[dep]++
-		if s.attempts[dep] <= rule.RetryLimit {
+		attemptCount := s.attempts[dep]
+		s.attemptsMu.Unlock()
+		if attemptCount <= rule.RetryLimit {
 			writeSimpleResponse(conn, http.StatusBadGateway)
 			return
 		}

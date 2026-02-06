@@ -1,126 +1,186 @@
-Another terminal:
- HTTP_PROXY=http://localhost:9000 PORT=8081 go run examples/goapp/main.go
-Anohter terminal:
- go build -o infernosim ./cmd/agent
-./infernosim --mode=proxy --listen=:9000 --log=outputs.log
-Another terminal
+# InfernoSIM
+
+InfernoSIM is an open-source sidecar-style traffic capture and deterministic replay tool for backend services.
+
+It captures inbound and outbound HTTP traffic as JSONL logs, then replays real incidents against a live service with deterministic timing controls, fault injection, and concurrency pressure.
+
+## Features
+
+- Inbound + outbound capture via lightweight proxies.
+- Deterministic replay across repeated runs.
+- Causal concurrency pressure with `--fanout`.
+- Replay SLO checks with `--window`.
+- Fault injection (`latency`, `timeout`) for dependencies.
+- Actionable replay summary: limiting factor, sustained envelope, delta from last run.
+
+## Repository Layout
+
+- `cmd/agent/main.go`: InfernoSIM binary entrypoint.
+- `pkg/`: capture/replay/stub/injection/event internals.
+- `examples/goapp-deterministic`: deterministic Go sample app.
+- `examples/nodeapp-deterministic`: deterministic Node sample app.
+
+## Build
+
+```bash
 go build -o infernosim ./cmd/agent
-./infernosim --mode=inbound --listen=:8080 --forward=localhost:8081 --log=inputs.log
+```
 
+## Deterministic Compose Smoke Test
 
-InfernoSIM
+Use the built-in smoke workflow for runtime validation without ad-hoc package installs:
 
-InfernoSIM is a deterministic traffic capture, replay, and simulation tool for debugging distributed systems.
+```bash
+scripts/compose-smoke.sh node
+scripts/compose-smoke.sh go
+```
 
-It lets you:
-	•	Capture real inbound and outbound HTTP traffic
-	•	Replay requests deterministically
-	•	Simulate failures (latency, time, retries)
-	•	Detect behavioral divergence at the exact event index
+What it validates:
 
-No dashboards.
-No tracing UI.
-Just truth via replay.
+- `infernosim:local` image builds.
+- Runtime-agnostic capture sidecar (`docker-compose.yml`) boots cleanly.
+- Runtime example profile (`docker-compose.examples.yml`) boots cleanly.
+- Capture healthcheck passes.
+- A live request is executed.
+- Runtime incident log contains captured `OutboundCall` events.
 
-⸻
+Compose files:
 
-Core Concepts
+- `docker-compose.yml`: capture sidecar only (runtime-agnostic).
+- `docker-compose.examples.yml`: optional deterministic Go/Node example services via profiles.
 
-1. Capture
+## Capture Modes
 
-InfernoSIM runs as lightweight HTTP proxies:
-	•	Inbound proxy → captures requests entering your service
-	•	Outbound proxy → captures calls your service makes to dependencies
+### Inbound capture
 
-All events are written as append-only JSON logs.
+```bash
+./infernosim --mode=inbound --listen=:18080 --forward=localhost:8084 --log=inbound.log
+```
 
-2. Replay
+### Outbound capture
 
-Captured inbound traffic is replayed:
-	•	With original timing (or time-compressed)
-	•	Against a live instance of your service
-	•	While outbound calls are stubbed and controlled
+```bash
+./infernosim --mode=proxy --listen=:9000 --log=outbound.log
+```
 
-3. Simulation
+## Quickstart: Deterministic Go
 
-During replay you may inject controlled changes:
-	•	Latency
-	•	Time scaling
-	•	Retry amplification
-	•	Timeout behavior
+### Terminal 1
 
-Any behavioral change is detected deterministically.
-Build
-go build -o infernosim ./cmd/agent
-Phase 1: Capture Traffic
+```bash
+./infernosim --mode=proxy --listen=:9000 --log=outbound.log
+```
 
-Start outbound proxy (dependencies)
-./infernosim --mode=proxy \
-  --listen=:19000 \
-  --log=outbound.log
+### Terminal 2
 
-Start inbound proxy (service entrypoint):
-./infernosim --mode=inbound \
-  --listen=:18080 \
-  --forward=localhost:18081 \
-  --log=inbound.log
+```bash
+HTTP_PROXY=http://localhost:9000 \
+HTTPS_PROXY=http://localhost:9000 \
+PORT=8084 \
+go run examples/goapp-deterministic/main.go
+```
 
-Run your app through InfernoSIM:
-HTTP_PROXY=http://localhost:19000 \
-PORT=18081 \
-go run examples/goapp/main.go
-Generate traffic (curl, browser, tests, etc).
+### Terminal 3
 
-Phase 2: Verify Determinism
-./verify.sh
+```bash
+./infernosim --mode=inbound --listen=:18080 --forward=localhost:8084 --log=inbound.log
+```
 
-What this checks:
-	•	Capture works
-	•	Replay produces identical fingerprints
-	•	No external dependencies leak in
-	•	Time control is stable
+### Generate + replay
 
-Output:
-VERIFY: PASS (deterministic, isolated, time-controlled)
+```bash
+curl http://localhost:18080/api/demo
 
+# stop capture sidecars first (:9000 and :18080), keep app running
+./infernosim replay --incident . --target-base http://localhost:8084 --runs 3
+```
 
-Phase 3: Replay + Simulation
+## Quickstart: Deterministic Node
 
-Basic replay
-./infernosim replay \
-  --incident . \
-  --runs 10
+### Terminal 1
 
-Creates:
-  replay_result.txt
+```bash
+./infernosim --mode=proxy --listen=:9000 --log=outbound.log
+```
 
-Example content:
-REPLAY: PASS
-FINGERPRINT: 01f2b489d9b6e507850942f0340b95288c1451c334241e0b208fbe62eb08dab7
-RUNS: 10
-TIME_SCALE: 1.000
+### Terminal 2
 
-Time compression:
-./infernosim replay \
-  --incident . \
-  --time-scale 0.1
-Replays traffic 10× faster, preserving ordering.
+```bash
+PORT=8083 OUTBOUND_PROXY_PORT=9000 node examples/nodeapp-deterministic/app.js
+```
 
-Latency injection:
-./infernosim replay \
-  --incident . \
-  --inject "dep=worldtimeapi.org latency=+200ms"
+### Terminal 3
 
-Expected behavior:
-	•	Either replay still passes (system resilient)
-	•	Or divergence is detected with exact event index
+```bash
+./infernosim --mode=inbound --listen=:18080 --forward=localhost:8083 --log=inbound.log
+```
 
-Forced divergence example:
-./infernosim replay \
-  --incident . \
-  --inject "dep=worldtimeapi.org latency=+10s" \
-  --time-scale 0.01
+### Generate + replay
 
-Example output:
-DIVERGENCE at outbound event index=1
-reason=unexpected_outbound_call
+```bash
+curl http://localhost:18080/api/demo
+./infernosim replay --incident . --target-base http://localhost:8083 --runs 3
+```
+
+## Replay Command
+
+```bash
+./infernosim replay --incident . --target-base http://localhost:8084 --runs 10
+```
+
+## Replay Flags
+
+- `--incident` (default `.`): path containing `inbound.log` and `outbound.log`.
+- `--target-base` (default `http://localhost:18080`): replay target URL base.
+- `--runs` (default `10`): number of replay iterations.
+- `--time-scale` (default `1.0`): replay time scaling.
+- `--density` (default `1.0`): replay density multiplier.
+- `--min-gap` (default `2ms`): minimum inter-event replay gap.
+- `--max-wall-time` (default `30s`): max replay wall-clock budget.
+- `--max-idle-time` (default `5s`): max idle duration without progress.
+- `--max-events` (default `0`): max inbound events replayed (`0` = unlimited).
+- `--inject` (repeatable): injection rule.
+  - Example: `--inject "dep=worldtimeapi.org latency=+200ms"`
+  - Example: `--inject "dep=worldtimeapi.org timeout=1s"`
+- `--stub-listen` (default `:19000`): primary replay stub listen address.
+- `--stub-compat-listen` (default `:9000`): compatibility listen address for fixed app proxy ports.
+- `--fanout` (default `1`): concurrent causal replay workers per run.
+- `--window` (default `0s`): replay SLO window; can trigger `FAIL_SLO_MISSED`.
+
+## Example Replay Scenarios
+
+```bash
+# baseline
+./infernosim replay --incident . --target-base http://localhost:8084 --runs 10
+
+# faster replay
+./infernosim replay --incident . --target-base http://localhost:8084 --runs 5 --time-scale 0.1
+
+# dependency fault injection
+./infernosim replay --incident . --target-base http://localhost:8084 --runs 5 --inject "dep=worldtimeapi.org latency=+200ms"
+
+# causal concurrency + SLO window
+./infernosim replay --incident . --target-base http://localhost:8084 --runs 5 --fanout 167 --window 5m
+```
+
+## Summary Semantics
+
+Replay summary includes:
+
+- `Outcome` and `Primary failure reason`.
+- Inbound/outbound observed vs expected/target counts.
+- Achieved vs target request rate.
+- `Limiting factor` classification.
+- `SUSTAINABLE ENVELOPE (observed)`.
+- `Change from last run` deltas.
+
+## Production Notes
+
+- Keep incident logs immutable between analysis runs.
+- Ensure replay stub ports are free (`:19000` and optional compat `:9000`).
+- Stop capture sidecars before running replay.
+- Commit source only; runtime artifacts are ignored by `.gitignore`.
+
+## License
+
+Add an OSS license file (`LICENSE`) before public release.

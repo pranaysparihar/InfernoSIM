@@ -3,20 +3,16 @@ services:
     image: infernosim:local
     privileged: true
     volumes:
-      - ./examples/nodeapp-deterministic:/incident
+      - ${INCIDENT_DIR:-./.incident}:/incident
     command: 
         - "--mode=proxy"
         - "--listen=:19000"
         - "--log=/incident/outbound.log"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -lc 'exec 3<>/dev/tcp/127.0.0.1/19000'"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+      start_period: 2s
     expose:
       - "19000"
-
-  nodeapp:
-    image: node:18-alpine
-    environment:
-      - HTTP_PROXY=http://infernosim-capture:19000
-      - HTTPS_PROXY=http://infernosim-capture:19000
-    volumes:
-      - ./examples/nodeapp-deterministic:/app
-    working_dir: /app
-    command: node app.js
