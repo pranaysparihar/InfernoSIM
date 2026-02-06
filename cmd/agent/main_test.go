@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSummaryProducedOnInvalidConfig(t *testing.T) {
@@ -78,5 +79,22 @@ func TestOutcomeTransparentProxyOnlyWhenTransparent(t *testing.T) {
 	summary.Finalize()
 	if summary.Outcome != "FAIL_TRANSPARENT_PROXY" {
 		t.Fatalf("expected FAIL_TRANSPARENT_PROXY, got %s", summary.Outcome)
+	}
+}
+
+func TestOutcomeSLOMissed(t *testing.T) {
+	summary := NewReplaySummary()
+	summary.ProxyStatus = "BOUND"
+	summary.OutboundEventsObserved = 10
+	summary.DependenciesExercised = true
+	summary.Window = 5 * time.Second
+	summary.TargetInbound = 100
+	summary.InboundEventsReplayed = 10
+	summary.RunsRequested = 1
+	summary.RunsExecuted = 1
+	summary.RunsCompleted = 1
+	summary.Finalize()
+	if summary.Outcome != "FAIL_SLO_MISSED" {
+		t.Fatalf("expected FAIL_SLO_MISSED, got %s", summary.Outcome)
 	}
 }

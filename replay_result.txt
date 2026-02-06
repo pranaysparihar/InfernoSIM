@@ -1,22 +1,28 @@
 --------------------------------
 InfernoSIM Replay Summary
 --------------------------------
-Outcome: FAIL_NO_COVERAGE
+Outcome: FAIL_SLO_MISSED
 Runs requested: 10
-Runs executed: 10
-Runs completed: 10
-Deterministic runs: 10 / 10
-Inbound events replayed: 10
-Outbound events observed: 0
-Outbound events expected: 56
+Runs executed: 6
+Runs completed: 5
+Fanout: 50
+Window: 30s
+Deterministic runs: 0 / 6
+Inbound events replayed: 300
+Inbound target: 500
+Outbound events observed: 100
+Outbound events expected: 500
+Outbound target: 500
+Elapsed: 30.03s
+Achieved rate (req/s): 9.99
+Target rate (req/s): 16.67
 Stub proxy status: BOUND
-Injections applied: none
-Dependencies exercised: false
-Primary failure reason: none
-Actionable recommendation: Ensure outbound dependencies are reachable and instrumented.
+Injections applied: latency
+Dependencies exercised: true
+Primary failure reason: replay exceeded wall-clock limit while awaiting responses
+Actionable recommendation: Lower fanout or increase window; then inspect app saturation limits and outbound dependency latency.
 
 WHAT THIS RUN DID NOT TEST
-- No outbound calls observed
-- Dependencies not exercised
-- Fault injections not exercised
+- Not all requested runs executed
+- Replay SLO not met for requested window
 --------------------------------

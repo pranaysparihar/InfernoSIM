@@ -21,6 +21,7 @@ type StubProxy struct {
 	events []event.Event
 	i      int64
 	seen   int64
+	maxSeen int64
 
 	rules []inject.Rule
 
@@ -35,6 +36,7 @@ type StubProxy struct {
 
 	forwardErrors  int64
 	forwardSuccess int64
+	cycleExpected  bool
 }
 
 func LoadOutboundEvents(path string) ([]event.Event, error) {
@@ -85,11 +87,22 @@ func New(outboundLog string, observedLog string, rules []inject.Rule) (*StubProx
 func (s *StubProxy) Reset() {
 	atomic.StoreInt64(&s.i, 0)
 	atomic.StoreInt64(&s.seen, 0)
+	atomic.StoreInt64(&s.maxSeen, 0)
 	s.attempts = map[string]int{}
 	s.mu.Lock()
 	s.divergenceReasons = nil
 	s.unexpectedOutbound = false
 	s.mu.Unlock()
+}
+
+// ConfigureReplayCardinality controls how many outbound events this run may observe.
+// When cycleExpected is true, expected events are matched in a repeating pattern.
+func (s *StubProxy) ConfigureReplayCardinality(cycleExpected bool, maxObserved int) {
+	s.cycleExpected = cycleExpected
+	if maxObserved < 0 {
+		maxObserved = 0
+	}
+	atomic.StoreInt64(&s.maxSeen, int64(maxObserved))
 }
 
 // depKey returns a stable dependency identifier from a proxied request.
@@ -123,7 +136,7 @@ func (s *StubProxy) divergence(expected event.Event, got *http.Request, idx int6
 
 func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	idx := atomic.LoadInt64(&s.i)
-	atomic.AddInt64(&s.seen, 1)
+	seen := atomic.AddInt64(&s.seen, 1)
 
 	observedHost := r.Host
 	if r.URL != nil && r.URL.Host != "" {
@@ -131,7 +144,8 @@ func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordObserved(r.Method, observedHost, "", 0)
 
-	if int(idx) >= len(s.events) {
+	maxSeen := atomic.LoadInt64(&s.maxSeen)
+	if maxSeen > 0 && seen > maxSeen {
 		msg := fmt.Sprintf("DIVERGENCE at outbound event index=%d why=unexpected_outbound_call", idx)
 		fmt.Fprintln(os.Stderr, msg)
 		s.mu.Lock()
@@ -141,8 +155,22 @@ func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unexpected outbound call", http.StatusBadGateway)
 		return
 	}
+	if len(s.events) == 0 {
+		http.Error(w, "no captured outbound events", http.StatusBadGateway)
+		return
+	}
 
-	expected := s.events[idx]
+	expected := s.events[idx%int64(len(s.events))]
+	if !s.cycleExpected && int(idx) >= len(s.events) {
+		msg := fmt.Sprintf("DIVERGENCE at outbound event index=%d why=unexpected_outbound_call", idx)
+		fmt.Fprintln(os.Stderr, msg)
+		s.mu.Lock()
+		s.divergenceReasons = append(s.divergenceReasons, msg)
+		s.unexpectedOutbound = true
+		s.mu.Unlock()
+		http.Error(w, "unexpected outbound call", http.StatusBadGateway)
+		return
+	}
 
 	// --- basic matching (v0 tolerant) ---
 	if expected.Method != "" && r.Method != expected.Method {

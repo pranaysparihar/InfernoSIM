@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"strings"
 	"syscall"
 	"time"
@@ -160,6 +161,16 @@ func runReplay(args []string) (code int) {
 		0,
 		"Maximum number of inbound events to replay (0 = no cap)",
 	)
+	fanout := fs.Int(
+		"fanout",
+		1,
+		"Concurrent causal replay workers per run",
+	)
+	window := fs.Duration(
+		"window",
+		0,
+		"SLO evaluation window; when set, replay fails if target throughput is not achieved within this duration",
+	)
 	targetBase := fs.String(
 		"target-base",
 		"http://localhost:18080",
@@ -207,6 +218,8 @@ func runReplay(args []string) (code int) {
 		TargetBase:  *targetBase,
 		StubListen:  *stubListen,
 		StubCompat:  *stubCompatListen,
+		Fanout:      *fanout,
+		Window:      *window,
 	}, &summary)
 	return
 }
@@ -252,6 +265,13 @@ type ReplaySummary struct {
 	Lines                  []string
 	ExitStatus             int
 	TransparentMode        bool
+	Fanout                 int
+	Window                 time.Duration
+	TargetInbound          int
+	TargetOutbound         int
+	Elapsed                time.Duration
+	AchievedRPS            float64
+	TargetRPS              float64
 }
 
 type replayExecutionInput struct {
@@ -268,6 +288,8 @@ type replayExecutionInput struct {
 	TargetBase  string
 	StubListen  string
 	StubCompat  string
+	Fanout      int
+	Window      time.Duration
 }
 
 func NewReplaySummary() ReplaySummary {
@@ -296,6 +318,13 @@ func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 	start := time.Now()
 	summary.RunsRequested = input.Runs
 	summary.TransparentMode = os.Getenv("INFERNOSIM_TRANSPARENT") == "1"
+	if input.Fanout < 1 {
+		summary.PrimaryFailureReason = "fanout must be >= 1"
+		summary.Outcome = "FAIL_INVALID_ENV"
+		return
+	}
+	summary.Fanout = input.Fanout
+	summary.Window = input.Window
 
 	if _, err := os.Stat(input.InboundLog); err != nil {
 		summary.PrimaryFailureReason = fmt.Sprintf("Inbound log not found: %s (%v)", input.InboundLog, err)
@@ -324,9 +353,13 @@ func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 	}
 
 	expectedOutbound, err := stubproxy.LoadOutboundEvents(input.OutboundLog)
+	expectedOutboundPerReplay := 0
 	if err == nil {
-		summary.OutboundEventsExpected = len(expectedOutbound)
+		expectedOutboundPerReplay = len(expectedOutbound)
 	}
+	summary.TargetInbound = len(events) * input.Runs * input.Fanout
+	summary.TargetOutbound = expectedOutboundPerReplay * input.Runs * input.Fanout
+	summary.OutboundEventsExpected = summary.TargetOutbound
 
 	rules, err := inject.ParseRules(input.InjectFlags)
 	if err != nil {
@@ -336,7 +369,8 @@ func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 	}
 	summary.InjectionsApplied = injectionsAppliedLabel(rules)
 
-	stub, err := stubproxy.New(input.OutboundLog, input.OutboundLog, rules)
+	// Do not append observed replay traffic into the captured outbound incident log.
+	stub, err := stubproxy.New(input.OutboundLog, "", rules)
 	if err != nil {
 		summary.PrimaryFailureReason = fmt.Sprintf("Stub proxy init failed: %v", err)
 		summary.Outcome = "FAIL_INVALID_ENV"
@@ -371,13 +405,13 @@ func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 	go func() {
 		log.Printf("Stub proxy active on %s", stubListen)
 		if summary.TransparentMode {
-			if err := stub.ServeTransparent(listener); err != nil && !errors.Is(err, net.ErrClosed) {
+			if err := stub.ServeTransparent(listener); err != nil && !isExpectedShutdownErr(err) {
 				log.Printf("Stub proxy error: %v", err)
 			}
 			return
 		}
 		stubServer := &http.Server{Handler: stub}
-		if err := stubServer.Serve(listener); err != nil && err != http.ErrServerClosed {
+		if err := stubServer.Serve(listener); err != nil && !isExpectedShutdownErr(err) {
 			log.Printf("Stub proxy error: %v", err)
 		}
 	}()
@@ -394,7 +428,7 @@ func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 				go func() {
 					log.Printf("Stub proxy compat active on %s", compatListen)
 					stubServer := &http.Server{Handler: stub}
-					if err := stubServer.Serve(compatListener); err != nil && err != http.ErrServerClosed {
+					if err := stubServer.Serve(compatListener); err != nil && !isExpectedShutdownErr(err) {
 						log.Printf("Stub proxy compat error: %v", err)
 					}
 				}()
@@ -411,6 +445,7 @@ func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 
 	for i := 0; i < input.Runs; i++ {
 		stub.Reset()
+		stub.ConfigureReplayCardinality(input.Fanout > 1, expectedOutboundPerReplay*input.Fanout)
 		runStart := time.Now()
 		remaining := input.MaxWallTime - time.Since(start)
 		if remaining <= 0 {
@@ -418,36 +453,60 @@ func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 			break
 		}
 
-		r, err := replaydriver.ReplayEvents(
-			events,
-			input.TargetBase,
-			replaydriver.ReplayConfig{
-				TimeScale:    input.TimeScale,
-				Density:      input.Density,
-				MinGap:       input.MinGap,
-				MaxWallClock: remaining,
-				MaxIdleTime:  input.MaxIdleTime,
-				MaxEvents:    input.MaxEvents,
-			},
-		)
+		type replayWaveResult struct {
+			result replaydriver.ReplayResult
+			err    error
+		}
+		results := make(chan replayWaveResult, input.Fanout)
+		var wg sync.WaitGroup
+		for worker := 0; worker < input.Fanout; worker++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				r, err := replaydriver.ReplayEvents(
+					events,
+					input.TargetBase,
+					replaydriver.ReplayConfig{
+						TimeScale:    input.TimeScale,
+						Density:      input.Density,
+						MinGap:       input.MinGap,
+						MaxWallClock: remaining,
+						MaxIdleTime:  input.MaxIdleTime,
+						MaxEvents:    input.MaxEvents,
+					},
+				)
+				results <- replayWaveResult{result: r, err: err}
+			}()
+		}
+		wg.Wait()
+		close(results)
 		summary.RunsExecuted++
-		if err != nil {
-			summary.PrimaryFailureReason = fmt.Sprintf("Replay failed: %v", err)
-			summary.Outcome = "FAIL_STALLED"
-			break
-		}
-
-		if r.TimeExpanded || r.Stalled {
-			summary.PrimaryFailureReason = r.TimeExpandedReason
-			if r.Stalled {
-				summary.PrimaryFailureReason = r.StalledReason
+		waveComplete := true
+		waveInbound := 0
+		for wr := range results {
+			if wr.err != nil {
+				summary.PrimaryFailureReason = fmt.Sprintf("Replay failed: %v", wr.err)
+				summary.Outcome = "FAIL_STALLED"
+				waveComplete = false
+				continue
 			}
-			summary.Outcome = "FAIL_STALLED"
-			break
+			if wr.result.TimeExpanded || wr.result.Stalled {
+				summary.PrimaryFailureReason = wr.result.TimeExpandedReason
+				if wr.result.Stalled {
+					summary.PrimaryFailureReason = wr.result.StalledReason
+				}
+				summary.Outcome = "FAIL_STALLED"
+				waveComplete = false
+			}
+			waveInbound += wr.result.CompletedEvents
+			if !referenceSet {
+				referenceFingerprint = wr.result.Fingerprint
+				referenceSet = true
+			} else if wr.result.Fingerprint != referenceFingerprint {
+				nonDeterministic = true
+			}
 		}
-
-		summary.RunsCompleted++
-		summary.InboundEventsReplayed += r.CompletedEvents
+		summary.InboundEventsReplayed += waveInbound
 		outboundObserved := stub.ObservedCount()
 		summary.OutboundEventsObserved += outboundObserved
 		summary.DependenciesExercised = summary.OutboundEventsObserved > 0
@@ -456,25 +515,42 @@ func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 			summary.Outcome = "FAIL_PROXY_FORWARDING"
 			break
 		}
+		if waveComplete {
+			summary.RunsCompleted++
+		} else {
+			break
+		}
 
 		outcome := ReplayOutcome{
 			RunIndex:        i + 1,
-			TotalEvents:     r.TotalEvents,
-			CompletedEvents: r.CompletedEvents,
-			WallTime:        r.RunDuration,
-			Completed:       true,
-			Fingerprint:     fmt.Sprintf("%x", r.Fingerprint),
+			TotalEvents:     len(events) * input.Fanout,
+			CompletedEvents: waveInbound,
+			WallTime:        time.Since(runStart),
+			Completed:       waveComplete,
+			Detail:          fmt.Sprintf("fanout=%d", input.Fanout),
 		}
 		summary.Outcomes = append(summary.Outcomes, outcome)
-
-		if !referenceSet {
-			referenceFingerprint = r.Fingerprint
-			referenceSet = true
-		} else if r.Fingerprint != referenceFingerprint {
-			nonDeterministic = true
+	}
+	summary.Elapsed = time.Since(start)
+	if summary.Elapsed > 0 {
+		summary.AchievedRPS = float64(summary.InboundEventsReplayed) / summary.Elapsed.Seconds()
+	}
+	if summary.Window > 0 {
+		summary.TargetRPS = float64(summary.TargetInbound) / summary.Window.Seconds()
+		if summary.InboundEventsReplayed < summary.TargetInbound || summary.Elapsed > summary.Window {
+			summary.Outcome = "FAIL_SLO_MISSED"
+			if summary.PrimaryFailureReason == "" {
+				summary.PrimaryFailureReason = fmt.Sprintf(
+					"SLO miss: inbound replayed %d/%d in %s (window %s, achieved %.2f req/s, target %.2f req/s)",
+					summary.InboundEventsReplayed,
+					summary.TargetInbound,
+					summary.Elapsed.Round(time.Millisecond),
+					summary.Window,
+					summary.AchievedRPS,
+					summary.TargetRPS,
+				)
+			}
 		}
-
-		_ = runStart
 	}
 
 	if summary.RunsExecuted > 1 && nonDeterministic {
@@ -499,6 +575,9 @@ func computeOutcome(summary *ReplaySummary) string {
 	}
 	if summary.OutboundEventsObserved == 0 {
 		return "FAIL_NO_COVERAGE"
+	}
+	if summary.Window > 0 && summary.InboundEventsReplayed < summary.TargetInbound {
+		return "FAIL_SLO_MISSED"
 	}
 	if summary.RunsExecuted > 1 && summary.NonDeterministicRuns > 0 {
 		return "FAIL_NON_DETERMINISTIC"
@@ -535,6 +614,9 @@ func computeWhatNotTested(summary *ReplaySummary) []string {
 	if summary.RunsExecuted < summary.RunsRequested {
 		gaps = append(gaps, "Not all requested runs executed")
 	}
+	if summary.Window > 0 && summary.InboundEventsReplayed < summary.TargetInbound {
+		gaps = append(gaps, "Replay SLO not met for requested window")
+	}
 	return gaps
 }
 
@@ -547,10 +629,17 @@ func buildSummaryLines(summary *ReplaySummary) []string {
 		fmt.Sprintf("Runs requested: %d", summary.RunsRequested),
 		fmt.Sprintf("Runs executed: %d", summary.RunsExecuted),
 		fmt.Sprintf("Runs completed: %d", summary.RunsCompleted),
+		fmt.Sprintf("Fanout: %d", summary.Fanout),
+		fmt.Sprintf("Window: %s", summary.Window),
 		fmt.Sprintf("Deterministic runs: %d / %d", summary.DeterministicRuns, summary.RunsExecuted),
 		fmt.Sprintf("Inbound events replayed: %d", summary.InboundEventsReplayed),
+		fmt.Sprintf("Inbound target: %d", summary.TargetInbound),
 		fmt.Sprintf("Outbound events observed: %d", summary.OutboundEventsObserved),
 		fmt.Sprintf("Outbound events expected: %d", summary.OutboundEventsExpected),
+		fmt.Sprintf("Outbound target: %d", summary.TargetOutbound),
+		fmt.Sprintf("Elapsed: %s", summary.Elapsed.Round(time.Millisecond)),
+		fmt.Sprintf("Achieved rate (req/s): %.2f", summary.AchievedRPS),
+		fmt.Sprintf("Target rate (req/s): %.2f", summary.TargetRPS),
 		fmt.Sprintf("Stub proxy status: %s", summary.ProxyStatus),
 		fmt.Sprintf("Injections applied: %s", summary.InjectionsApplied),
 		fmt.Sprintf("Dependencies exercised: %t", summary.DependenciesExercised),
@@ -616,6 +705,8 @@ func recommendationForOutcome(outcome string) string {
 		return "Ensure outbound dependencies are reachable and instrumented."
 	case "FAIL_STALLED":
 		return "Reduce load or increase timeouts to avoid stalls."
+	case "FAIL_SLO_MISSED":
+		return "Lower fanout or increase window; then inspect app saturation limits and outbound dependency latency."
 	default:
 		return "Inspect logs for additional details."
 	}
@@ -635,6 +726,8 @@ func exitCodeFromOutcome(outcome string) int {
 	case "PASS_WEAK":
 		return 1
 	case "FAIL_NON_DETERMINISTIC":
+		return 1
+	case "FAIL_SLO_MISSED":
 		return 1
 	default:
 		return 2
@@ -663,4 +756,14 @@ func execCommand(name string, args ...string) error {
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	return cmd.Run()
+}
+
+func isExpectedShutdownErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if err == http.ErrServerClosed || errors.Is(err, net.ErrClosed) {
+		return true
+	}
+	return strings.Contains(err.Error(), "use of closed network connection")
 }
