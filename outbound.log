@@ -1,1 +1,0 @@
-{"id":"496950e2125b86b71e4e211b57db8324","type":"OutboundCall","timestamp":"2026-02-06T06:50:31.125588Z","method":"GET","url":"http://worldtimeapi.org/api/timezone/Etc/UTC","duration":85778000,"error":"read tcp [2401:4900:88f4:1708:88ee:5c16:1dcf:a85d]:61279->[2a09:8280:1::3:e]:80: read: connection reset by peer","headers":{"Connection":["keep-alive"]}}
