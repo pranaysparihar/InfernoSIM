@@ -1,16 +1,18 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -96,7 +98,18 @@ func runAgent() {
 /*
 PHASE 3: REPLAY + SIMULATION
 */
-func runReplay(args []string) int {
+func runReplay(args []string) (code int) {
+	summary := NewReplaySummary()
+	defer func() {
+		if r := recover(); r != nil {
+			summary.PrimaryFailureReason = fmt.Sprintf("panic: %v", r)
+			summary.Outcome = "FAIL_INVALID_ENV"
+		}
+		summary.Finalize()
+		summary.Print()
+		code = summary.ExitStatus
+	}()
+
 	fs := flag.NewFlagSet("replay", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 
@@ -147,6 +160,21 @@ func runReplay(args []string) int {
 		0,
 		"Maximum number of inbound events to replay (0 = no cap)",
 	)
+	targetBase := fs.String(
+		"target-base",
+		"http://localhost:18080",
+		"Replay target base URL for inbound request playback",
+	)
+	stubListen := fs.String(
+		"stub-listen",
+		":19000",
+		"Replay stub proxy listen address",
+	)
+	stubCompatListen := fs.String(
+		"stub-compat-listen",
+		":9000",
+		"Optional compatibility listen address for apps using a fixed outbound proxy port",
+	)
 
 	injectFlags := multiFlag{}
 	fs.Var(
@@ -156,27 +184,16 @@ func runReplay(args []string) int {
 	)
 
 	if err := fs.Parse(args); err != nil {
-		summary := buildSummary(replaySummaryInput{
-			RunsAttempted: *runs,
-			Outcomes: []ReplayOutcome{
-				{
-					RunIndex:       1,
-					TotalEvents:    0,
-					Completed:      false,
-					DivergenceType: DivergenceInvalidConfig,
-					Detail:         fmt.Sprintf("Flag parse error: %v", err),
-				},
-			},
-		})
-		printReplaySummary(summary)
-		return summary.ExitStatus
+		summary.PrimaryFailureReason = fmt.Sprintf("Flag parse error: %v", err)
+		summary.Outcome = "FAIL_INVALID_ENV"
+		return
 	}
 
 	// ---- resolve logs ----
 	inboundLog := filepath.Join(*incidentDir, "inbound.log")
 	outboundLog := filepath.Join(*incidentDir, "outbound.log")
 
-	summary := executeReplay(replayExecutionInput{
+	executeReplay(replayExecutionInput{
 		Runs:        *runs,
 		TimeScale:   *timeScale,
 		Density:     *density,
@@ -184,14 +201,14 @@ func runReplay(args []string) int {
 		MaxWallTime: *maxWallTime,
 		MaxIdleTime: *maxIdleTime,
 		MaxEvents:   *maxEvents,
-		IncidentDir: *incidentDir,
 		InboundLog:  inboundLog,
 		OutboundLog: outboundLog,
 		InjectFlags: injectFlags,
-		TargetBase:  "http://localhost:18080",
-	})
-	printReplaySummary(summary)
-	return summary.ExitStatus
+		TargetBase:  *targetBase,
+		StubListen:  *stubListen,
+		StubCompat:  *stubCompatListen,
+	}, &summary)
+	return
 }
 
 /*
@@ -205,17 +222,6 @@ func (m *multiFlag) Set(v string) error {
 	return nil
 }
 
-type ReplayDivergence string
-
-const (
-	DivergenceDeterministic    ReplayDivergence = "DETERMINISTIC"
-	DivergenceNonDeterministic ReplayDivergence = "NON_DETERMINISTIC"
-	DivergenceTimeExpanded     ReplayDivergence = "TIME_EXPANDED"
-	DivergenceStalled          ReplayDivergence = "STALLED"
-	DivergenceInvalidConfig    ReplayDivergence = "INVALID_CONFIG"
-	DivergenceInfraError       ReplayDivergence = "INFRA_ERROR"
-)
-
 type ReplayOutcome struct {
 	RunIndex        int
 	TotalEvents     int
@@ -223,8 +229,29 @@ type ReplayOutcome struct {
 	WallTime        time.Duration
 	Completed       bool
 	Fingerprint     string
-	DivergenceType  ReplayDivergence
 	Detail          string
+}
+
+type ReplaySummary struct {
+	Outcome                string
+	RunsRequested          int
+	RunsExecuted           int
+	RunsCompleted          int
+	InboundEventsReplayed  int
+	OutboundEventsObserved int
+	OutboundEventsExpected int
+	ProxyStatus            string
+	InjectionsApplied      string
+	DependenciesExercised  bool
+	DeterministicRuns      int
+	NonDeterministicRuns   int
+	PrimaryFailureReason   string
+	Recommendation         string
+	WhatNotTested          []string
+	Outcomes               []ReplayOutcome
+	Lines                  []string
+	ExitStatus             int
+	TransparentMode        bool
 }
 
 type replayExecutionInput struct {
@@ -235,141 +262,159 @@ type replayExecutionInput struct {
 	MaxWallTime time.Duration
 	MaxIdleTime time.Duration
 	MaxEvents   int
-	IncidentDir string
 	InboundLog  string
 	OutboundLog string
 	InjectFlags []string
 	TargetBase  string
-	SkipStub    bool
+	StubListen  string
+	StubCompat  string
 }
 
-type replaySummaryInput struct {
-	RunsAttempted int
-	Outcomes      []ReplayOutcome
+func NewReplaySummary() ReplaySummary {
+	return ReplaySummary{
+		ProxyStatus:           "UNKNOWN",
+		InjectionsApplied:     "none",
+		DependenciesExercised: false,
+	}
 }
 
-type ReplaySummary struct {
-	Lines      []string
-	Outcomes   []ReplayOutcome
-	ExitStatus int
-	Outcome    ReplayDivergence
+func (s *ReplaySummary) Finalize() {
+	s.Outcome = computeOutcome(s)
+	s.Recommendation = recommendationForOutcome(s.Outcome)
+	s.WhatNotTested = computeWhatNotTested(s)
+	s.ExitStatus = exitCodeFromOutcome(s.Outcome)
+	s.Lines = buildSummaryLines(s)
 }
 
-func executeReplay(input replayExecutionInput) ReplaySummary {
+func (s *ReplaySummary) Print() {
+	out := strings.Join(s.Lines, "\n") + "\n"
+	fmt.Print(out)
+	_ = os.WriteFile("replay_result.txt", []byte(out), 0644)
+}
+
+func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 	start := time.Now()
-	outcomes := []ReplayOutcome{}
+	summary.RunsRequested = input.Runs
+	summary.TransparentMode = os.Getenv("INFERNOSIM_TRANSPARENT") == "1"
 
 	if _, err := os.Stat(input.InboundLog); err != nil {
-		outcomes = append(outcomes, ReplayOutcome{
-			RunIndex:       1,
-			Completed:      false,
-			DivergenceType: DivergenceInfraError,
-			Detail:         fmt.Sprintf("Inbound log not found: %s (%v)", input.InboundLog, err),
-		})
-		return buildSummary(replaySummaryInput{RunsAttempted: input.Runs, Outcomes: outcomes})
+		summary.PrimaryFailureReason = fmt.Sprintf("Inbound log not found: %s (%v)", input.InboundLog, err)
+		summary.Outcome = "FAIL_INVALID_ENV"
+		return
 	}
 	if _, err := os.Stat(input.OutboundLog); err != nil {
-		outcomes = append(outcomes, ReplayOutcome{
-			RunIndex:       1,
-			Completed:      false,
-			DivergenceType: DivergenceInfraError,
-			Detail:         fmt.Sprintf("Outbound log not found: %s (%v)", input.OutboundLog, err),
-		})
-		return buildSummary(replaySummaryInput{RunsAttempted: input.Runs, Outcomes: outcomes})
+		summary.PrimaryFailureReason = fmt.Sprintf("Outbound log not found: %s (%v)", input.OutboundLog, err)
+		summary.Outcome = "FAIL_INVALID_ENV"
+		return
 	}
 
 	events, err := replaydriver.LoadInboundEvents(input.InboundLog)
 	if err != nil {
-		outcomes = append(outcomes, ReplayOutcome{
-			RunIndex:       1,
-			Completed:      false,
-			DivergenceType: DivergenceInfraError,
-			Detail:         fmt.Sprintf("Failed to load inbound log: %v", err),
-		})
-		return buildSummary(replaySummaryInput{RunsAttempted: input.Runs, Outcomes: outcomes})
+		summary.PrimaryFailureReason = fmt.Sprintf("Failed to load inbound log: %v", err)
+		summary.Outcome = "FAIL_INVALID_ENV"
+		return
 	}
 	if len(events) == 0 {
-		outcomes = append(outcomes, ReplayOutcome{
-			RunIndex:       1,
-			Completed:      false,
-			DivergenceType: DivergenceInfraError,
-			Detail:         "No inbound requests found in incident",
-		})
-		return buildSummary(replaySummaryInput{RunsAttempted: input.Runs, Outcomes: outcomes})
+		summary.PrimaryFailureReason = "No inbound requests found in incident"
+		summary.Outcome = "FAIL_NO_COVERAGE"
+		return
 	}
 	if input.MaxEvents > 0 && len(events) > input.MaxEvents {
 		events = events[:input.MaxEvents]
 	}
 
-	rules, err := inject.ParseRules(input.InjectFlags)
-	if err != nil {
-		detail := err.Error()
-		if v, ok := err.(*inject.ValidationError); ok {
-			sort.Strings(v.SupportedKeys)
-			sort.Strings(v.UnsupportedKeys)
-			detail = fmt.Sprintf("%s | supported=%s | unsupported=%s", v.Reason, strings.Join(v.SupportedKeys, ","), strings.Join(v.UnsupportedKeys, ","))
-		}
-		outcomes = append(outcomes, ReplayOutcome{
-			RunIndex:       1,
-			TotalEvents:    len(events),
-			Completed:      false,
-			DivergenceType: DivergenceInvalidConfig,
-			Detail:         detail,
-		})
-		return buildSummary(replaySummaryInput{RunsAttempted: input.Runs, Outcomes: outcomes})
+	expectedOutbound, err := stubproxy.LoadOutboundEvents(input.OutboundLog)
+	if err == nil {
+		summary.OutboundEventsExpected = len(expectedOutbound)
 	}
 
-	var stub *stubproxy.StubProxy
-	if !input.SkipStub {
-		var err error
-		stub, err = stubproxy.New(input.OutboundLog, rules)
+	rules, err := inject.ParseRules(input.InjectFlags)
+	if err != nil {
+		summary.PrimaryFailureReason = fmt.Sprintf("Invalid injection: %v", err)
+		summary.Outcome = "FAIL_INVALID_ENV"
+		return
+	}
+	summary.InjectionsApplied = injectionsAppliedLabel(rules)
+
+	stub, err := stubproxy.New(input.OutboundLog, input.OutboundLog, rules)
+	if err != nil {
+		summary.PrimaryFailureReason = fmt.Sprintf("Stub proxy init failed: %v", err)
+		summary.Outcome = "FAIL_INVALID_ENV"
+		return
+	}
+
+	cleanupRules := func() {}
+	if summary.TransparentMode {
+		cleanup, err := installTransparentRedirect()
 		if err != nil {
-			outcomes = append(outcomes, ReplayOutcome{
-				RunIndex:       1,
-				Completed:      false,
-				DivergenceType: DivergenceInfraError,
-				Detail:         fmt.Sprintf("Stub proxy init failed: %v", err),
-			})
-			return buildSummary(replaySummaryInput{RunsAttempted: input.Runs, Outcomes: outcomes})
+			summary.PrimaryFailureReason = fmt.Sprintf("iptables setup failed: %v", err)
+			summary.Outcome = "FAIL_INVALID_ENV"
+			return
 		}
+		cleanupRules = cleanup
+	}
+	defer cleanupRules()
 
-		stubServer := &http.Server{
-			Addr:    ":19000",
-			Handler: stub,
-		}
+	stubListen := input.StubListen
+	if strings.TrimSpace(stubListen) == "" {
+		stubListen = ":19000"
+	}
+	listener, err := net.Listen("tcp", stubListen)
+	if err != nil {
+		summary.ProxyStatus = "FAILED"
+		summary.PrimaryFailureReason = fmt.Sprintf("Stub proxy bind failed: %v", err)
+		summary.Outcome = "FAIL_INVALID_ENV"
+		return
+	}
+	summary.ProxyStatus = "BOUND"
 
-		go func() {
-			log.Printf("Stub proxy active on :19000")
-			if err := stubServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	go func() {
+		log.Printf("Stub proxy active on %s", stubListen)
+		if summary.TransparentMode {
+			if err := stub.ServeTransparent(listener); err != nil && !errors.Is(err, net.ErrClosed) {
 				log.Printf("Stub proxy error: %v", err)
 			}
-		}()
-		time.Sleep(300 * time.Millisecond)
-		defer func() {
-			_ = stubServer.Close()
-		}()
+			return
+		}
+		stubServer := &http.Server{Handler: stub}
+		if err := stubServer.Serve(listener); err != nil && err != http.ErrServerClosed {
+			log.Printf("Stub proxy error: %v", err)
+		}
+	}()
+	defer func() {
+		_ = listener.Close()
+	}()
+	if !summary.TransparentMode {
+		compatListen := strings.TrimSpace(input.StubCompat)
+		if compatListen != "" && compatListen != stubListen {
+			compatListener, compatErr := net.Listen("tcp", compatListen)
+			if compatErr != nil {
+				log.Printf("Stub proxy compat listen skipped on %s: %v", compatListen, compatErr)
+			} else {
+				go func() {
+					log.Printf("Stub proxy compat active on %s", compatListen)
+					stubServer := &http.Server{Handler: stub}
+					if err := stubServer.Serve(compatListener); err != nil && err != http.ErrServerClosed {
+						log.Printf("Stub proxy compat error: %v", err)
+					}
+				}()
+				defer func() {
+					_ = compatListener.Close()
+				}()
+			}
+		}
 	}
 
 	var referenceFingerprint [32]byte
 	var referenceSet bool
-	var referenceSignatures []string
+	var nonDeterministic bool
 
 	for i := 0; i < input.Runs; i++ {
-		if stub != nil {
-			stub.Reset()
-		}
+		stub.Reset()
 		runStart := time.Now()
 		remaining := input.MaxWallTime - time.Since(start)
 		if remaining <= 0 {
-			outcomes = append(outcomes, ReplayOutcome{
-				RunIndex:        i + 1,
-				TotalEvents:     len(events),
-				CompletedEvents: 0,
-				WallTime:        time.Since(runStart),
-				Completed:       false,
-				DivergenceType:  DivergenceTimeExpanded,
-				Detail:          "Replay exceeded max wall time before run start",
-			})
+			summary.PrimaryFailureReason = "Replay exceeded max wall time before run start"
 			break
 		}
 
@@ -385,41 +430,30 @@ func executeReplay(input replayExecutionInput) ReplaySummary {
 				MaxEvents:    input.MaxEvents,
 			},
 		)
+		summary.RunsExecuted++
 		if err != nil {
-			outcomes = append(outcomes, ReplayOutcome{
-				RunIndex:       i + 1,
-				TotalEvents:    len(events),
-				Completed:      false,
-				WallTime:       time.Since(runStart),
-				DivergenceType: DivergenceInfraError,
-				Detail:         fmt.Sprintf("Replay failed: %v", err),
-			})
+			summary.PrimaryFailureReason = fmt.Sprintf("Replay failed: %v", err)
+			summary.Outcome = "FAIL_STALLED"
 			break
 		}
 
-		if r.TimeExpanded {
-			outcomes = append(outcomes, ReplayOutcome{
-				RunIndex:        i + 1,
-				TotalEvents:     r.TotalEvents,
-				CompletedEvents: r.CompletedEvents,
-				WallTime:        r.RunDuration,
-				Completed:       false,
-				DivergenceType:  DivergenceTimeExpanded,
-				Detail:          r.TimeExpandedReason,
-			})
+		if r.TimeExpanded || r.Stalled {
+			summary.PrimaryFailureReason = r.TimeExpandedReason
+			if r.Stalled {
+				summary.PrimaryFailureReason = r.StalledReason
+			}
+			summary.Outcome = "FAIL_STALLED"
 			break
 		}
 
-		if r.Stalled {
-			outcomes = append(outcomes, ReplayOutcome{
-				RunIndex:        i + 1,
-				TotalEvents:     r.TotalEvents,
-				CompletedEvents: r.CompletedEvents,
-				WallTime:        r.RunDuration,
-				Completed:       false,
-				DivergenceType:  DivergenceStalled,
-				Detail:          r.StalledReason,
-			})
+		summary.RunsCompleted++
+		summary.InboundEventsReplayed += r.CompletedEvents
+		outboundObserved := stub.ObservedCount()
+		summary.OutboundEventsObserved += outboundObserved
+		summary.DependenciesExercised = summary.OutboundEventsObserved > 0
+		if stub.ForwardErrors() > 0 {
+			summary.PrimaryFailureReason = "Proxy forwarding failed"
+			summary.Outcome = "FAIL_PROXY_FORWARDING"
 			break
 		}
 
@@ -430,255 +464,160 @@ func executeReplay(input replayExecutionInput) ReplaySummary {
 			WallTime:        r.RunDuration,
 			Completed:       true,
 			Fingerprint:     fmt.Sprintf("%x", r.Fingerprint),
-			DivergenceType:  DivergenceDeterministic,
 		}
+		summary.Outcomes = append(summary.Outcomes, outcome)
 
 		if !referenceSet {
 			referenceFingerprint = r.Fingerprint
-			referenceSignatures = r.ResponseSignatures
 			referenceSet = true
 		} else if r.Fingerprint != referenceFingerprint {
-			outcome.DivergenceType = DivergenceNonDeterministic
-			_, dtype := firstSignatureDivergence(referenceSignatures, r.ResponseSignatures)
-			if dtype != "" {
-				outcome.Detail = mapNonDeterminismReason(dtype)
-			}
+			nonDeterministic = true
 		}
 
-		if outcome.DivergenceType == DivergenceDeterministic && stub != nil {
-			if stub.UnexpectedOutbound() || len(stub.DivergenceReasons()) > 0 {
-				outcome.DivergenceType = DivergenceNonDeterministic
-				outcome.Detail = "concurrent overlap"
-			}
-		}
-
-		if outcome.DivergenceType == DivergenceNonDeterministic && outcome.Detail == "" {
-			outcome.Detail = "timing sensitivity"
-		}
-
-		outcomes = append(outcomes, outcome)
+		_ = runStart
 	}
 
-	return buildSummary(replaySummaryInput{RunsAttempted: input.Runs, Outcomes: outcomes})
+	if summary.RunsExecuted > 1 && nonDeterministic {
+		summary.NonDeterministicRuns = 1
+		if summary.PrimaryFailureReason == "" {
+			summary.PrimaryFailureReason = "Non-deterministic fingerprints observed"
+		}
+	} else {
+		summary.DeterministicRuns = summary.RunsCompleted
+	}
 }
 
-func buildSummary(input replaySummaryInput) ReplaySummary {
-	outcomes := input.Outcomes
-	if len(outcomes) == 0 {
-		outcomes = append(outcomes, ReplayOutcome{
-			RunIndex:       1,
-			Completed:      false,
-			DivergenceType: DivergenceInfraError,
-			Detail:         "Replay produced no outcomes",
-		})
+func computeOutcome(summary *ReplaySummary) string {
+	if strings.HasPrefix(summary.Outcome, "FAIL_") {
+		return summary.Outcome
 	}
+	if summary.ProxyStatus == "FAILED" {
+		return "FAIL_INVALID_ENV"
+	}
+	if summary.TransparentMode && summary.OutboundEventsExpected > 0 && summary.OutboundEventsObserved == 0 {
+		return "FAIL_TRANSPARENT_PROXY"
+	}
+	if summary.OutboundEventsObserved == 0 {
+		return "FAIL_NO_COVERAGE"
+	}
+	if summary.RunsExecuted > 1 && summary.NonDeterministicRuns > 0 {
+		return "FAIL_NON_DETERMINISTIC"
+	}
+	if summary.PrimaryFailureReason != "" && summary.RunsCompleted == 0 {
+		return "FAIL_STALLED"
+	}
+	if summary.RunsCompleted == summary.RunsRequested && summary.DependenciesExercised {
+		return "PASS_STRONG"
+	}
+	return "PASS_WEAK"
+}
 
-	executed := len(outcomes)
-	completed := 0
-	deterministic := 0
-	nonDeterministic := 0
-	failureCounts := map[ReplayDivergence]int{}
-	nonDetReasons := map[string]int{}
-	primaryFailure := ""
-	overallOutcome := DivergenceDeterministic
-	for _, o := range outcomes {
-		if o.Completed {
-			completed++
-		}
-		switch o.DivergenceType {
-		case DivergenceDeterministic:
-			deterministic++
-		case DivergenceNonDeterministic:
-			nonDeterministic++
-			failureCounts[o.DivergenceType]++
-			if o.Detail != "" {
-				nonDetReasons[o.Detail]++
-			}
-		default:
-			failureCounts[o.DivergenceType]++
-		}
-		if primaryFailure == "" && o.DivergenceType != DivergenceDeterministic {
-			primaryFailure = o.Detail
-		}
+func computeWhatNotTested(summary *ReplaySummary) []string {
+	var gaps []string
+	if summary.InboundEventsReplayed == 0 {
+		gaps = append(gaps, "No inbound events replayed")
 	}
-	if failureCounts[DivergenceInvalidConfig] > 0 {
-		overallOutcome = DivergenceInvalidConfig
-	} else if failureCounts[DivergenceInfraError] > 0 {
-		overallOutcome = DivergenceInvalidConfig
-	} else if failureCounts[DivergenceStalled] > 0 {
-		overallOutcome = DivergenceStalled
-	} else if failureCounts[DivergenceTimeExpanded] > 0 {
-		overallOutcome = DivergenceTimeExpanded
-	} else if nonDeterministic > 0 {
-		overallOutcome = DivergenceNonDeterministic
+	if summary.OutboundEventsObserved == 0 {
+		gaps = append(gaps, "No outbound calls observed")
 	}
+	if summary.TransparentMode && summary.OutboundEventsExpected > 0 && summary.OutboundEventsObserved == 0 {
+		gaps = append(gaps, "Transparent redirect did not capture outbound traffic")
+	}
+	if summary.ProxyStatus != "BOUND" {
+		gaps = append(gaps, "Outbound stub proxy not bound")
+	}
+	if !summary.DependenciesExercised {
+		gaps = append(gaps, "Dependencies not exercised")
+	}
+	if summary.InjectionsApplied == "none" {
+		gaps = append(gaps, "Fault injections not exercised")
+	}
+	if summary.RunsExecuted < summary.RunsRequested {
+		gaps = append(gaps, "Not all requested runs executed")
+	}
+	return gaps
+}
 
-	stability := 0
-	if executed > 0 {
-		stability = int(float64(deterministic) / float64(executed) * 100.0)
-	}
-
+func buildSummaryLines(summary *ReplaySummary) []string {
 	lines := []string{
 		"--------------------------------",
 		"InfernoSIM Replay Summary",
 		"--------------------------------",
-		fmt.Sprintf("Outcome: %s", summaryOutcomeLabel(overallOutcome)),
-		fmt.Sprintf("Runs attempted: %d", input.RunsAttempted),
-		fmt.Sprintf("Runs executed: %d", executed),
-		fmt.Sprintf("Runs completed: %d", completed),
-		fmt.Sprintf("Deterministic runs: %d / %d", deterministic, executed),
-		fmt.Sprintf("Non-deterministic runs: %d", nonDeterministic),
-		fmt.Sprintf("Primary failure reason: %s", primaryFailureOrNone(primaryFailure)),
-		fmt.Sprintf("Actionable recommendation: %s", recommendationForOutcome(overallOutcome)),
+		fmt.Sprintf("Outcome: %s", summary.Outcome),
+		fmt.Sprintf("Runs requested: %d", summary.RunsRequested),
+		fmt.Sprintf("Runs executed: %d", summary.RunsExecuted),
+		fmt.Sprintf("Runs completed: %d", summary.RunsCompleted),
+		fmt.Sprintf("Deterministic runs: %d / %d", summary.DeterministicRuns, summary.RunsExecuted),
+		fmt.Sprintf("Inbound events replayed: %d", summary.InboundEventsReplayed),
+		fmt.Sprintf("Outbound events observed: %d", summary.OutboundEventsObserved),
+		fmt.Sprintf("Outbound events expected: %d", summary.OutboundEventsExpected),
+		fmt.Sprintf("Stub proxy status: %s", summary.ProxyStatus),
+		fmt.Sprintf("Injections applied: %s", summary.InjectionsApplied),
+		fmt.Sprintf("Dependencies exercised: %t", summary.DependenciesExercised),
+		fmt.Sprintf("Primary failure reason: %s", primaryFailureOrNone(summary.PrimaryFailureReason)),
+		fmt.Sprintf("Actionable recommendation: %s", summary.Recommendation),
 		"",
-		"Failure modes observed:",
+		"WHAT THIS RUN DID NOT TEST",
 	}
 
-	if len(failureCounts) == 0 {
+	if len(summary.WhatNotTested) == 0 {
 		lines = append(lines, "- None")
 	} else {
-		for _, entry := range failureModeLines(failureCounts, nonDetReasons) {
-			lines = append(lines, entry)
+		for _, item := range summary.WhatNotTested {
+			lines = append(lines, fmt.Sprintf("- %s", item))
 		}
 	}
 
-	lines = append(lines,
-		"",
-		fmt.Sprintf("Stability score: %d / 100", stability),
-		"",
-		"Interpretation:",
-	)
-
-	if deterministic == executed && executed > 0 {
-		lines = append(lines, "- OK Application works correctly")
-	} else {
-		lines = append(lines, "- OK Application works correctly")
-		lines = append(lines, "- WARN Behavior varies under identical traffic")
-	}
-	if failureCounts[DivergenceTimeExpanded] > 0 || failureCounts[DivergenceStalled] > 0 {
-		lines = append(lines, "- WARN Replay limits reached before completion")
-	}
-	if failureCounts[DivergenceInvalidConfig] > 0 || failureCounts[DivergenceInfraError] > 0 {
-		lines = append(lines, "- WARN Replay encountered configuration or infrastructure errors")
-	}
-
-	lines = append(lines,
-		"",
-		"Supported replay flags and modes:",
-		"- --runs (determinism check)",
-		"- --time-scale (forensic)",
-		"- --density (stress)",
-		"- --min-gap (safety)",
-		"- --inject latency/timeout (fault injection)",
-		"- --max-wall-time (safety)",
-		"- --max-idle-time (safety)",
-		"- --max-events (safety)",
-		"",
-		"Recommendations:",
-		"- Use replay for forensic debugging",
-		"- Use density mode for traffic tolerance",
-		"- Add request-level timeouts for dependencies",
-		"--------------------------------",
-	)
-
-	exitStatus := exitCodeFromOutcomes(outcomes)
-	return ReplaySummary{
-		Lines:      lines,
-		Outcomes:   outcomes,
-		ExitStatus: exitStatus,
-		Outcome:    overallOutcome,
-	}
-}
-
-func printReplaySummary(summary ReplaySummary) {
-	out := strings.Join(summary.Lines, "\n") + "\n"
-	fmt.Print(out)
-	_ = os.WriteFile("replay_result.txt", []byte(out), 0644)
-}
-
-func firstSignatureDivergence(ref []string, candidate []string) (int, string) {
-	min := len(ref)
-	if len(candidate) < min {
-		min = len(candidate)
-	}
-	for i := 0; i < min; i++ {
-		if ref[i] != candidate[i] {
-			return i, "response-based"
-		}
-	}
-	if len(ref) != len(candidate) {
-		return min, "ordering-based"
-	}
-	return -1, ""
-}
-
-func failureModeLines(counts map[ReplayDivergence]int, nonDetReasons map[string]int) []string {
-	type entry struct {
-		Label string
-		Count int
-	}
-	entries := []entry{}
-	for reason, count := range nonDetReasons {
-		if count == 0 {
-			continue
-		}
-		entries = append(entries, entry{
-			Label: reason,
-			Count: count,
-		})
-	}
-	for mode, count := range counts {
-		if count == 0 {
-			continue
-		}
-		entries = append(entries, entry{
-			Label: failureModeLabel(mode),
-			Count: count,
-		})
-	}
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].Label < entries[j].Label
-	})
-	lines := make([]string, 0, len(entries))
-	for _, e := range entries {
-		lines = append(lines, fmt.Sprintf("- %s (%d)", e.Label, e.Count))
-	}
+	lines = append(lines, "--------------------------------")
 	return lines
 }
 
-func failureModeLabel(mode ReplayDivergence) string {
-	switch mode {
-	case DivergenceNonDeterministic:
-		return "Response variance"
-	case DivergenceTimeExpanded:
-		return "Timing sensitivity"
-	case DivergenceStalled:
-		return "Stalled replay"
-	case DivergenceInvalidConfig:
-		return "Invalid config"
-	case DivergenceInfraError:
-		return "Infrastructure error"
-	default:
-		return string(mode)
+func injectionsAppliedLabel(rules []inject.Rule) string {
+	if len(rules) == 0 {
+		return "none"
 	}
+	hasLatency := false
+	hasTimeout := false
+	for _, r := range rules {
+		if r.AddLatency > 0 {
+			hasLatency = true
+		}
+		if r.Timeout > 0 {
+			hasTimeout = true
+		}
+	}
+	if hasLatency && hasTimeout {
+		return "latency+timeout"
+	}
+	if hasLatency {
+		return "latency"
+	}
+	if hasTimeout {
+		return "timeout"
+	}
+	return "none"
 }
 
-func summaryOutcomeLabel(mode ReplayDivergence) string {
-	switch mode {
-	case DivergenceDeterministic:
-		return "PASS"
-	case DivergenceNonDeterministic:
-		return "NON_DETERMINISTIC"
-	case DivergenceStalled:
-		return "STALLED"
-	case DivergenceTimeExpanded:
-		return "TIME_EXPANDED"
-	case DivergenceInvalidConfig:
-		return "INVALID_CONFIG"
-	case DivergenceInfraError:
-		return "INVALID_CONFIG"
+func recommendationForOutcome(outcome string) string {
+	switch outcome {
+	case "PASS_STRONG":
+		return "Keep using replay for regression detection."
+	case "PASS_WEAK":
+		return "Increase coverage by exercising dependencies and completing all runs."
+	case "FAIL_NON_DETERMINISTIC":
+		return "Disable retries and reduce concurrency for deterministic replay."
+	case "FAIL_INVALID_ENV":
+		return "Fix environment permissions, ports, or configuration and retry."
+	case "FAIL_PROXY_FORWARDING":
+		return "Ensure HTTP_PROXY points to InfernoSIM and outbound forwarding is reachable."
+	case "FAIL_TRANSPARENT_PROXY":
+		return "Verify iptables redirect to port 19000 and ensure NET_ADMIN is enabled."
+	case "FAIL_NO_COVERAGE":
+		return "Ensure outbound dependencies are reachable and instrumented."
+	case "FAIL_STALLED":
+		return "Reduce load or increase timeouts to avoid stalls."
 	default:
-		return string(mode)
+		return "Inspect logs for additional details."
 	}
 }
 
@@ -689,46 +628,39 @@ func primaryFailureOrNone(reason string) string {
 	return reason
 }
 
-func recommendationForOutcome(mode ReplayDivergence) string {
-	switch mode {
-	case DivergenceDeterministic:
-		return "Keep using replay for regression detection."
-	case DivergenceNonDeterministic:
-		return "Use replay for forensic analysis only and disable retries for deterministic replay."
-	case DivergenceTimeExpanded:
-		return "Reduce --runs, increase --density, or reduce --time-scale."
-	case DivergenceStalled:
-		return "Verify target service availability or increase --max-idle-time."
-	case DivergenceInvalidConfig:
-		return "Use only supported flags and inject keys."
-	default:
-		return "Inspect replay logs for infrastructure issues."
-	}
-}
-
-func mapNonDeterminismReason(reason string) string {
-	switch reason {
-	case "ordering-based":
-		return "response ordering variance"
-	case "response-based":
-		return "dependency variance"
-	default:
-		return "concurrent overlap"
-	}
-}
-
-func exitCodeFromOutcomes(outcomes []ReplayOutcome) int {
-	nonDeterministic := false
-	for _, o := range outcomes {
-		if o.DivergenceType == DivergenceInfraError || o.DivergenceType == DivergenceInvalidConfig {
-			return 2
-		}
-		if o.DivergenceType != DivergenceDeterministic {
-			nonDeterministic = true
-		}
-	}
-	if nonDeterministic {
+func exitCodeFromOutcome(outcome string) int {
+	switch outcome {
+	case "PASS_STRONG":
+		return 0
+	case "PASS_WEAK":
 		return 1
+	case "FAIL_NON_DETERMINISTIC":
+		return 1
+	default:
+		return 2
 	}
-	return 0
+}
+
+func installTransparentRedirect() (func(), error) {
+	rules := [][]string{
+		{"-t", "nat", "-A", "OUTPUT", "-p", "tcp", "--dport", "80", "-j", "REDIRECT", "--to-ports", "19000"},
+		{"-t", "nat", "-A", "OUTPUT", "-p", "tcp", "--dport", "443", "-j", "REDIRECT", "--to-ports", "19000"},
+	}
+	for _, args := range rules {
+		if err := execCommand("iptables", args...); err != nil {
+			return func() {}, err
+		}
+	}
+	return func() {
+		for i := len(rules) - 1; i >= 0; i-- {
+			_ = execCommand("iptables", append([]string{"-t", "nat", "-D", "OUTPUT"}, rules[i][4:]...)...)
+		}
+	}, nil
+}
+
+func execCommand(name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+	return cmd.Run()
 }

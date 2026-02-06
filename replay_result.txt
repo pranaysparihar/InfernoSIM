@@ -1,0 +1,22 @@
+--------------------------------
+InfernoSIM Replay Summary
+--------------------------------
+Outcome: FAIL_NO_COVERAGE
+Runs requested: 10
+Runs executed: 10
+Runs completed: 10
+Deterministic runs: 10 / 10
+Inbound events replayed: 10
+Outbound events observed: 0
+Outbound events expected: 56
+Stub proxy status: BOUND
+Injections applied: none
+Dependencies exercised: false
+Primary failure reason: none
+Actionable recommendation: Ensure outbound dependencies are reachable and instrumented.
+
+WHAT THIS RUN DID NOT TEST
+- No outbound calls observed
+- Dependencies not exercised
+- Fault injections not exercised
+--------------------------------

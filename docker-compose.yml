@@ -1,10 +1,22 @@
-version: "3.9"
-
 services:
-  infernosim:
-    build: .
+  infernosim-capture:
+    image: infernosim:local
     privileged: true
     volumes:
-      - .:/infernosim
-    working_dir: /infernosim
-    command: bash
+      - ./examples/nodeapp-deterministic:/incident
+    command: 
+        - "--mode=proxy"
+        - "--listen=:19000"
+        - "--log=/incident/outbound.log"
+    expose:
+      - "19000"
+
+  nodeapp:
+    image: node:18-alpine
+    environment:
+      - HTTP_PROXY=http://infernosim-capture:19000
+      - HTTPS_PROXY=http://infernosim-capture:19000
+    volumes:
+      - ./examples/nodeapp-deterministic:/app
+    working_dir: /app
+    command: node app.js

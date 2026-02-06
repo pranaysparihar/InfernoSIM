@@ -1,6 +1,7 @@
 package stubproxy
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"infernosim/pkg/event"
@@ -8,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -28,6 +30,11 @@ type StubProxy struct {
 	mu                 sync.Mutex
 	divergenceReasons  []string
 	unexpectedOutbound bool
+
+	observedLogger *event.Logger
+
+	forwardErrors  int64
+	forwardSuccess int64
 }
 
 func LoadOutboundEvents(path string) ([]event.Event, error) {
@@ -56,15 +63,20 @@ func LoadOutboundEvents(path string) ([]event.Event, error) {
 	return out, nil
 }
 
-func New(outboundLog string, rules []inject.Rule) (*StubProxy, error) {
+func New(outboundLog string, observedLog string, rules []inject.Rule) (*StubProxy, error) {
 	evs, err := LoadOutboundEvents(outboundLog)
 	if err != nil {
 		return nil, err
 	}
+	var observedLogger *event.Logger
+	if observedLog != "" {
+		observedLogger, _ = event.NewLogger(observedLog)
+	}
 	return &StubProxy{
-		events:   evs,
-		rules:    rules,
-		attempts: map[string]int{},
+		events:         evs,
+		rules:          rules,
+		attempts:       map[string]int{},
+		observedLogger: observedLogger,
 	}, nil
 }
 
@@ -112,6 +124,12 @@ func (s *StubProxy) divergence(expected event.Event, got *http.Request, idx int6
 func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	idx := atomic.LoadInt64(&s.i)
 	atomic.AddInt64(&s.seen, 1)
+
+	observedHost := r.Host
+	if r.URL != nil && r.URL.Host != "" {
+		observedHost = r.URL.Host
+	}
+	s.recordObserved(r.Method, observedHost, "", 0)
 
 	if int(idx) >= len(s.events) {
 		msg := fmt.Sprintf("DIVERGENCE at outbound event index=%d why=unexpected_outbound_call", idx)
@@ -174,8 +192,193 @@ func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(status)
 }
 
+func (s *StubProxy) forwardProxyRequest(w http.ResponseWriter, r *http.Request) error {
+	if r.URL == nil || !r.URL.IsAbs() {
+		return fmt.Errorf("absolute-form URL required")
+	}
+
+	scheme := r.URL.Scheme
+	host := r.URL.Host
+	if host == "" {
+		host = r.Host
+	}
+	if host == "" {
+		return fmt.Errorf("missing host")
+	}
+
+	targetURL := &url.URL{
+		Scheme:   scheme,
+		Host:     host,
+		Path:     r.URL.Path,
+		RawQuery: r.URL.RawQuery,
+	}
+	req, err := http.NewRequest(r.Method, targetURL.String(), r.Body)
+	if err != nil {
+		return err
+	}
+	copyHeaders(req.Header, r.Header)
+	req.Host = host
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			Proxy:               nil,
+			DisableKeepAlives:   true,
+			MaxIdleConns:        0,
+			MaxIdleConnsPerHost: 1,
+		},
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	copyHeaders(w.Header(), resp.Header)
+	w.WriteHeader(resp.StatusCode)
+	if _, err := io.Copy(w, resp.Body); err != nil {
+		return err
+	}
+
+	s.recordObserved(r.Method, host, "", 0, resp.StatusCode)
+	return nil
+}
+
+func (s *StubProxy) ServeTransparent(listener net.Listener) error {
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			return err
+		}
+		go s.handleTransparent(conn)
+	}
+}
+
+func (s *StubProxy) handleTransparent(conn net.Conn) {
+	defer conn.Close()
+
+	tcpConn, ok := conn.(*net.TCPConn)
+	if !ok {
+		return
+	}
+
+	ip, port, err := originalDst(tcpConn)
+	if err != nil {
+		return
+	}
+
+	reader := bufio.NewReader(conn)
+	req, err := http.ReadRequest(reader)
+	if err != nil {
+		s.recordObserved("UNKNOWN", "", ip, port)
+		return
+	}
+	_ = req.Body.Close()
+
+	host := req.Host
+	s.recordObserved(req.Method, host, ip, port)
+
+	idx := atomic.LoadInt64(&s.i)
+	atomic.AddInt64(&s.seen, 1)
+
+	if int(idx) >= len(s.events) {
+		msg := fmt.Sprintf("DIVERGENCE at outbound event index=%d why=unexpected_outbound_call", idx)
+		fmt.Fprintln(os.Stderr, msg)
+		s.mu.Lock()
+		s.divergenceReasons = append(s.divergenceReasons, msg)
+		s.unexpectedOutbound = true
+		s.mu.Unlock()
+		writeSimpleResponse(conn, http.StatusBadGateway)
+		return
+	}
+
+	expected := s.events[idx]
+	atomic.AddInt64(&s.i, 1)
+
+	dep := host
+	if dep == "" {
+		dep = fmt.Sprintf("%s:%d", ip, port)
+	}
+
+	rule := inject.Match(depKeyFromHost(dep), s.rules)
+
+	if rule != nil && rule.Timeout > 0 {
+		time.Sleep(rule.Timeout)
+		writeSimpleResponse(conn, http.StatusGatewayTimeout)
+		return
+	}
+	if rule != nil && rule.AddLatency > 0 {
+		time.Sleep(rule.AddLatency)
+	}
+	if rule != nil && rule.RetryLimit >= 0 {
+		s.attempts[dep]++
+		if s.attempts[dep] <= rule.RetryLimit {
+			writeSimpleResponse(conn, http.StatusBadGateway)
+			return
+		}
+	}
+
+	status := expected.Status
+	if status == 0 {
+		writeSimpleResponse(conn, http.StatusBadGateway)
+		return
+	}
+	writeSimpleResponse(conn, status)
+}
+
+func writeSimpleResponse(w io.Writer, status int) {
+	reason := http.StatusText(status)
+	if reason == "" {
+		reason = "Status"
+	}
+	fmt.Fprintf(w, "HTTP/1.1 %d %s\r\nContent-Length: 0\r\n\r\n", status, reason)
+}
+
+func depKeyFromHost(host string) string {
+	if strings.Contains(host, ":") {
+		h, _, err := net.SplitHostPort(host)
+		if err == nil {
+			return h
+		}
+	}
+	return host
+}
+
+func (s *StubProxy) recordObserved(method, host, ip string, port int, status ...int) {
+	if s.observedLogger == nil {
+		return
+	}
+	url := ""
+	if ip != "" && port > 0 {
+		url = fmt.Sprintf("tcp://%s:%d", ip, port)
+	} else if host != "" {
+		url = fmt.Sprintf("http://%s", host)
+	}
+	e := &event.Event{
+		ID:       event.GenerateID(),
+		Type:     "OutboundCall",
+		Method:   method,
+		URL:      url,
+		Service:  host,
+		Duration: 0,
+		Status:   0,
+	}
+	if len(status) > 0 {
+		e.Status = status[0]
+	}
+	_ = s.observedLogger.Write(e)
+}
+
 func (s *StubProxy) ObservedCount() int {
 	return int(atomic.LoadInt64(&s.seen))
+}
+
+func (s *StubProxy) ForwardErrors() int {
+	return int(atomic.LoadInt64(&s.forwardErrors))
+}
+
+func (s *StubProxy) ForwardSuccess() int {
+	return int(atomic.LoadInt64(&s.forwardSuccess))
 }
 
 func (s *StubProxy) ExpectedCount() int {
@@ -194,4 +397,27 @@ func (s *StubProxy) UnexpectedOutbound() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.unexpectedOutbound
+}
+
+var hopByHopHeaders = map[string]struct{}{
+	"Connection":          {},
+	"Proxy-Connection":    {},
+	"Keep-Alive":          {},
+	"Proxy-Authenticate":  {},
+	"Proxy-Authorization": {},
+	"Te":                  {},
+	"Trailer":             {},
+	"Transfer-Encoding":   {},
+	"Upgrade":             {},
+}
+
+func copyHeaders(dst, src http.Header) {
+	for k, vals := range src {
+		if _, skip := hopByHopHeaders[k]; skip {
+			continue
+		}
+		for _, v := range vals {
+			dst.Add(k, v)
+		}
+	}
 }

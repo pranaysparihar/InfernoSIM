@@ -1,4 +1,4 @@
-ok  	infernosim/cmd/agent	1.201s
+ok  	infernosim/cmd/agent	0.622s
 ?   	infernosim/examples/goapp	[no test files]
 ?   	infernosim/examples/goapp-deterministic	[no test files]
 ok  	infernosim/pkg/capture	(cached)

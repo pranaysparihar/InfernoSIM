@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     golang-go \
     libfaketime \
+    iptables \
     && rm -rf /var/lib/apt/lists/*
 
 ENV GOPATH=/go
@@ -22,3 +23,7 @@ COPY . .
 
 # Build Linux binary OUTSIDE the bind-mounted directory
 RUN go build -o /usr/local/bin/infernosim ./cmd/agent
+
+EXPOSE 18080 19000
+
+ENTRYPOINT ["/usr/local/bin/infernosim"]
