@@ -1,28 +1,42 @@
 --------------------------------
 InfernoSIM Replay Summary
 --------------------------------
-Outcome: FAIL_SLO_MISSED
-Runs requested: 10
-Runs executed: 6
-Runs completed: 5
-Fanout: 50
-Window: 30s
-Deterministic runs: 0 / 6
-Inbound events replayed: 300
-Inbound target: 500
-Outbound events observed: 100
-Outbound events expected: 500
-Outbound target: 500
-Elapsed: 30.03s
-Achieved rate (req/s): 9.99
-Target rate (req/s): 16.67
-Stub proxy status: BOUND
-Injections applied: latency
-Dependencies exercised: true
-Primary failure reason: replay exceeded wall-clock limit while awaiting responses
-Actionable recommendation: Lower fanout or increase window; then inspect app saturation limits and outbound dependency latency.
+Outcome: FAIL_INVALID_ENV
+Runs requested: 0
+Runs executed: 0
+Runs completed: 0
+Fanout: 0
+Window: 0s
+Deterministic runs: 0 / 0
+Inbound events replayed: 0
+Inbound target: 0
+Outbound events observed: 0
+Outbound events expected: 0
+Outbound target: 0
+Elapsed: 0s
+Achieved rate (req/s): 0.00
+Target rate (req/s): 0.00
+Stub proxy status: UNKNOWN
+Injections applied: none
+Dependencies exercised: false
+Primary failure reason: Flag parse error: flag provided but not defined: -profile
+Actionable recommendation: Fix environment permissions, ports, or configuration and retry.
+Limiting factor: APPLICATION_CPU
+
+SUSTAINABLE ENVELOPE (observed)
+- Max stable inbound rate: ~433.03 req/s (from previous pass)
+- Max stable fanout: ~2 (from previous pass)
+- Dependency p95 latency tolerance: unknown
+
+Change from last run:
+- Fanout: -2
+- Achieved rate: -100.0%
+- Outbound completion: -100.0%
 
 WHAT THIS RUN DID NOT TEST
-- Not all requested runs executed
-- Replay SLO not met for requested window
+- No inbound events replayed
+- No outbound calls observed
+- Outbound stub proxy not bound
+- Dependencies not exercised
+- Fault injections not exercised
 --------------------------------

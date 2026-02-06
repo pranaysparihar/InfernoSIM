@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -101,6 +102,7 @@ PHASE 3: REPLAY + SIMULATION
 */
 func runReplay(args []string) (code int) {
 	summary := NewReplaySummary()
+	summary.PreviousRun = loadReplaySnapshot()
 	defer func() {
 		if r := recover(); r != nil {
 			summary.PrimaryFailureReason = fmt.Sprintf("panic: %v", r)
@@ -272,6 +274,26 @@ type ReplaySummary struct {
 	Elapsed                time.Duration
 	AchievedRPS            float64
 	TargetRPS              float64
+	LimitingFactor         string
+	EnvelopeInboundRPS     string
+	EnvelopeFanout         string
+	EnvelopeLatency        string
+	DeltaFanout            string
+	DeltaRate              string
+	DeltaOutbound          string
+	MaxInjectedLatency     time.Duration
+	MaxInjectedTimeout     time.Duration
+	PreviousRun            *ReplaySnapshot
+}
+
+type ReplaySnapshot struct {
+	Timestamp        time.Time `json:"timestamp"`
+	Outcome          string    `json:"outcome"`
+	Fanout           int       `json:"fanout"`
+	AchievedRPS      float64   `json:"achieved_rps"`
+	OutboundObserved int       `json:"outbound_observed"`
+	OutboundTarget   int       `json:"outbound_target"`
+	MaxLatencyMS     int64     `json:"max_latency_ms"`
 }
 
 type replayExecutionInput struct {
@@ -302,6 +324,9 @@ func NewReplaySummary() ReplaySummary {
 
 func (s *ReplaySummary) Finalize() {
 	s.Outcome = computeOutcome(s)
+	s.LimitingFactor = deriveLimitingFactor(s)
+	deriveEnvelope(s)
+	deriveDelta(s)
 	s.Recommendation = recommendationForOutcome(s.Outcome)
 	s.WhatNotTested = computeWhatNotTested(s)
 	s.ExitStatus = exitCodeFromOutcome(s.Outcome)
@@ -312,6 +337,7 @@ func (s *ReplaySummary) Print() {
 	out := strings.Join(s.Lines, "\n") + "\n"
 	fmt.Print(out)
 	_ = os.WriteFile("replay_result.txt", []byte(out), 0644)
+	saveReplaySnapshot(s)
 }
 
 func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
@@ -368,6 +394,14 @@ func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 		return
 	}
 	summary.InjectionsApplied = injectionsAppliedLabel(rules)
+	for _, r := range rules {
+		if r.AddLatency > summary.MaxInjectedLatency {
+			summary.MaxInjectedLatency = r.AddLatency
+		}
+		if r.Timeout > summary.MaxInjectedTimeout {
+			summary.MaxInjectedTimeout = r.Timeout
+		}
+	}
 
 	// Do not append observed replay traffic into the captured outbound incident log.
 	stub, err := stubproxy.New(input.OutboundLog, "", rules)
@@ -645,6 +679,17 @@ func buildSummaryLines(summary *ReplaySummary) []string {
 		fmt.Sprintf("Dependencies exercised: %t", summary.DependenciesExercised),
 		fmt.Sprintf("Primary failure reason: %s", primaryFailureOrNone(summary.PrimaryFailureReason)),
 		fmt.Sprintf("Actionable recommendation: %s", summary.Recommendation),
+		fmt.Sprintf("Limiting factor: %s", summary.LimitingFactor),
+		"",
+		"SUSTAINABLE ENVELOPE (observed)",
+		fmt.Sprintf("- Max stable inbound rate: %s", summary.EnvelopeInboundRPS),
+		fmt.Sprintf("- Max stable fanout: %s", summary.EnvelopeFanout),
+		fmt.Sprintf("- Dependency p95 latency tolerance: %s", summary.EnvelopeLatency),
+		"",
+		"Change from last run:",
+		fmt.Sprintf("- Fanout: %s", summary.DeltaFanout),
+		fmt.Sprintf("- Achieved rate: %s", summary.DeltaRate),
+		fmt.Sprintf("- Outbound completion: %s", summary.DeltaOutbound),
 		"",
 		"WHAT THIS RUN DID NOT TEST",
 	}
@@ -712,6 +757,85 @@ func recommendationForOutcome(outcome string) string {
 	}
 }
 
+func deriveLimitingFactor(summary *ReplaySummary) string {
+	if summary.Outcome == "PASS_STRONG" || summary.Outcome == "PASS_WEAK" {
+		return "NONE"
+	}
+	if summary.MaxInjectedTimeout > 0 {
+		return "DEPENDENCY_TIMEOUT"
+	}
+	if summary.MaxInjectedLatency > 0 &&
+		(summary.OutboundEventsObserved < summary.InboundEventsReplayed ||
+			strings.Contains(summary.PrimaryFailureReason, "wall-clock")) {
+		return "OUTBOUND_DEPENDENCY_LATENCY"
+	}
+	if summary.OutboundEventsObserved == 0 && summary.ProxyStatus == "BOUND" {
+		return "PROXY_BACKPRESSURE"
+	}
+	if summary.OutboundEventsObserved > 0 && summary.OutboundEventsObserved < summary.InboundEventsReplayed {
+		return "CONNECTION_POOL_EXHAUSTION"
+	}
+	return "APPLICATION_CPU"
+}
+
+func deriveEnvelope(summary *ReplaySummary) {
+	summary.EnvelopeInboundRPS = "unknown"
+	summary.EnvelopeFanout = "unknown"
+	summary.EnvelopeLatency = "unknown"
+
+	if summary.Outcome == "PASS_STRONG" {
+		summary.EnvelopeInboundRPS = fmt.Sprintf("~%.2f req/s", summary.AchievedRPS)
+		summary.EnvelopeFanout = fmt.Sprintf("~%d", summary.Fanout)
+		if summary.MaxInjectedLatency > 0 {
+			summary.EnvelopeLatency = fmt.Sprintf("~%s", summary.MaxInjectedLatency)
+		} else {
+			summary.EnvelopeLatency = "baseline only (no latency injection in this run)"
+		}
+		return
+	}
+
+	if summary.PreviousRun != nil && strings.HasPrefix(summary.PreviousRun.Outcome, "PASS") {
+		summary.EnvelopeInboundRPS = fmt.Sprintf("~%.2f req/s (from previous pass)", summary.PreviousRun.AchievedRPS)
+		summary.EnvelopeFanout = fmt.Sprintf("~%d (from previous pass)", summary.PreviousRun.Fanout)
+		if summary.PreviousRun.MaxLatencyMS > 0 {
+			summary.EnvelopeLatency = fmt.Sprintf("~%dms (from previous pass)", summary.PreviousRun.MaxLatencyMS)
+		}
+	}
+}
+
+func deriveDelta(summary *ReplaySummary) {
+	summary.DeltaFanout = "n/a (no previous run)"
+	summary.DeltaRate = "n/a (no previous run)"
+	summary.DeltaOutbound = "n/a (no previous run)"
+
+	prev := summary.PreviousRun
+	if prev == nil {
+		return
+	}
+
+	fDelta := summary.Fanout - prev.Fanout
+	summary.DeltaFanout = fmt.Sprintf("%+d", fDelta)
+
+	if prev.AchievedRPS > 0 {
+		ratePct := ((summary.AchievedRPS - prev.AchievedRPS) / prev.AchievedRPS) * 100.0
+		summary.DeltaRate = fmt.Sprintf("%+.1f%%", ratePct)
+	}
+
+	currComp := completionRatio(summary.OutboundEventsObserved, summary.TargetOutbound)
+	prevComp := completionRatio(prev.OutboundObserved, prev.OutboundTarget)
+	if prevComp > 0 {
+		compPct := ((currComp - prevComp) / prevComp) * 100.0
+		summary.DeltaOutbound = fmt.Sprintf("%+.1f%%", compPct)
+	}
+}
+
+func completionRatio(observed, target int) float64 {
+	if target <= 0 {
+		return 0
+	}
+	return float64(observed) / float64(target)
+}
+
 func primaryFailureOrNone(reason string) string {
 	if reason == "" {
 		return "none"
@@ -766,4 +890,37 @@ func isExpectedShutdownErr(err error) bool {
 		return true
 	}
 	return strings.Contains(err.Error(), "use of closed network connection")
+}
+
+func replaySnapshotPath() string {
+	return ".infernosim_last_run.json"
+}
+
+func loadReplaySnapshot() *ReplaySnapshot {
+	b, err := os.ReadFile(replaySnapshotPath())
+	if err != nil {
+		return nil
+	}
+	var s ReplaySnapshot
+	if err := json.Unmarshal(b, &s); err != nil {
+		return nil
+	}
+	return &s
+}
+
+func saveReplaySnapshot(summary *ReplaySummary) {
+	s := ReplaySnapshot{
+		Timestamp:        time.Now().UTC(),
+		Outcome:          summary.Outcome,
+		Fanout:           summary.Fanout,
+		AchievedRPS:      summary.AchievedRPS,
+		OutboundObserved: summary.OutboundEventsObserved,
+		OutboundTarget:   summary.TargetOutbound,
+		MaxLatencyMS:     summary.MaxInjectedLatency.Milliseconds(),
+	}
+	b, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(replaySnapshotPath(), b, 0644)
 }
