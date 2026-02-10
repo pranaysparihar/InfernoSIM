@@ -10,7 +10,7 @@ Do not open public issues for security vulnerabilities.
 
 Please report privately by emailing:
 
-- security@infernosim.dev
+- pranaysparihar@gmail.com
 
 Include:
 
