@@ -1,0 +1,32 @@
+services:
+  nodeapp-deterministic:
+    profiles: ["example-node"]
+    image: node:18-alpine
+    depends_on:
+      infernosim-capture:
+        condition: service_healthy
+    environment:
+      - HTTP_PROXY=http://infernosim-capture:19000
+      - HTTPS_PROXY=http://infernosim-capture:19000
+      - OUTBOUND_PROXY_HOST=infernosim-capture
+      - OUTBOUND_PROXY_PORT=19000
+      - PORT=8083
+    volumes:
+      - ./examples/nodeapp-deterministic:/app
+    working_dir: /app
+    command: node app.js
+
+  goapp-deterministic:
+    profiles: ["example-go"]
+    image: golang:1.22-alpine
+    depends_on:
+      infernosim-capture:
+        condition: service_healthy
+    environment:
+      - HTTP_PROXY=http://infernosim-capture:19000
+      - HTTPS_PROXY=http://infernosim-capture:19000
+      - PORT=8084
+    volumes:
+      - ./examples/goapp-deterministic:/app
+    working_dir: /app
+    command: sh -lc "/usr/local/go/bin/go run main.go"

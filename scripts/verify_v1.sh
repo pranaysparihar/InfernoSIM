@@ -121,7 +121,7 @@ wait $PROXY4_PID 2>/dev/null || true
 
 # Assert Replay throws strict fault
 set +e
-OUT=$(./$BUILD_BIN replay --log=events_faults.log --target=http://localhost:8081 2>&1)
+OUT=$(./$BUILD_BIN strict-replay --log=events_faults.log --target=http://localhost:8081 2>&1)
 set -e
 
 if echo "$OUT" | grep -q "FAIL_SLO_MISSED"; then
@@ -137,7 +137,7 @@ echo "[8/8] Testing Payload Determinism vs Mutations (FAIL_NON_DETERMINISTIC)...
 sed 's/"bodySha256":"[a-f0-9]*"/"bodySha256":"d3adbeef11e7838f6edc27250b32cfa4c3629534a3334405da6a66951941765"/' events_http.log > mutated_events.log
 
 set +e
-OUT=$(./$BUILD_BIN replay --log=mutated_events.log --target=http://localhost:8081 2>&1)
+OUT=$(./$BUILD_BIN strict-replay --log=mutated_events.log --target=http://localhost:8081 2>&1)
 set -e
 
 if echo "$OUT" | grep -q "FAIL_NON_DETERMINISTIC"; then

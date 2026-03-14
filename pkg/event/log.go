@@ -1,53 +1,52 @@
 package event
 
 import (
-    "bufio"
-    "encoding/json"
-    "os"
-    "sync"
+	"bufio"
+	"encoding/json"
+	"os"
+	"sync"
 )
 
-// Logger writes events to a file (thread-safe).
 type Logger struct {
-    file   *os.File
-    writer *bufio.Writer
-    mu     sync.Mutex
+	mu  sync.Mutex
+	f   *os.File
+	w   *bufio.Writer
+	enc *json.Encoder
 }
 
-// NewLogger opens the given file (creating it if needed) and returns a Logger.
-func NewLogger(filePath string) (*Logger, error) {
-    f, err := os.Create(filePath)
-    if err != nil {
-        return nil, err
-    }
-    return &Logger{
-        file:   f,
-        writer: bufio.NewWriter(f),
-    }, nil
+func NewLogger(path string) (*Logger, error) {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return nil, err
+	}
+
+	w := bufio.NewWriterSize(f, 1<<20) // 1MB buffer
+	enc := json.NewEncoder(w)
+	// IMPORTANT: json.Encoder.Encode() always appends '\n'
+	enc.SetEscapeHTML(false)
+
+	return &Logger{
+		f:   f,
+		w:   w,
+		enc: enc,
+	}, nil
 }
 
-// Write writes an Event to the log as a JSON line.
-func (l *Logger) Write(evt *Event) {
-    // Marshal the event to JSON
-    data, err := json.Marshal(evt)
-    if err != nil {
-        // If marshal fails, we still attempt to proceed (or could log to stderr)
-        return
-    }
-    l.mu.Lock()
-    defer l.mu.Unlock()
-    l.writer.Write(data)
-    l.writer.WriteByte('\n')
-    l.writer.Flush()
+func (l *Logger) Write(e *Event) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if err := l.enc.Encode(e); err != nil {
+		return err
+	}
+	// Flush so the file is always valid JSONL even if the process crashes later.
+	return l.w.Flush()
 }
 
-// Close flushes and closes the underlying file.
 func (l *Logger) Close() error {
-    l.mu.Lock()
-    defer l.mu.Unlock()
-    // Flush any buffered data
-    if err := l.writer.Flush(); err != nil {
-        return err
-    }
-    return l.file.Close()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	_ = l.w.Flush()
+	return l.f.Close()
 }
