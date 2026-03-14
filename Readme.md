@@ -34,7 +34,6 @@ It captures inbound and outbound HTTP traffic as JSONL logs, then replays real i
 
 ## Build
 
->>>>>>> origin/main
 ```bash
 go build -o infernosim ./cmd/agent
 ```
