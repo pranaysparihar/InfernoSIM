@@ -1,0 +1,2 @@
+{"id":"7667d8bd54b0fbef97898684595318ec","type":"OutboundCall","timestamp":"2026-02-27T06:17:44.476663Z","method":"CONNECT","url":"localhost:8443","status":200,"duration":33704000,"error":"MITM Tunnel Established"}
+{"id":"ccc321753edd43ac0d02b4ba9de7c8a6","type":"OutboundCall","timestamp":"2026-02-27T06:17:44.476804Z","method":"GET","url":"https://localhost:8443/api/secure","status":200,"duration":2713000,"headers":{"Accept-Encoding":["gzip"],"User-Agent":["Go-http-client/1.1"]},"bytesReceived":27}

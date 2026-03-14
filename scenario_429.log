@@ -1,0 +1,1 @@
+{"id":"88b2f4e1bb8ccd5d146cfe8fbbf7f08d","type":"OutboundCall","timestamp":"2026-03-13T16:04:13.253443Z","method":"GET","url":"http://api.external.com/v1/data","status":429,"duration":8000,"injectionApplied":"status=429"}

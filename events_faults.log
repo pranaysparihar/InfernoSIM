@@ -1,0 +1,1 @@
+{"id":"c25f0ac10426203ddae4323d2bd3b337","type":"OutboundCall","timestamp":"2026-02-27T06:17:48.516916Z","method":"GET","url":"http://localhost:8081/api/test?q=FailTest","status":503,"duration":18000,"injectionApplied":"status=503"}

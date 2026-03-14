@@ -18,7 +18,9 @@ func main() {
 			q = "world"
 		}
 
-		log.Println("Received request:", q)
+		bodyBytes, _ := io.ReadAll(r.Body)
+
+		log.Println("Received request:", q, "with payload size:", len(bodyBytes))
 
 		time.Sleep(100 * time.Millisecond)
 
