@@ -1,1 +1,0 @@
-{"id":"e1c1e38ceaf349ac23fd1959e99c1378","type":"OutboundCall","timestamp":"2026-03-14T01:05:12.917136Z","method":"GET","url":"https://httpbin.org:443/get?show_env=1","status":200,"duration":1551837000,"headers":{"Accept":["*/*"],"User-Agent":["curl/8.7.1"]},"bytesReceived":432}

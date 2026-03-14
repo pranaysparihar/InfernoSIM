@@ -4,24 +4,32 @@ set -e
 # Constants for test strictness
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$DIR")"
-BUILD_BIN="infernosim-agent"
+BUILD_BIN="build/infernosim-agent"
+TEST_GOAPP="build/test-goapp"
+TEST_GRPCAPP="build/test-grpcapp"
+TEST_HTTPSAPP="build/test-httpsapp"
 
 echo "====================================="
 echo " InfernoSIM E2E Validation Suite v1 "
 echo "====================================="
+echo "====================================="
 
 cd "$PROJECT_ROOT"
+
+# Ensure cleanup of testing artifacts
+trap 'rm -rf build events_*.log mutated_events.log proxy_https.log client_https.log' EXIT
 
 echo "[1/7] Running Unit Tests..."
 go test ./...
 
 echo "[2/7] Building Agent and Test Binaries..."
+mkdir -p build
 go build -o $BUILD_BIN ./cmd/agent
-go build -o test-goapp examples/goapp/main.go
-go build -o test-grpcapp examples/grpcapp/main.go
-go build -o test-httpsapp examples/httpsapp/main.go
+go build -o $TEST_GOAPP examples/goapp/main.go
+go build -o $TEST_GRPCAPP examples/grpcapp/main.go
+go build -o $TEST_HTTPSAPP examples/httpsapp/main.go
 
-# Cleanup
+# Cleanup (in case it existed before trap bounds)
 rm -f events_*.log
 
 echo "[3/7] Generating CA for HTTPS Tests (if missing)..."
@@ -33,7 +41,7 @@ wait $INIT_PID 2>/dev/null || true
 
 # Test 1: Bounded HTTP capture
 echo "[4/7] Testing Bounded HTTP Capture & HTTP Pipeline (Proxy)..."
-HTTP_PROXY=http://localhost:9000 PORT=8081 ./test-goapp >/dev/null 2>&1 &
+HTTP_PROXY=http://localhost:9000 PORT=8081 ./$TEST_GOAPP >/dev/null 2>&1 &
 APP_PID=$!
 ./$BUILD_BIN --mode=proxy --listen=:9000 --log=events_http.log >/dev/null 2>&1 &
 PROXY_PID=$!
@@ -54,13 +62,13 @@ echo "✓ Bounded HTTP Capture Verified"
 
 # Test 2: gRPC Unary
 echo "[5/7] Testing gRPC Unary Tracking..."
-./test-grpcapp --mode=server --addr=:50051 >/dev/null 2>&1 &
+./$TEST_GRPCAPP --mode=server --addr=:50051 >/dev/null 2>&1 &
 GRPC_S_PID=$!
 ./$BUILD_BIN --mode=proxy --listen=:9000 --log=events_grpc.log >/dev/null 2>&1 &
 PROXY2_PID=$!
 
 sleep 2
-HTTP_PROXY=http://localhost:9000 ./test-grpcapp --mode=client --target=localhost:50051 --msg=HelloGRPC >/dev/null 2>&1 || true
+HTTP_PROXY=http://localhost:9000 ./$TEST_GRPCAPP --mode=client --target=localhost:50051 --msg=HelloGRPC >/dev/null 2>&1 || true
 
 sleep 2
 kill $GRPC_S_PID $PROXY2_PID 2>/dev/null || true
@@ -74,14 +82,14 @@ echo "✓ gRPC Visibility Verified"
 
 # Test 3: MitM Deep Target Inspection
 echo "[6/7] Testing Outbound MITM Decryption (HTTPS CONNECT)..."
-./test-httpsapp --mode=server --addr=:8443 >/dev/null 2>&1 &
+./$TEST_HTTPSAPP --mode=server --addr=:8443 >/dev/null 2>&1 &
 HTTPS_S_PID=$!
 
 ./$BUILD_BIN --mode=proxy --listen=:9000 --https-mode=mitm --log=events_https.log >proxy_https.log 2>&1 &
 PROXY3_PID=$!
 
 sleep 2
-./test-httpsapp --mode=client --addr=:8443 --proxy=http://localhost:9000 >client_https.log 2>&1 || true
+./$TEST_HTTPSAPP --mode=client --addr=:8443 --proxy=http://localhost:9000 >client_https.log 2>&1 || true
 
 sleep 2
 kill $HTTPS_S_PID $PROXY3_PID 2>/dev/null || true
@@ -95,7 +103,7 @@ echo "✓ MITM HTTP Pipeline Decryption Verified"
 
 # Test 4: Search Engine Constraint Failure Under Severe Injection
 echo "[7/7] Testing Fault Injection and Search Constraint Mapping..."
-./test-goapp >/dev/null 2>&1 &
+./$TEST_GOAPP >/dev/null 2>&1 &
 APP2_PID=$!
 
 # Execute Search bounded by SLO injection
@@ -108,8 +116,8 @@ sleep 2
 curl -s -x "http://localhost:9000" "http://localhost:8081/api/test?q=FailTest" >/dev/null
 sleep 2
 
-kill $APP2_PID $PROXY4_PID 2>/dev/null || true
-wait
+kill $PROXY4_PID 2>/dev/null || true
+wait $PROXY4_PID 2>/dev/null || true
 
 # Assert Replay throws strict fault
 set +e
@@ -140,9 +148,12 @@ else
     exit 1
 fi
 
+kill $APP2_PID 2>/dev/null || true
+wait $APP2_PID 2>/dev/null || true
+
 # Test 6: Search Envelope Boundaries Extrapolating Fault Loads
 echo "[9/9] Testing Envelope Fanout Boundary Mapping..."
-./test-goapp >/dev/null 2>&1 &
+./$TEST_GOAPP >/dev/null 2>&1 &
 APP3_PID=$!
 sleep 2
 
