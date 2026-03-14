@@ -1,6 +1,6 @@
 # InfernoSIM
 
-<<<<<<< HEAD
+
 InfernoSIM is not just a proxy—it's a strict deterministic chaos engineering, traffic interception, and CI/CD validation engine. Designed for modern microservices architectures, it enforces strict API contracts, breaks your local services before they break in production, and automatically discovers the performance limits of your infrastructure.
 
 ---
@@ -39,7 +39,7 @@ It captures inbound and outbound HTTP traffic as JSONL logs, then replays real i
 go build -o infernosim ./cmd/agent
 ```
 
-<<<<<<< HEAD
+
 ### 1. Bounded HTTP Body Capture
 InfernoSIM cleanly captures both incoming and outgoing payloads without destroying memory. It strictly bounds bodies to 256KB by default. Captured payloads are automatically Base64-encoded and fingerprinted with a SHA-256 hash.
 
@@ -266,4 +266,4 @@ Replay summary includes:
 ## License
 
 Add an OSS license file (`LICENSE`) before public release.
->>>>>>> origin/main
+
