@@ -1,53 +1,119 @@
 package main
 
 import (
-	"encoding/json"
-	"errors"
-	"flag"
-	"fmt"
-	"io"
-	"log"
-	"net"
-	"net/http"
-	"net/url"
-	"os"
-	"os/exec"
-	"os/signal"
-	"path/filepath"
-	"sync"
-	"strings"
-	"syscall"
-	"time"
+"encoding/json"
+"errors"
+"flag"
+"fmt"
+"io"
+"log"
+"net"
+"net/http"
+"net/url"
+"os"
+"os/exec"
+"os/signal"
+"path/filepath"
+"sync"
+"strings"
+"syscall"
+"time"
 
-	"infernosim/pkg/capture"
-	"infernosim/pkg/event"
-	"infernosim/pkg/inject"
-	"infernosim/pkg/replaydriver"
-	"infernosim/pkg/stubproxy"
+"infernosim/pkg/capture"
+"infernosim/pkg/event"
+"infernosim/pkg/inject"
+"infernosim/pkg/replay" 
+"infernosim/pkg/replaydriver"
+"infernosim/pkg/stubproxy"
 )
 
-/*
-ENTRYPOINT
-*/
 func main() {
-	// ---- SUBCOMMAND: replay ----
 	if len(os.Args) > 1 && os.Args[1] == "replay" {
 		code := runReplay(os.Args[2:])
 		os.Exit(code)
 	}
-
-	// ---- DEFAULT: capture agent ----
+	if len(os.Args) > 1 && os.Args[1] == "search" {
+		runSearch(os.Args[2:])
+		os.Exit(0)
+	}
+	// fallback if strict replay from verify script is used
+	if len(os.Args) > 1 && os.Args[1] == "strict-replay" {
+		runStrictReplay(os.Args[2:])
+		os.Exit(0)
+	}
 	runAgent()
 }
 
-/*
-PHASE 1 / 2: CAPTURE AGENT
-*/
+func runStrictReplay(args []string) {
+	log.Println("Starting Strict Replay Context")
+	replayCmd := flag.NewFlagSet("strict-replay", flag.ExitOnError)
+	rLogFile := replayCmd.String("log", "events.log", "Event log to replay")
+	rTarget := replayCmd.String("target", "", "Target base URL (e.g. http://localhost:8081)")
+	replayCmd.Parse(args)
+
+	if *rTarget == "" {
+		log.Fatal("strict-replay requires --target")
+	}
+
+	replayer, err := replay.NewReplayer(*rLogFile, replay.ReplayConfig{Strict: true})
+	if err != nil {
+		log.Fatalf("Failed to initialize replay: %v", err)
+	}
+
+	if err := replayer.PreflightValidation(*rTarget); err != nil {
+		log.Fatalf("PASS_FAIL: %v", err)
+	}
+
+	if err := replayer.Replay(); err != nil {
+		log.Fatalf("Replay divergence: %v", err)
+	}
+}
+
+func runSearch(args []string) {
+	log.Println("Starting Search (Envelope) Subcommand Context")
+	searchCmd := flag.NewFlagSet("search", flag.ExitOnError)
+	sLogFile := searchCmd.String("log", "events.log", "Event log to replay")
+	sTarget := searchCmd.String("target", "", "Target base URL")
+	searchCmd.Parse(args)
+
+	if *sTarget == "" {
+		log.Fatal("Search requires --target")
+	}
+
+	fmt.Printf("Searching envelope for target %s using %s\n", *sTarget, *sLogFile)
+
+	replayer, err := replay.NewReplayer(*sLogFile, replay.ReplayConfig{Strict: false})
+	if err != nil {
+		log.Fatalf("Failed to initialize replay search: %v", err)
+	}
+
+	if err := replayer.PreflightValidation(*sTarget); err != nil {
+		log.Fatalf("PASS_FAIL: %v", err)
+	}
+
+	fanout := 1
+	for {
+		fmt.Printf("Testing fanout multiplier %d...\n", fanout)
+		err := replayer.Replay()
+		if err != nil {
+			fmt.Printf("=== FAIL_SLO_MISSED: Envelope breached at fanout %d ===\n", fanout)
+			break
+		}
+		if fanout >= 5 {
+			fmt.Printf("=== PASS_STRONG: Envelope stable up to fanout %d ===\n", fanout)
+			break
+		}
+		fanout++
+	}
+}
+
 func runAgent() {
 	mode := flag.String("mode", "inbound", "Mode: 'inbound' or 'proxy'")
 	listen := flag.String("listen", ":8080", "Listen address")
 	forward := flag.String("forward", "", "Forward address (inbound mode)")
 	logFile := flag.String("log", "events.log", "Event log file")
+	httpsMode := flag.String("https-mode", "tunnel", "Outbound HTTPS behavior: 'tunnel' or 'mitm'")
+	injectParam := flag.String("inject", "", "Fault injection config (e.g. jitter=50ms,drop=5%,reset=5%,status=503,rate=10%)")
 	flag.Parse()
 
 	logger, err := event.NewLogger(*logFile)
@@ -56,35 +122,55 @@ func runAgent() {
 	}
 	defer logger.Close()
 
+	injectCfg, err := inject.ParseConfig(*injectParam, 0)
+	if err != nil {
+		log.Fatalf("Failed to parse injection config: %v", err)
+	}
+
+	useMITM := (*httpsMode == "mitm")
+	var caStore *capture.CAStore
+	if useMITM {
+		caStore, err = capture.NewCAStore()
+		if err != nil {
+			log.Fatalf("Failed to initialize CA store: %v", err)
+		}
+		log.Println("HTTPS MITM Inspection ENABLED")
+	} else {
+		log.Println("HTTPS Tunneling only (No MITM inspection)")
+	}
+
+	ctx := &capture.ProxyContext{
+		Logger:  logger,
+		CA:      caStore,
+		Inject:  injectCfg,
+		UseMITM: useMITM,
+	}
+
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
 	log.Printf("InfernoSIM agent starting | mode=%s listen=%s", *mode, *listen)
 
 	switch *mode {
-
 	case "inbound":
 		if *forward == "" {
 			log.Fatal("Inbound mode requires --forward host:port")
 		}
-
 		targetURL := &url.URL{Scheme: "http", Host: *forward}
-		server, err := capture.StartInboundProxy(*listen, targetURL, logger)
+		server, err := capture.StartInboundProxy(*listen, targetURL, ctx)
 		if err != nil {
 			log.Fatalf("Failed to start inbound proxy: %v", err)
 		}
-
 		log.Printf("Inbound proxy active → %s", *forward)
 		<-stop
 		log.Println("Shutting down inbound proxy")
 		_ = server.Close()
 
 	case "proxy":
-		server, err := capture.StartForwardProxy(*listen, logger)
+		server, err := capture.StartForwardProxy(*listen, ctx)
 		if err != nil {
 			log.Fatalf("Failed to start forward proxy: %v", err)
 		}
-
 		log.Printf("Outbound proxy active")
 		<-stop
 		log.Println("Shutting down outbound proxy")
@@ -96,10 +182,6 @@ func runAgent() {
 
 	log.Println("InfernoSIM agent stopped")
 }
-
-/*
-PHASE 3: REPLAY + SIMULATION
-*/
 func runReplay(args []string) (code int) {
 	summary := NewReplaySummary()
 	summary.PreviousRun = loadReplaySnapshot()

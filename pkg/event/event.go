@@ -22,6 +22,20 @@ type Event struct {
 	Headers map[string][]string `json:"headers,omitempty"`
 	BodySize int64              `json:"bodySize,omitempty"`
 	TraceID  string             `json:"traceId,omitempty"`
+
+	// Payload tracking
+	BodyB64       string `json:"bodyB64,omitempty"`
+	BodySha256    string `json:"bodySha256,omitempty"`
+	BodyTruncated bool   `json:"bodyTruncated,omitempty"`
+	BytesSent     int64  `json:"bytesSent,omitempty"`
+	BytesReceived int64  `json:"bytesReceived,omitempty"`
+
+	// gRPC specific
+	GrpcServiceMethod string `json:"grpcServiceMethod,omitempty"`
+	GrpcStatus        string `json:"grpcStatus,omitempty"`
+
+	// Fault injection flag (from pkg/inject)
+	InjectionApplied string `json:"injectionApplied,omitempty"`
 }
 
 // GenerateID returns a random hex string ID

@@ -1,3 +1,21 @@
+<<<<<<< HEAD
+# Compiled binaries
+infernosim
+test-*
+infernosim-*
+build/
+bin/
+
+# Log files
+*.log
+
+# Temporary testing output
+*.txt
+
+# Local CA and certs
+ca/
+~/.infernosim/
+=======
 # Binaries
 infernosim
 infernosim-*
@@ -15,3 +33,4 @@ deterministic-replay-output.txt
 
 # Node
 node_modules/
+>>>>>>> origin/main
