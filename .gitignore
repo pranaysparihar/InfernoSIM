@@ -7,10 +7,21 @@ bin/
 
 # Log files
 *.log
+*.out
 
 # Temporary testing output
 *.txt
+replay_result.txt
+verify_result.txt
+deterministic-replay-output.txt
+.infernosim_last_run.json
 
 # Local CA and certs
 ca/
 ~/.infernosim/
+
+# OS/editor
+.DS_Store
+
+# Node
+node_modules/
