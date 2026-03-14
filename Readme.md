@@ -106,7 +106,7 @@ Every event is entirely self-contained within flat JSON files. Because payloads 
 
 ### 9. Granular SLA Telemetry Tracking
 Every single intercepted event explicitly tracks `bytesSent`, `bytesReceived`, and precise millisecond `duration`. It acts as a lightweight observability agent without needing a massive Datadog or Prometheus setup.
-=======
+
 ## Deterministic Compose Smoke Test
 
 Use the built-in smoke workflow for runtime validation without ad-hoc package installs:
