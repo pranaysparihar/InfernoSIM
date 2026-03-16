@@ -1,30 +1,30 @@
 package main
 
 import (
-"encoding/json"
-"errors"
-"flag"
-"fmt"
-"io"
-"log"
-"net"
-"net/http"
-"net/url"
-"os"
-"os/exec"
-"os/signal"
-"path/filepath"
-"sync"
-"strings"
-"syscall"
-"time"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"log"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"os/exec"
+	"os/signal"
+	"path/filepath"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
 
-"infernosim/pkg/capture"
-"infernosim/pkg/event"
-"infernosim/pkg/inject"
-"infernosim/pkg/replay" 
-"infernosim/pkg/replaydriver"
-"infernosim/pkg/stubproxy"
+	"infernosim/pkg/capture"
+	"infernosim/pkg/event"
+	"infernosim/pkg/inject"
+	"infernosim/pkg/replay"
+	"infernosim/pkg/replaydriver"
+	"infernosim/pkg/stubproxy"
 )
 
 func main() {
@@ -392,6 +392,7 @@ type ReplaySummary struct {
 	InboundEventsReplayed  int
 	OutboundEventsObserved int
 	OutboundEventsExpected int
+	OutboundVerification   string
 	ProxyStatus            string
 	InjectionsApplied      string
 	DependenciesExercised  bool
@@ -499,10 +500,11 @@ func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 		summary.Outcome = "FAIL_INVALID_ENV"
 		return
 	}
-	if _, err := os.Stat(input.OutboundLog); err != nil {
-		summary.PrimaryFailureReason = fmt.Sprintf("Outbound log not found: %s (%v)", input.OutboundLog, err)
-		summary.Outcome = "FAIL_INVALID_ENV"
-		return
+	if _, err := os.Stat(input.OutboundLog); err == nil {
+		summary.OutboundVerification = "enabled"
+	} else {
+		summary.OutboundVerification = "skipped (no outbound.log)"
+		fmt.Println("note: outbound.log not found — running inbound-only replay")
 	}
 
 	events, err := replaydriver.LoadInboundEvents(input.InboundLog)
@@ -829,6 +831,7 @@ func buildSummaryLines(summary *ReplaySummary) []string {
 		fmt.Sprintf("Outbound events observed: %d", summary.OutboundEventsObserved),
 		fmt.Sprintf("Outbound events expected: %d", summary.OutboundEventsExpected),
 		fmt.Sprintf("Outbound target: %d", summary.TargetOutbound),
+		fmt.Sprintf("Outbound verification: %s", summary.OutboundVerification),
 		fmt.Sprintf("Elapsed: %s", summary.Elapsed.Round(time.Millisecond)),
 		fmt.Sprintf("Achieved rate (req/s): %.2f", summary.AchievedRPS),
 		fmt.Sprintf("Target rate (req/s): %.2f", summary.TargetRPS),
