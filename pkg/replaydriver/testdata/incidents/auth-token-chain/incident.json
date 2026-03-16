@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-03-16T00:00:00Z",
+  "env": "test",
+  "host": "api.example.com",
+  "listen": ":8080",
+  "forward": "localhost:8081",
+  "inbound_count": 2,
+  "outbound_count": 0
+}

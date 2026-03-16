@@ -43,26 +43,37 @@ func InspectIncident(inboundLog string) (InspectResult, error) {
 	sessionSet := make(map[string]struct{})
 	resourceIDSet := make(map[string]struct{})
 
-	// Track which locators have a prior producer (for chain counting).
-	producedLocators := make(map[string]struct{})
+	// Track produced VALUES across all prior events (for chain detection).
+	producedValues := make(map[string]struct{})
 	chainCount := 0
 
 	for i, e := range events {
 		consumed := IdentifyConsumers(e)
 
-		// Extract produced values from the captured response body (BodyB64).
+		// A dependency chain exists when a consumed value was produced by a prior event.
+		for _, c := range consumed {
+			if _, ok := producedValues[c.Value]; ok {
+				chainCount++
+				break
+			}
+		}
+
+		// Extract produced values from the captured response body + headers.
 		var produced []ProducedValue
 		if e.BodyB64 != "" {
 			if body, err := base64.StdEncoding.DecodeString(e.BodyB64); err == nil {
+				// Copy all event headers to fakeResp so cookies and Content-Type are available.
 				fakeResp := &http.Response{Header: make(http.Header)}
-				if ct := e.Headers["Content-Type"]; len(ct) > 0 {
-					fakeResp.Header.Set("Content-Type", ct[0])
+				for k, vals := range e.Headers {
+					for _, v := range vals {
+						fakeResp.Header.Add(k, v)
+					}
 				}
 				produced = ExtractResponseValues(fakeResp, body)
 			}
 		}
 
-		// Count unique value kinds.
+		// Count unique value kinds and register produced values for future chain detection.
 		for _, p := range produced {
 			switch p.Kind {
 			case ValueKindAuthToken:
@@ -72,15 +83,7 @@ func InspectIncident(inboundLog string) (InspectResult, error) {
 			case ValueKindResourceID:
 				resourceIDSet[p.Value] = struct{}{}
 			}
-			producedLocators[p.Locator] = struct{}{}
-		}
-
-		// A dependency chain exists when a consumed value was previously produced.
-		for _, c := range consumed {
-			if _, ok := producedLocators[c.Locator]; ok {
-				chainCount++
-				break
-			}
+			producedValues[p.Value] = struct{}{}
 		}
 
 		// Shorten URL to path only for readability.
