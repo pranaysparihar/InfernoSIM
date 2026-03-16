@@ -1,0 +1,5 @@
+FROM alpine:latest
+RUN apk --no-cache add ca-certificates libfaketime iptables
+COPY dist/infernosim_linux_amd64_v1/infernosim /usr/local/bin/infernosim
+EXPOSE 18080 19000
+ENTRYPOINT ["/usr/local/bin/infernosim"]

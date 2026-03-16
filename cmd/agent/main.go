@@ -27,13 +27,32 @@ import (
 	"infernosim/pkg/stubproxy"
 )
 
+// Version variables set by goreleaser during build
+var (
+	version   = "dev"
+	commit    = "none"
+	date      = "unknown"
+	versionBy = "goreleaser"
+)
+
 func main() {
 	if len(os.Args) < 2 {
 		printUsage()
 		os.Exit(1)
 	}
+
+	// Top-level flags
 	switch os.Args[1] {
-	case "record":
+	case "--version", "-v":
+		fmt.Printf("infernosim version %s, commit %s, built at %s by %s\n", version, commit, date, versionBy)
+		os.Exit(0)
+	case "--help", "-h":
+		printUsage()
+		os.Exit(0)
+	}
+
+	switch os.Args[1] {
+	case "capture", "record":
 		os.Exit(runRecord(os.Args[2:]))
 	case "replay":
 		os.Exit(runReplay(os.Args[2:]))
@@ -43,6 +62,9 @@ func main() {
 		os.Exit(runVerify(os.Args[2:]))
 	case "diff":
 		os.Exit(runDiff(os.Args[2:]))
+	case "version":
+		fmt.Printf("infernosim version %s, commit %s, built at %s by %s\n", version, commit, date, versionBy)
+		os.Exit(0)
 	// legacy commands kept for backwards compatibility
 	case "search":
 		runSearch(os.Args[2:])
@@ -61,11 +83,29 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, `Usage: infernosim <command> [flags]
 
 Commands:
-  record   Capture incident traffic (starts an inbound proxy)
+  capture  Capture incident traffic (starts an inbound proxy) [alias: record]
   inspect  Analyse an incident bundle (dependency graph, timeline)
   verify   Check replay safety of an incident bundle
   replay   Replay a captured incident against a target
-  diff     Replay and show divergences from the captured baseline`)
+  diff     Replay and show divergences from the captured baseline
+  version  Print version information
+
+General Flags:
+  -v, --version  Print version and exit
+  -h, --help     Show this help message
+
+Examples:
+  # Capture production traffic to an incident directory
+  infernosim capture --forward localhost:8080 --out ./incident-001
+
+  # Deep dive into captured dependencies
+  infernosim inspect ./incident-001
+
+  # Replay with state-aware substitution and diff analysis
+  infernosim replay ./incident-001 --target http://staging-api:8080 --diff
+
+  # Find the architectural breaking point (Auto-Envelope Search)
+  infernosim search --log ./incident-001/inbound.log --target http://staging-api:8080`)
 }
 
 func runStrictReplay(args []string) {

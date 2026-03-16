@@ -1,28 +1,30 @@
-FROM ubuntu:22.04
+# Build stage
+ARG LDFLAGS
+FROM golang:1.25-alpine AS builder
 
-ENV DEBIAN_FRONTEND=noninteractive
+WORKDIR /app
 
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    curl \
-    git \
-    ca-certificates \
-    pkg-config \
-    golang-go \
-    libfaketime \
-    iptables \
-    && rm -rf /var/lib/apt/lists/*
+# Copy go mod and sum files
+COPY go.mod go.sum ./
 
-ENV GOPATH=/go
-ENV PATH=$PATH:/go/bin
+# Download dependencies
+RUN go mod download
 
-WORKDIR /infernosim
-
-# Copy source
+# Copy source code
 COPY . .
 
-# Build Linux binary OUTSIDE the bind-mounted directory
-RUN go build -o /usr/local/bin/infernosim ./cmd/agent
+# Build the binary
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o infernosim ./cmd/agent
+
+# Final stage
+FROM alpine:latest
+
+RUN apk --no-cache add ca-certificates libfaketime iptables
+
+WORKDIR /app
+
+# Copy the pre-built binary from builder stage
+COPY --from=builder /app/infernosim /usr/local/bin/infernosim
 
 EXPOSE 18080 19000
 

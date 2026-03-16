@@ -34,3 +34,5 @@ deterministic-replay-output.txt
 # Node
 node_modules/
 >>>>>>> origin/main
+# Added by goreleaser init:
+dist/
