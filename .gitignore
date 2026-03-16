@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Compiled binaries
 infernosim
 test-*
@@ -15,10 +14,13 @@ bin/
 # Local CA and certs
 ca/
 ~/.infernosim/
-=======
 # Binaries
 infernosim
 infernosim-*
+
+#Go Artifacts
+*.test
+coverage.out
 
 # Runtime output
 *.log
@@ -33,6 +35,5 @@ deterministic-replay-output.txt
 
 # Node
 node_modules/
->>>>>>> origin/main
 # Added by goreleaser init:
 dist/
