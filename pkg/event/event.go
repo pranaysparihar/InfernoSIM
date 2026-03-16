@@ -11,6 +11,7 @@ type Event struct {
 	ID        string        `json:"id"`
 	Type      string        `json:"type"`
 	Timestamp time.Time     `json:"timestamp"`
+	Sequence  int64         `json:"sequence,omitempty"` // monotonic counter for deterministic ordering
 
 	Service  string        `json:"service,omitempty"`
 	Method   string        `json:"method,omitempty"`

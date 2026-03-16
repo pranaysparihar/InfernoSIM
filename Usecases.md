@@ -168,3 +168,36 @@ Content-Length: 0
 }
 ```
 *The agent seamlessly records the dynamic TLS tunnel directly to the external domain `httpbin.org:443` and provides instant replay validations against public networks.*
+## Use Case J: "The Broken Auth Chain" (Stateful Dependency Replay)
+**The Situation:** You have a flow where `POST /login` returns a dynamic JWT that must be used in a subsequent `GET /profile` request. Standard replay tools fail because the replayed login returns a *new* token, but the replayed profile request tries to use the *old* token from the recording, resulting in a `401 Unauthorized`.
+**The InfernoSIM Solution:** 
+InfernoSIM's **State-Aware Engine** automatically detects tokens in JSON responses and maps them to later requests. It substitutes the stale captured token with the fresh runtime token on the fly.
+
+* **The Magic:** You can replay complex multi-step sessions where every request depends on a value from the previous one. InfernoSIM maintains a "Live State" during replay that keeps the entire chain functional.
+
+**Live Data Output (Replaying with fresh token substitution):**
+```text
+2026/03/15 13:52:59 Replay 1/2 | rawGap=0s scaledGap=0s
+2026/03/15 13:53:00 [STATE] Captured token 'old_abc' -> Fresh token 'new_xyz'
+2026/03/15 13:53:01 [REWRITE] Updated Authorization: Bearer new_xyz
+=== PASS: Golden Replay Scenario ===
+```
+
+## Use Case K: Identifying "Shadow" Regressions (Replay Diff Analysis)
+**The Situation:** You just refactored a major service. The unit tests pass, and the application seems fine, but you're worried about subtle "shadow" regressions—like slight latency increases or missing headers that don't cause failures but affect downstream systems.
+**The InfernoSIM Solution:**
+Run your production logs through the replayer with the `--diff` flag: `infernosim replay --incident . --diff`.
+
+* **The Magic:** InfernoSIM doesn't just check if the request finished; it compares the live replay against the production recording. It flags if a status code changed, if an important header like `Content-Type` is different, or if the latency has deviated by more than 20%.
+
+**Live Data Output (Surfacing subtle deltas via `--diff`):**
+```text
+=== REPLAY DIFF ANALYSIS ===
+
+Event #3: GET /api/v1/user/profile
+  [STATUS]  Expected 200, Got 500
+  [HEADER]  Header Content-Type: Expected [application/json], Got [text/html]
+  [LATENCY] Expected 12ms, Got 542ms (delta 530ms)
+============================
+```
+*Subtle regressions that would be "green" in a standard CI pass are instantly flagged.*

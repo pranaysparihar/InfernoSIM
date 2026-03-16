@@ -1,6 +1,7 @@
 package replaydriver
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -8,8 +9,11 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/http/cookiejar"
 	urlpkg "net/url"
 	"os"
+	"sort"
+	"strings"
 	"time"
 
 	"infernosim/pkg/event"
@@ -24,19 +28,24 @@ type ReplayResult struct {
 	ExpectedDuration   time.Duration
 	ResponseSignatures []string
 	ErrorCount         int
+	SafeModeSkipped    int
 	TimeExpanded       bool
 	TimeExpandedReason string
+	ReplayedEvents     []event.Event
 	Stalled            bool
 	StalledReason      string
 }
 
 type ReplayConfig struct {
-	TimeScale    float64
-	Density      float64
-	MinGap       time.Duration
-	MaxWallClock time.Duration
-	MaxIdleTime  time.Duration
-	MaxEvents    int
+	TimeScale      float64
+	Density        float64
+	MinGap         time.Duration
+	MaxWallClock   time.Duration
+	MaxIdleTime    time.Duration
+	MaxEvents      int
+	SafeMode       bool
+	SafeModeAllow  []string  // URL path prefixes allowed even in safe mode
+	StateAdapters  []StateAdapter
 }
 
 func LoadInboundEvents(inboundLog string) ([]event.Event, error) {
@@ -61,7 +70,33 @@ func LoadInboundEvents(inboundLog string) ([]event.Event, error) {
 			evs = append(evs, e)
 		}
 	}
+	// Sort by (Timestamp, Sequence) for deterministic ordering under concurrent capture.
+	sort.SliceStable(evs, func(i, j int) bool {
+		if evs[i].Timestamp.Equal(evs[j].Timestamp) {
+			return evs[i].Sequence < evs[j].Sequence
+		}
+		return evs[i].Timestamp.Before(evs[j].Timestamp)
+	})
 	return evs, nil
+}
+
+// isSideEffect returns true for HTTP methods that modify server state.
+func isSideEffect(method string) bool {
+	switch strings.ToUpper(method) {
+	case "POST", "PUT", "PATCH", "DELETE":
+		return true
+	}
+	return false
+}
+
+// safeModeAllowed returns true if the path matches one of the allow prefixes.
+func safeModeAllowed(path string, allow []string) bool {
+	for _, prefix := range allow {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func ExpectedDuration(events []event.Event, timeScale float64, density float64, minGap time.Duration) time.Duration {
@@ -114,7 +149,19 @@ func ReplayEvents(
 	expected := ExpectedDuration(events, cfg.TimeScale, cfg.Density, cfg.MinGap)
 
 	h := sha256.New()
-	client := &http.Client{Timeout: 15 * time.Second}
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{
+		Timeout: 15 * time.Second,
+		Jar:     jar,
+	}
+
+	state := NewRuntimeState()
+	if len(cfg.StateAdapters) > 0 {
+		if err := ApplyAdapters(state, cfg.StateAdapters); err != nil {
+			log.Printf("state adapters warning: %v", err)
+		}
+	}
+	rewriter := NewRequestRewriterWithEvents(state, events)
 
 	start := time.Now()
 	deadline := time.Time{}
@@ -128,9 +175,12 @@ func ReplayEvents(
 	prevTS := events[0].Timestamp
 	nextAt := time.Now()
 	signatures := make([]string, 0, len(events))
+	replayedEvents := make([]event.Event, 0, len(events))
 	errCount := 0
+	safeModeSkipped := 0
 
 	for i, e := range events {
+		startTime := time.Now()
 		if cfg.MaxIdleTime > 0 && time.Since(lastProgress) > cfg.MaxIdleTime {
 			return ReplayResult{
 				CompletedEvents:    i,
@@ -190,9 +240,33 @@ func ReplayEvents(
 			return ReplayResult{}, err
 		}
 
-		req, err := http.NewRequest(e.Method, targetBase+parsed.RequestURI(), nil)
+		var body io.Reader
+		bodyBytes, hasBody := rewriter.PrepareBody(e)
+		if hasBody {
+			body = bytes.NewReader(bodyBytes)
+		}
+
+		req, err := http.NewRequest(e.Method, targetBase+parsed.RequestURI(), body)
 		if err != nil {
 			return ReplayResult{}, err
+		}
+
+		// Replay captured headers
+		for k, vals := range e.Headers {
+			for _, v := range vals {
+				req.Header.Add(k, v)
+			}
+		}
+
+		// Apply state-aware substitutions
+		rewriter.Rewrite(e, req)
+
+		// Safe mode: skip side-effect requests unless explicitly allowed
+		if cfg.SafeMode && isSideEffect(req.Method) && !safeModeAllowed(req.URL.Path, cfg.SafeModeAllow) {
+			log.Printf("[safe-mode] skipped %s %s", req.Method, req.URL.Path)
+			safeModeSkipped++
+			prevTS = e.Timestamp
+			continue
 		}
 
 		reqTimeout := client.Timeout
@@ -232,7 +306,21 @@ func ReplayEvents(
 			}
 			continue
 		}
+		respBody, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
+
+		replayedEvt := event.Event{
+			Method:    req.Method,
+			URL:       req.URL.String(),
+			Status:    resp.StatusCode,
+			Headers:   resp.Header,
+			Duration:  time.Since(startTime),
+			Timestamp: e.Timestamp, // preserve captured timestamp for apples-to-apples diff
+		}
+		replayedEvents = append(replayedEvents, replayedEvt)
+
+		// Update state from response
+		rewriter.UpdateState(e, resp, respBody)
 
 		sig := fmt.Sprintf("%s %s %d", e.Method, parsed.RequestURI(), resp.StatusCode)
 		signatures = append(signatures, sig)
@@ -264,6 +352,8 @@ func ReplayEvents(
 		RunDuration:        time.Since(start),
 		ExpectedDuration:   expected,
 		ResponseSignatures: signatures,
+		ReplayedEvents:     replayedEvents,
 		ErrorCount:         errCount,
+		SafeModeSkipped:    safeModeSkipped,
 	}, nil
 }

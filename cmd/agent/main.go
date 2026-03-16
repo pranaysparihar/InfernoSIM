@@ -28,20 +28,44 @@ import (
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "replay" {
-		code := runReplay(os.Args[2:])
-		os.Exit(code)
+	if len(os.Args) < 2 {
+		printUsage()
+		os.Exit(1)
 	}
-	if len(os.Args) > 1 && os.Args[1] == "search" {
+	switch os.Args[1] {
+	case "record":
+		os.Exit(runRecord(os.Args[2:]))
+	case "replay":
+		os.Exit(runReplay(os.Args[2:]))
+	case "inspect":
+		os.Exit(runInspect(os.Args[2:]))
+	case "verify":
+		os.Exit(runVerify(os.Args[2:]))
+	case "diff":
+		os.Exit(runDiff(os.Args[2:]))
+	// legacy commands kept for backwards compatibility
+	case "search":
 		runSearch(os.Args[2:])
 		os.Exit(0)
-	}
-	// fallback if strict replay from verify script is used
-	if len(os.Args) > 1 && os.Args[1] == "strict-replay" {
+	case "strict-replay":
 		runStrictReplay(os.Args[2:])
 		os.Exit(0)
+	default:
+		fmt.Fprintf(os.Stderr, "infernosim: unknown command %q\n\n", os.Args[1])
+		printUsage()
+		os.Exit(1)
 	}
-	runAgent()
+}
+
+func printUsage() {
+	fmt.Fprintln(os.Stderr, `Usage: infernosim <command> [flags]
+
+Commands:
+  record   Capture incident traffic (starts an inbound proxy)
+  inspect  Analyse an incident bundle (dependency graph, timeline)
+  verify   Check replay safety of an incident bundle
+  replay   Replay a captured incident against a target
+  diff     Replay and show divergences from the captured baseline`)
 }
 
 func runStrictReplay(args []string) {
@@ -270,6 +294,9 @@ func runReplay(args []string) (code int) {
 		":9000",
 		"Optional compatibility listen address for apps using a fixed outbound proxy port",
 	)
+	diff := fs.Bool("diff", false, "Show detailed differences between captured and replayed events")
+	safeMode := fs.Bool("safe-mode", false, "Skip non-idempotent requests (POST/PUT/PATCH/DELETE) during replay")
+	configFile := fs.String("config", "", "Path to replay.yaml config file (overrides defaults)")
 
 	injectFlags := multiFlag{}
 	fs.Var(
@@ -288,6 +315,31 @@ func runReplay(args []string) (code int) {
 	inboundLog := filepath.Join(*incidentDir, "inbound.log")
 	outboundLog := filepath.Join(*incidentDir, "outbound.log")
 
+	// ---- apply replay.yaml config (flags override yaml) ----
+	resolvedConfigFile := *configFile
+	if resolvedConfigFile == "" {
+		bundleConfig := filepath.Join(*incidentDir, "replay.yaml")
+		if _, err := os.Stat(bundleConfig); err == nil {
+			resolvedConfigFile = bundleConfig
+		}
+	}
+	if resolvedConfigFile != "" {
+		if yamlCfg, err := replaydriver.LoadReplayConfig(resolvedConfigFile); err == nil {
+			if yamlCfg.Target != "" && *targetBase == "http://localhost:18080" {
+				*targetBase = yamlCfg.Target
+			}
+			if yamlCfg.Runs > 0 && *runs == 10 {
+				*runs = yamlCfg.Runs
+			}
+			if yamlCfg.TimeScale > 0 && *timeScale == 1.0 {
+				*timeScale = yamlCfg.TimeScale
+			}
+			if yamlCfg.SafeMode {
+				*safeMode = true
+			}
+		}
+	}
+
 	executeReplay(replayExecutionInput{
 		Runs:        *runs,
 		TimeScale:   *timeScale,
@@ -304,6 +356,9 @@ func runReplay(args []string) (code int) {
 		StubCompat:  *stubCompatListen,
 		Fanout:      *fanout,
 		Window:      *window,
+		Diff:        *diff,
+		SafeMode:    *safeMode,
+		ConfigFile:  resolvedConfigFile,
 	}, &summary)
 	return
 }
@@ -366,6 +421,8 @@ type ReplaySummary struct {
 	MaxInjectedLatency     time.Duration
 	MaxInjectedTimeout     time.Duration
 	PreviousRun            *ReplaySnapshot
+	Diff                   bool
+	DiffResults            []*replaydriver.EventDiff
 }
 
 type ReplaySnapshot struct {
@@ -394,6 +451,9 @@ type replayExecutionInput struct {
 	StubCompat  string
 	Fanout      int
 	Window      time.Duration
+	Diff        bool
+	SafeMode    bool
+	ConfigFile  string
 }
 
 func NewReplaySummary() ReplaySummary {
@@ -589,6 +649,7 @@ func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 						MaxWallClock: remaining,
 						MaxIdleTime:  input.MaxIdleTime,
 						MaxEvents:    input.MaxEvents,
+						SafeMode:     input.SafeMode,
 					},
 				)
 				results <- replayWaveResult{result: r, err: err}
@@ -621,6 +682,17 @@ func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 			} else if wr.result.Fingerprint != referenceFingerprint {
 				nonDeterministic = true
 			}
+
+			if input.Diff && len(wr.result.ReplayedEvents) > 0 {
+				for idx, replayed := range wr.result.ReplayedEvents {
+					if idx < len(events) {
+						d := replaydriver.CompareEvents(events[idx], replayed, idx+1)
+						if d != nil {
+							summary.DiffResults = append(summary.DiffResults, d)
+						}
+					}
+				}
+			}
 		}
 		summary.InboundEventsReplayed += waveInbound
 		outboundObserved := stub.ObservedCount()
@@ -646,6 +718,10 @@ func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 			Detail:          fmt.Sprintf("fanout=%d", input.Fanout),
 		}
 		summary.Outcomes = append(summary.Outcomes, outcome)
+
+	}
+	if input.Diff {
+		replaydriver.PrintDiffs(summary.DiffResults)
 	}
 	summary.Elapsed = time.Since(start)
 	if summary.Elapsed > 0 {
@@ -1005,4 +1081,262 @@ func saveReplaySnapshot(summary *ReplaySummary) {
 		return
 	}
 	_ = os.WriteFile(replaySnapshotPath(), b, 0644)
+}
+
+// ---------------------------------------------------------------------------
+// infernosim record
+// ---------------------------------------------------------------------------
+
+func runRecord(args []string) int {
+	fs := flag.NewFlagSet("record", flag.ContinueOnError)
+	listen := fs.String("listen", ":8080", "Listen address for inbound proxy")
+	forward := fs.String("forward", "", "Backend host:port to forward to (required)")
+	out := fs.String("out", "./incident", "Output directory for the incident bundle")
+	env := fs.String("env", "", "Environment label (e.g. production, staging)")
+	httpsMode := fs.String("https-mode", "tunnel", "HTTPS mode: tunnel or mitm")
+
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(os.Stderr, "record: %v\n", err)
+		return 1
+	}
+	if *forward == "" {
+		fmt.Fprintln(os.Stderr, "record: --forward host:port is required")
+		return 1
+	}
+
+	if err := os.MkdirAll(*out, 0o755); err != nil {
+		fmt.Fprintf(os.Stderr, "record: create output dir: %v\n", err)
+		return 1
+	}
+
+	inboundLogPath := filepath.Join(*out, "inbound.log")
+	outboundLogPath := filepath.Join(*out, "outbound.log")
+
+	inboundLogger, err := event.NewLogger(inboundLogPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "record: open inbound log: %v\n", err)
+		return 1
+	}
+	defer inboundLogger.Close()
+
+	outboundLogger, err := event.NewLogger(outboundLogPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "record: open outbound log: %v\n", err)
+		return 1
+	}
+	defer outboundLogger.Close()
+
+	useMITM := *httpsMode == "mitm"
+	var caStore *capture.CAStore
+	if useMITM {
+		caStore, err = capture.NewCAStore()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "record: CA store: %v\n", err)
+			return 1
+		}
+	}
+
+	ctx := &capture.ProxyContext{
+		Logger:  inboundLogger,
+		CA:      caStore,
+		UseMITM: useMITM,
+	}
+
+	targetURL := &url.URL{Scheme: "http", Host: *forward}
+	server, err := capture.StartInboundProxy(*listen, targetURL, ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "record: start proxy: %v\n", err)
+		return 1
+	}
+
+	log.Printf("Recording → %s (out: %s)", *forward, *out)
+	log.Printf("Press Ctrl-C to stop recording.")
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	<-stop
+
+	_ = server.Close()
+	_ = inboundLogger.Close()
+	_ = outboundLogger.Close()
+
+	// Count captured events for metadata.
+	inboundCount := countEvents(inboundLogPath, "InboundRequest")
+	outboundCount := countEvents(outboundLogPath, "")
+
+	host := *forward
+	meta := replaydriver.IncidentMetadata{
+		CapturedAt:    time.Now().UTC(),
+		Env:           *env,
+		Host:          host,
+		Listen:        *listen,
+		Forward:       *forward,
+		InboundCount:  inboundCount,
+		OutboundCount: outboundCount,
+	}
+	if err := replaydriver.WriteMetadata(*out, meta); err != nil {
+		fmt.Fprintf(os.Stderr, "record: write incident.json: %v\n", err)
+		return 1
+	}
+
+	fmt.Printf("\nIncident saved to %s\n", *out)
+	fmt.Printf("  inbound events:  %d\n", inboundCount)
+	fmt.Printf("  outbound events: %d\n", outboundCount)
+	return 0
+}
+
+// countEvents counts JSONL lines in a log file, optionally filtered by event type.
+func countEvents(path, eventType string) int {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+	dec := json.NewDecoder(f)
+	count := 0
+	for {
+		var e event.Event
+		if err := dec.Decode(&e); err != nil {
+			break
+		}
+		if eventType == "" || e.Type == eventType {
+			count++
+		}
+	}
+	return count
+}
+
+// ---------------------------------------------------------------------------
+// infernosim inspect
+// ---------------------------------------------------------------------------
+
+func runInspect(args []string) int {
+	fs := flag.NewFlagSet("inspect", flag.ContinueOnError)
+	if err := fs.Parse(args); err != nil || fs.NArg() < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: infernosim inspect <incident-dir>")
+		return 1
+	}
+	dir := fs.Arg(0)
+
+	bundle, err := replaydriver.OpenBundle(dir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "inspect: %v\n", err)
+		return 1
+	}
+
+	result, err := replaydriver.InspectIncident(bundle.InboundLog)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "inspect: %v\n", err)
+		return 1
+	}
+
+	if meta, err := bundle.ReadMetadata(); err == nil && !meta.CapturedAt.IsZero() {
+		fmt.Printf("Captured: %s  Env: %s  Host: %s\n\n", meta.CapturedAt.Format(time.RFC3339), meta.Env, meta.Host)
+	}
+
+	replaydriver.PrintInspectResult(result)
+	return 0
+}
+
+// ---------------------------------------------------------------------------
+// infernosim verify
+// ---------------------------------------------------------------------------
+
+func runVerify(args []string) int {
+	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
+	if err := fs.Parse(args); err != nil || fs.NArg() < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: infernosim verify <incident-dir>")
+		return 1
+	}
+	dir := fs.Arg(0)
+
+	bundle, err := replaydriver.OpenBundle(dir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "verify: %v\n", err)
+		return 1
+	}
+
+	result, err := replaydriver.VerifyIncident(bundle.InboundLog)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "verify: %v\n", err)
+		return 1
+	}
+
+	replaydriver.PrintVerifyResult(result)
+
+	if result.ReadinessScore < 60 {
+		return 1
+	}
+	return 0
+}
+
+// ---------------------------------------------------------------------------
+// infernosim diff
+// ---------------------------------------------------------------------------
+
+func runDiff(args []string) int {
+	fs := flag.NewFlagSet("diff", flag.ContinueOnError)
+	targetBase := fs.String("target", "http://localhost:8080", "Target base URL to replay against")
+	maxWall := fs.Duration("max-wall-time", 60*time.Second, "Max wall-clock time for the replay run")
+
+	if err := fs.Parse(args); err != nil || fs.NArg() < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: infernosim diff <incident-dir> [--target http://...]")
+		return 1
+	}
+	dir := fs.Arg(0)
+
+	bundle, err := replaydriver.OpenBundle(dir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "diff: %v\n", err)
+		return 1
+	}
+
+	// If a replay.yaml exists, load target from it (CLI flag takes precedence if explicitly provided).
+	if bundle.HasConfig() {
+		cfg, err := replaydriver.LoadReplayConfig(bundle.ConfigPath)
+		if err == nil && cfg.Target != "" && *targetBase == "http://localhost:8080" {
+			*targetBase = cfg.Target
+		}
+	}
+
+	events, err := replaydriver.LoadInboundEvents(bundle.InboundLog)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "diff: load events: %v\n", err)
+		return 1
+	}
+
+	result, err := replaydriver.ReplayEvents(events, *targetBase, replaydriver.ReplayConfig{
+		TimeScale:    1.0,
+		Density:      1.0,
+		MinGap:       2 * time.Millisecond,
+		MaxWallClock: *maxWall,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "diff: replay: %v\n", err)
+		return 1
+	}
+
+	var diffs []*replaydriver.EventDiff
+	for i, replayed := range result.ReplayedEvents {
+		if i < len(events) {
+			if d := replaydriver.CompareEvents(events[i], replayed, i+1); d != nil {
+				diffs = append(diffs, d)
+			}
+		}
+	}
+
+	fmt.Printf("Diff Summary\n")
+	fmt.Printf("------------\n")
+	fmt.Printf("Requests replayed: %d\n", result.CompletedEvents)
+	fmt.Printf("Divergences found: %d\n", len(diffs))
+	if result.SafeModeSkipped > 0 {
+		fmt.Printf("Safe-mode skipped: %d\n", result.SafeModeSkipped)
+	}
+	fmt.Println()
+	replaydriver.PrintDiffs(diffs)
+
+	if len(diffs) > 0 {
+		return 1
+	}
+	return 0
 }

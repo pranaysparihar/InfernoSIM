@@ -1,0 +1,22 @@
+{
+  "ID": "1",
+  "Timestamp": "2026-03-15T10:00:00Z",
+  "Type": "InboundRequest",
+  "Method": "POST",
+  "URL": "http://api/login",
+  "Status": 200,
+  "Headers": {
+    "Content-Type": ["application/json"]
+  }
+}
+{
+  "ID": "2",
+  "Timestamp": "2026-03-15T10:00:01Z",
+  "Type": "InboundRequest",
+  "Method": "GET",
+  "URL": "http://api/protected",
+  "Status": 200,
+  "Headers": {
+    "Authorization": ["Bearer stale_token"]
+  }
+}

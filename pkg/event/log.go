@@ -5,13 +5,15 @@ import (
 	"encoding/json"
 	"os"
 	"sync"
+	"sync/atomic"
 )
 
 type Logger struct {
-	mu  sync.Mutex
-	f   *os.File
-	w   *bufio.Writer
-	enc *json.Encoder
+	mu       sync.Mutex
+	f        *os.File
+	w        *bufio.Writer
+	enc      *json.Encoder
+	sequence int64 // atomic monotonic counter
 }
 
 func NewLogger(path string) (*Logger, error) {
@@ -33,6 +35,8 @@ func NewLogger(path string) (*Logger, error) {
 }
 
 func (l *Logger) Write(e *Event) error {
+	e.Sequence = atomic.AddInt64(&l.sequence, 1)
+
 	l.mu.Lock()
 	defer l.mu.Unlock()
 

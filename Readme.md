@@ -19,7 +19,9 @@ It captures inbound and outbound HTTP traffic as JSONL logs, then replays real i
 ## Features
 
 - Inbound + outbound capture via lightweight proxies.
-- Deterministic replay across repeated runs.
+- **State-aware replay**: automatic extraction and substitution of auth tokens, session IDs, and resource IDs.
+- **Deterministic replay** across repeated runs with full header/body fidelity.
+- **Replay diff analysis**: detailed delta reporting for status codes, headers, and performance via `--diff`.
 - Causal concurrency pressure with `--fanout`.
 - Replay SLO checks with `--window`.
 - Fault injection (`latency`, `timeout`) for dependencies.
@@ -81,8 +83,8 @@ Take previously recorded traffic from production, staging, or integration tests,
 # Replay traffic natively against the original external APIs (e.g., api.stripe.com)
 ./infernosim replay --log=events.log --target=https://api.stripe.com
 
-# Overwrite target to route external payloads to your local staging environment
-./infernosim replay --log=events.log --target=http://localhost:8081
+# State-aware replay against local staging with detailed diff analysis
+./infernosim replay --incident . --target-base http://localhost:8081 --diff
 ```
 
 ### 6. Auto-Envelope Search (Load Boundary Discovery)
@@ -227,6 +229,7 @@ curl http://localhost:18080/api/demo
 - `--stub-compat-listen` (default `:9000`): compatibility listen address for fixed app proxy ports.
 - `--fanout` (default `1`): concurrent causal replay workers per run.
 - `--window` (default `0s`): replay SLO window; can trigger `FAIL_SLO_MISSED`.
+- `--diff` (default `false`): show detailed differences between captured and replayed events (status, latency, headers).
 
 ## Example Replay Scenarios
 
