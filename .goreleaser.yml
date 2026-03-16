@@ -26,3 +26,20 @@ changelog:
     exclude:
       - '^docs:'
       - '^test:'
+
+brews:
+  - name: infernosim
+    repository:
+      owner: pranaysparihar
+      name: homebrew-infernosim
+
+    homepage: "https://github.com/pranaysparihar/InfernoSIM"
+    description: "Deterministic incident replay for backend systems"
+    license: "MIT"
+
+    commit_author:
+      name: Pranay Singh Parihar
+      email: pranaysparihar@gmail.com
+
+    install: |
+      bin.install "InfernoSIM"
