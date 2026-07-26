@@ -18,11 +18,11 @@ const (
 )
 
 type ProducedValue struct {
-	Name      string    `json:"name"`
-	Kind      ValueKind `json:"kind"`
-	Value     string    `json:"value"`
-	Source    string    `json:"source"` // header, body
-	Locator   string    `json:"locator"` // key name, json path
+	Name    string    `json:"name"`
+	Kind    ValueKind `json:"kind"`
+	Value   string    `json:"value"`
+	Source  string    `json:"source"`  // header, body
+	Locator string    `json:"locator"` // key name, json path
 }
 
 type ConsumedValue struct {
@@ -34,9 +34,9 @@ type ConsumedValue struct {
 }
 
 type DependencyRef struct {
-	FromIndex int       `json:"from_index"`
-	Target    string    `json:"target"`
-	ValueName string    `json:"value_name"`
+	FromIndex int    `json:"from_index"`
+	Target    string `json:"target"`
+	ValueName string `json:"value_name"`
 }
 
 // tokenKeyPatterns is a whitelist of JSON key names that indicate auth tokens.

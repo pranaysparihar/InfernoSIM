@@ -25,7 +25,7 @@ func CaptureGRPCInbound(r *http.Request, logger *event.Logger) {
 		Headers:   cloneHeaders(r.Header),
 	}
 
-	logger.Write(evt)
+	writeEvent(logger, evt)
 }
 
 // CaptureGRPCOutbound captures outbound gRPC calls observed via proxying.
@@ -44,5 +44,5 @@ func CaptureGRPCOutbound(
 		Duration:  time.Since(start),
 	}
 
-	logger.Write(evt)
+	writeEvent(logger, evt)
 }

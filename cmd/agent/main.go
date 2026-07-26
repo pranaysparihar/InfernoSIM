@@ -73,6 +73,10 @@ func main() {
 		runStrictReplay(os.Args[2:])
 		os.Exit(0)
 	default:
+		if strings.HasPrefix(os.Args[1], "-") {
+			runAgent()
+			os.Exit(0)
+		}
 		fmt.Fprintf(os.Stderr, "infernosim: unknown command %q\n\n", os.Args[1])
 		printUsage()
 		os.Exit(1)
@@ -113,13 +117,14 @@ func runStrictReplay(args []string) {
 	replayCmd := flag.NewFlagSet("strict-replay", flag.ExitOnError)
 	rLogFile := replayCmd.String("log", "events.log", "Event log to replay")
 	rTarget := replayCmd.String("target", "", "Target base URL (e.g. http://localhost:8081)")
+	allowWrites := replayCmd.Bool("allow-writes", false, "Permit POST/PUT/PATCH/DELETE against the selected target")
 	replayCmd.Parse(args)
 
 	if *rTarget == "" {
 		log.Fatal("strict-replay requires --target")
 	}
 
-	replayer, err := replay.NewReplayer(*rLogFile, replay.ReplayConfig{Strict: true})
+	replayer, err := replay.NewReplayer(*rLogFile, replay.ReplayConfig{Strict: true, AllowWrites: *allowWrites})
 	if err != nil {
 		log.Fatalf("Failed to initialize replay: %v", err)
 	}
@@ -158,8 +163,25 @@ func runSearch(args []string) {
 	fanout := 1
 	for {
 		fmt.Printf("Testing fanout multiplier %d...\n", fanout)
-		err := replayer.Replay()
-		if err != nil {
+		errs := make(chan error, fanout)
+		var wg sync.WaitGroup
+		for i := 0; i < fanout; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				errs <- replayer.Replay()
+			}()
+		}
+		wg.Wait()
+		close(errs)
+		var replayErr error
+		for err := range errs {
+			if err != nil {
+				replayErr = err
+				break
+			}
+		}
+		if replayErr != nil {
 			fmt.Printf("=== FAIL_SLO_MISSED: Envelope breached at fanout %d ===\n", fanout)
 			break
 		}
@@ -173,12 +195,21 @@ func runSearch(args []string) {
 
 func runAgent() {
 	mode := flag.String("mode", "inbound", "Mode: 'inbound' or 'proxy'")
-	listen := flag.String("listen", ":8080", "Listen address")
+	listen := flag.String("listen", "127.0.0.1:8080", "Listen address (default: loopback; use 0.0.0.0 to expose externally)")
 	forward := flag.String("forward", "", "Forward address (inbound mode)")
 	logFile := flag.String("log", "events.log", "Event log file")
 	httpsMode := flag.String("https-mode", "tunnel", "Outbound HTTPS behavior: 'tunnel' or 'mitm'")
 	injectParam := flag.String("inject", "", "Fault injection config (e.g. jitter=50ms,drop=5%,reset=5%,status=503,rate=10%)")
+	injectSeed := flag.Int64("inject-seed", 0, "Deterministic fault-injection seed (0 uses a random seed)")
+	insecureUpstream := flag.Bool("insecure-upstream", false, "Skip TLS verification for upstream connections (UNSAFE — never use in production)")
+	mitmAllowHosts := flag.String("mitm-allow-hosts", "", "Comma-separated hostnames permitted to receive MITM certs (default: localhost only)")
+	allowPrivate := flag.Bool("allow-private-destinations", false, "Allow proxy access to loopback/private destinations (local development only)")
+	captureSensitive := flag.Bool("capture-sensitive-data", false, "Store raw headers and bodies, including credentials and PII (UNSAFE)")
 	flag.Parse()
+
+	if *insecureUpstream {
+		fmt.Fprintln(os.Stderr, "\u26a0️  WARNING: --insecure-upstream disables TLS certificate verification. Never use in production.")
+	}
 
 	logger, err := event.NewLogger(*logFile)
 	if err != nil {
@@ -186,7 +217,7 @@ func runAgent() {
 	}
 	defer logger.Close()
 
-	injectCfg, err := inject.ParseConfig(*injectParam, 0)
+	injectCfg, err := inject.ParseConfig(*injectParam, *injectSeed)
 	if err != nil {
 		log.Fatalf("Failed to parse injection config: %v", err)
 	}
@@ -198,16 +229,22 @@ func runAgent() {
 		if err != nil {
 			log.Fatalf("Failed to initialize CA store: %v", err)
 		}
+		if *mitmAllowHosts != "" {
+			caStore.AllowedHosts = strings.Split(*mitmAllowHosts, ",")
+		}
 		log.Println("HTTPS MITM Inspection ENABLED")
 	} else {
 		log.Println("HTTPS Tunneling only (No MITM inspection)")
 	}
 
 	ctx := &capture.ProxyContext{
-		Logger:  logger,
-		CA:      caStore,
-		Inject:  injectCfg,
-		UseMITM: useMITM,
+		Logger:                   logger,
+		CA:                       caStore,
+		Inject:                   injectCfg,
+		UseMITM:                  useMITM,
+		AllowInsecureUpstream:    *insecureUpstream,
+		AllowPrivateDestinations: *allowPrivate,
+		CaptureSensitiveData:     *captureSensitive,
 	}
 
 	stop := make(chan os.Signal, 1)
@@ -248,7 +285,6 @@ func runAgent() {
 }
 func runReplay(args []string) (code int) {
 	summary := NewReplaySummary()
-	summary.PreviousRun = loadReplaySnapshot()
 	defer func() {
 		if r := recover(); r != nil {
 			summary.PrimaryFailureReason = fmt.Sprintf("panic: %v", r)
@@ -261,6 +297,11 @@ func runReplay(args []string) (code int) {
 
 	fs := flag.NewFlagSet("replay", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
+	positionalIncident := ""
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		positionalIncident = args[0]
+		args = args[1:]
+	}
 
 	incidentDir := fs.String(
 		"incident",
@@ -335,7 +376,8 @@ func runReplay(args []string) (code int) {
 		"Optional compatibility listen address for apps using a fixed outbound proxy port",
 	)
 	diff := fs.Bool("diff", false, "Show detailed differences between captured and replayed events")
-	safeMode := fs.Bool("safe-mode", false, "Skip non-idempotent requests (POST/PUT/PATCH/DELETE) during replay")
+	safeMode := fs.Bool("safe-mode", true, "Skip non-idempotent requests (POST/PUT/PATCH/DELETE) during replay")
+	allowWrites := fs.Bool("allow-writes", false, "Permit replay of POST/PUT/PATCH/DELETE requests (requires an explicit safe target)")
 	configFile := fs.String("config", "", "Path to replay.yaml config file (overrides defaults)")
 
 	injectFlags := multiFlag{}
@@ -351,6 +393,17 @@ func runReplay(args []string) (code int) {
 		return
 	}
 
+	if positionalIncident != "" {
+		*incidentDir = positionalIncident
+	} else if fs.NArg() > 0 {
+		*incidentDir = fs.Arg(0)
+	}
+	if *allowWrites {
+		*safeMode = false
+	}
+	summary.ArtifactDir = *incidentDir
+	summary.PreviousRun = loadReplaySnapshot(*incidentDir)
+
 	// ---- resolve logs ----
 	inboundLog := filepath.Join(*incidentDir, "inbound.log")
 	outboundLog := filepath.Join(*incidentDir, "outbound.log")
@@ -363,42 +416,61 @@ func runReplay(args []string) (code int) {
 			resolvedConfigFile = bundleConfig
 		}
 	}
+	var stateAdapters []replaydriver.StateAdapter
+	var chaosDelay time.Duration
+	var chaosRequest int
 	if resolvedConfigFile != "" {
-		if yamlCfg, err := replaydriver.LoadReplayConfig(resolvedConfigFile); err == nil {
-			if yamlCfg.Target != "" && *targetBase == "http://localhost:18080" {
-				*targetBase = yamlCfg.Target
+		yamlCfg, err := replaydriver.LoadReplayConfig(resolvedConfigFile)
+		if err != nil {
+			summary.PrimaryFailureReason = err.Error()
+			summary.Outcome = "FAIL_INVALID_ENV"
+			return
+		}
+		if yamlCfg.Target != "" && *targetBase == "http://localhost:18080" {
+			*targetBase = yamlCfg.Target
+		}
+		if yamlCfg.Runs > 0 && *runs == 10 {
+			*runs = yamlCfg.Runs
+		}
+		if yamlCfg.TimeScale > 0 && *timeScale == 1.0 {
+			*timeScale = yamlCfg.TimeScale
+		}
+		if yamlCfg.SafeMode {
+			*safeMode = true
+		}
+		chaosDelay, _ = yamlCfg.Chaos.ChaosDelay()
+		chaosRequest = yamlCfg.Chaos.Latency.Request
+		if yamlCfg.State.File != "" {
+			statePath := yamlCfg.State.File
+			if !filepath.IsAbs(statePath) {
+				statePath = filepath.Join(filepath.Dir(resolvedConfigFile), statePath)
 			}
-			if yamlCfg.Runs > 0 && *runs == 10 {
-				*runs = yamlCfg.Runs
-			}
-			if yamlCfg.TimeScale > 0 && *timeScale == 1.0 {
-				*timeScale = yamlCfg.TimeScale
-			}
-			if yamlCfg.SafeMode {
-				*safeMode = true
-			}
+			stateAdapters = append(stateAdapters, &replaydriver.FileStateAdapter{Path: statePath})
 		}
 	}
 
 	executeReplay(replayExecutionInput{
-		Runs:        *runs,
-		TimeScale:   *timeScale,
-		Density:     *density,
-		MinGap:      *minGap,
-		MaxWallTime: *maxWallTime,
-		MaxIdleTime: *maxIdleTime,
-		MaxEvents:   *maxEvents,
-		InboundLog:  inboundLog,
-		OutboundLog: outboundLog,
-		InjectFlags: injectFlags,
-		TargetBase:  *targetBase,
-		StubListen:  *stubListen,
-		StubCompat:  *stubCompatListen,
-		Fanout:      *fanout,
-		Window:      *window,
-		Diff:        *diff,
-		SafeMode:    *safeMode,
-		ConfigFile:  resolvedConfigFile,
+		Runs:          *runs,
+		TimeScale:     *timeScale,
+		Density:       *density,
+		MinGap:        *minGap,
+		MaxWallTime:   *maxWallTime,
+		MaxIdleTime:   *maxIdleTime,
+		MaxEvents:     *maxEvents,
+		InboundLog:    inboundLog,
+		OutboundLog:   outboundLog,
+		InjectFlags:   injectFlags,
+		TargetBase:    *targetBase,
+		StubListen:    *stubListen,
+		StubCompat:    *stubCompatListen,
+		Fanout:        *fanout,
+		Window:        *window,
+		Diff:          *diff,
+		SafeMode:      *safeMode,
+		ConfigFile:    resolvedConfigFile,
+		StateAdapters: stateAdapters,
+		ChaosDelay:    chaosDelay,
+		ChaosRequest:  chaosRequest,
 	}, &summary)
 	return
 }
@@ -464,6 +536,7 @@ type ReplaySummary struct {
 	PreviousRun            *ReplaySnapshot
 	Diff                   bool
 	DiffResults            []*replaydriver.EventDiff
+	ArtifactDir            string
 }
 
 type ReplaySnapshot struct {
@@ -477,24 +550,27 @@ type ReplaySnapshot struct {
 }
 
 type replayExecutionInput struct {
-	Runs        int
-	TimeScale   float64
-	Density     float64
-	MinGap      time.Duration
-	MaxWallTime time.Duration
-	MaxIdleTime time.Duration
-	MaxEvents   int
-	InboundLog  string
-	OutboundLog string
-	InjectFlags []string
-	TargetBase  string
-	StubListen  string
-	StubCompat  string
-	Fanout      int
-	Window      time.Duration
-	Diff        bool
-	SafeMode    bool
-	ConfigFile  string
+	Runs          int
+	TimeScale     float64
+	Density       float64
+	MinGap        time.Duration
+	MaxWallTime   time.Duration
+	MaxIdleTime   time.Duration
+	MaxEvents     int
+	InboundLog    string
+	OutboundLog   string
+	InjectFlags   []string
+	TargetBase    string
+	StubListen    string
+	StubCompat    string
+	Fanout        int
+	Window        time.Duration
+	Diff          bool
+	SafeMode      bool
+	ConfigFile    string
+	StateAdapters []replaydriver.StateAdapter
+	ChaosDelay    time.Duration
+	ChaosRequest  int
 }
 
 func NewReplaySummary() ReplaySummary {
@@ -511,6 +587,9 @@ func (s *ReplaySummary) Finalize() {
 	deriveEnvelope(s)
 	deriveDelta(s)
 	s.Recommendation = recommendationForOutcome(s.Outcome)
+	if len(s.DiffResults) > 0 {
+		s.Recommendation = "Inspect the reported status, header, body, and latency changes before accepting the release."
+	}
 	s.WhatNotTested = computeWhatNotTested(s)
 	s.ExitStatus = exitCodeFromOutcome(s.Outcome)
 	s.Lines = buildSummaryLines(s)
@@ -519,7 +598,11 @@ func (s *ReplaySummary) Finalize() {
 func (s *ReplaySummary) Print() {
 	out := strings.Join(s.Lines, "\n") + "\n"
 	fmt.Print(out)
-	_ = os.WriteFile("replay_result.txt", []byte(out), 0644)
+	outputDir := s.ArtifactDir
+	if outputDir == "" {
+		outputDir = "."
+	}
+	_ = os.WriteFile(filepath.Join(outputDir, "replay_result.txt"), []byte(out), 0o600)
 	saveReplaySnapshot(s)
 }
 
@@ -685,13 +768,16 @@ func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 					events,
 					input.TargetBase,
 					replaydriver.ReplayConfig{
-						TimeScale:    input.TimeScale,
-						Density:      input.Density,
-						MinGap:       input.MinGap,
-						MaxWallClock: remaining,
-						MaxIdleTime:  input.MaxIdleTime,
-						MaxEvents:    input.MaxEvents,
-						SafeMode:     input.SafeMode,
+						TimeScale:     input.TimeScale,
+						Density:       input.Density,
+						MinGap:        input.MinGap,
+						MaxWallClock:  remaining,
+						MaxIdleTime:   input.MaxIdleTime,
+						MaxEvents:     input.MaxEvents,
+						SafeMode:      input.SafeMode,
+						StateAdapters: input.StateAdapters,
+						ChaosDelay:    input.ChaosDelay,
+						ChaosRequest:  input.ChaosRequest,
 					},
 				)
 				results <- replayWaveResult{result: r, err: err}
@@ -745,6 +831,11 @@ func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 			summary.Outcome = "FAIL_PROXY_FORWARDING"
 			break
 		}
+		if reasons := stub.DivergenceReasons(); len(reasons) > 0 {
+			summary.PrimaryFailureReason = reasons[0]
+			summary.Outcome = "FAIL_NON_DETERMINISTIC"
+			waveComplete = false
+		}
 		if waveComplete {
 			summary.RunsCompleted++
 		} else {
@@ -764,6 +855,10 @@ func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 	}
 	if input.Diff {
 		replaydriver.PrintDiffs(summary.DiffResults)
+		if len(summary.DiffResults) > 0 && !strings.HasPrefix(summary.Outcome, "FAIL_") {
+			summary.Outcome = "FAIL_NON_DETERMINISTIC"
+			summary.PrimaryFailureReason = fmt.Sprintf("%d replay response divergence(s) detected", len(summary.DiffResults))
+		}
 	}
 	summary.Elapsed = time.Since(start)
 	if summary.Elapsed > 0 {
@@ -807,7 +902,7 @@ func computeOutcome(summary *ReplaySummary) string {
 	if summary.TransparentMode && summary.OutboundEventsExpected > 0 && summary.OutboundEventsObserved == 0 {
 		return "FAIL_TRANSPARENT_PROXY"
 	}
-	if summary.OutboundEventsObserved == 0 {
+	if summary.OutboundEventsExpected > 0 && summary.OutboundEventsObserved == 0 {
 		return "FAIL_NO_COVERAGE"
 	}
 	if summary.Window > 0 && summary.InboundEventsReplayed < summary.TargetInbound {
@@ -962,6 +1057,9 @@ func deriveLimitingFactor(summary *ReplaySummary) string {
 	if summary.Outcome == "PASS_STRONG" || summary.Outcome == "PASS_WEAK" {
 		return "NONE"
 	}
+	if len(summary.DiffResults) > 0 {
+		return "RESPONSE_DIVERGENCE"
+	}
 	if summary.MaxInjectedTimeout > 0 {
 		return "DEPENDENCY_TIMEOUT"
 	}
@@ -1093,12 +1191,15 @@ func isExpectedShutdownErr(err error) bool {
 	return strings.Contains(err.Error(), "use of closed network connection")
 }
 
-func replaySnapshotPath() string {
-	return ".infernosim_last_run.json"
+func replaySnapshotPath(dir string) string {
+	if dir == "" {
+		dir = "."
+	}
+	return filepath.Join(dir, ".infernosim_last_run.json")
 }
 
-func loadReplaySnapshot() *ReplaySnapshot {
-	b, err := os.ReadFile(replaySnapshotPath())
+func loadReplaySnapshot(dir string) *ReplaySnapshot {
+	b, err := os.ReadFile(replaySnapshotPath(dir))
 	if err != nil {
 		return nil
 	}
@@ -1123,7 +1224,7 @@ func saveReplaySnapshot(summary *ReplaySummary) {
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(replaySnapshotPath(), b, 0644)
+	_ = os.WriteFile(replaySnapshotPath(summary.ArtifactDir), b, 0o600)
 }
 
 // ---------------------------------------------------------------------------
@@ -1132,11 +1233,17 @@ func saveReplaySnapshot(summary *ReplaySummary) {
 
 func runRecord(args []string) int {
 	fs := flag.NewFlagSet("record", flag.ContinueOnError)
-	listen := fs.String("listen", ":8080", "Listen address for inbound proxy")
+	listen := fs.String("listen", "127.0.0.1:8080", "Listen address for inbound proxy (default: loopback; use 0.0.0.0 to expose externally)")
+	outboundListen := fs.String("outbound-listen", "127.0.0.1:8084", "Forward-proxy address for capturing application dependencies (empty disables)")
 	forward := fs.String("forward", "", "Backend host:port to forward to (required)")
 	out := fs.String("out", "./incident", "Output directory for the incident bundle")
 	env := fs.String("env", "", "Environment label (e.g. production, staging)")
 	httpsMode := fs.String("https-mode", "tunnel", "HTTPS mode: tunnel or mitm")
+	insecureUpstream := fs.Bool("insecure-upstream", false, "Skip TLS verification for upstream connections (UNSAFE)")
+	mitmAllowHosts := fs.String("mitm-allow-hosts", "", "Comma-separated hostnames permitted to receive MITM certs (default: localhost only)")
+	allowPrivate := fs.Bool("allow-private-destinations", false, "Allow outbound capture to reach loopback/private destinations (local development only)")
+	captureSensitive := fs.Bool("capture-sensitive-data", false, "Store raw headers and bodies, including credentials and PII (UNSAFE)")
+	appendLogs := fs.Bool("append", false, "Append to an existing incident bundle instead of requiring empty logs")
 
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprintf(os.Stderr, "record: %v\n", err)
@@ -1147,13 +1254,25 @@ func runRecord(args []string) int {
 		return 1
 	}
 
-	if err := os.MkdirAll(*out, 0o755); err != nil {
+	if *insecureUpstream {
+		fmt.Fprintln(os.Stderr, "\u26a0️  WARNING: --insecure-upstream disables TLS certificate verification. Never use in production.")
+	}
+
+	if err := os.MkdirAll(*out, 0o700); err != nil {
 		fmt.Fprintf(os.Stderr, "record: create output dir: %v\n", err)
 		return 1
 	}
 
 	inboundLogPath := filepath.Join(*out, "inbound.log")
 	outboundLogPath := filepath.Join(*out, "outbound.log")
+	if !*appendLogs {
+		for _, path := range []string{inboundLogPath, outboundLogPath} {
+			if info, statErr := os.Stat(path); statErr == nil && info.Size() > 0 {
+				fmt.Fprintf(os.Stderr, "record: %s already contains data; choose a new --out directory or pass --append\n", path)
+				return 1
+			}
+		}
+	}
 
 	inboundLogger, err := event.NewLogger(inboundLogPath)
 	if err != nil {
@@ -1177,29 +1296,58 @@ func runRecord(args []string) int {
 			fmt.Fprintf(os.Stderr, "record: CA store: %v\n", err)
 			return 1
 		}
+		if *mitmAllowHosts != "" {
+			caStore.AllowedHosts = strings.Split(*mitmAllowHosts, ",")
+		}
 	}
 
 	ctx := &capture.ProxyContext{
-		Logger:  inboundLogger,
-		CA:      caStore,
-		UseMITM: useMITM,
+		Logger:                   inboundLogger,
+		CA:                       caStore,
+		UseMITM:                  useMITM,
+		AllowInsecureUpstream:    *insecureUpstream,
+		AllowPrivateDestinations: *allowPrivate,
+		CaptureSensitiveData:     *captureSensitive,
 	}
 
 	targetURL := &url.URL{Scheme: "http", Host: *forward}
-	server, err := capture.StartInboundProxy(*listen, targetURL, ctx)
+	inServer, err := capture.StartInboundProxy(*listen, targetURL, ctx)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "record: start proxy: %v\n", err)
+		fmt.Fprintf(os.Stderr, "record: start inbound proxy: %v\n", err)
 		return 1
 	}
 
-	log.Printf("Recording → %s (out: %s)", *forward, *out)
+	outCtx := &capture.ProxyContext{
+		Logger:                   outboundLogger,
+		CA:                       caStore,
+		UseMITM:                  useMITM,
+		AllowInsecureUpstream:    *insecureUpstream,
+		AllowPrivateDestinations: *allowPrivate,
+		CaptureSensitiveData:     *captureSensitive,
+	}
+	var outServer *http.Server
+	if strings.TrimSpace(*outboundListen) != "" {
+		outServer, err = capture.StartForwardProxy(*outboundListen, outCtx)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "record: start outbound capture: %v\n", err)
+			return 1
+		}
+	}
+
+	log.Printf("Recording | Inbound: %s → %s | Outbound proxy: %s", *listen, *forward, *outboundListen)
+	if *outboundListen != "" {
+		log.Printf("Configure the application with HTTP_PROXY=http://%s and HTTPS_PROXY=http://%s", *outboundListen, *outboundListen)
+	}
 	log.Printf("Press Ctrl-C to stop recording.")
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
 
-	_ = server.Close()
+	_ = inServer.Close()
+	if outServer != nil {
+		_ = outServer.Close()
+	}
 	_ = inboundLogger.Close()
 	_ = outboundLogger.Close()
 
@@ -1319,14 +1467,23 @@ func runVerify(args []string) int {
 
 func runDiff(args []string) int {
 	fs := flag.NewFlagSet("diff", flag.ContinueOnError)
+	positionalIncident := ""
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		positionalIncident = args[0]
+		args = args[1:]
+	}
 	targetBase := fs.String("target", "http://localhost:8080", "Target base URL to replay against")
 	maxWall := fs.Duration("max-wall-time", 60*time.Second, "Max wall-clock time for the replay run")
+	allowWrites := fs.Bool("allow-writes", false, "Permit diff replay of POST/PUT/PATCH/DELETE requests")
 
-	if err := fs.Parse(args); err != nil || fs.NArg() < 1 {
+	if err := fs.Parse(args); err != nil || (positionalIncident == "" && fs.NArg() < 1) {
 		fmt.Fprintln(os.Stderr, "Usage: infernosim diff <incident-dir> [--target http://...]")
 		return 1
 	}
-	dir := fs.Arg(0)
+	dir := positionalIncident
+	if dir == "" && fs.NArg() > 0 {
+		dir = fs.Arg(0)
+	}
 
 	bundle, err := replaydriver.OpenBundle(dir)
 	if err != nil {
@@ -1342,6 +1499,19 @@ func runDiff(args []string) int {
 		}
 	}
 
+	// Start stub proxy for outbound calls if outbound.log exists
+	if bundle.HasOutbound() {
+		stub, err := stubproxy.New(bundle.OutboundLog, "", nil)
+		if err == nil {
+			server := &http.Server{Addr: ":8084", Handler: stub}
+			go func() {
+				_ = server.ListenAndServe()
+			}()
+			defer server.Close()
+			fmt.Printf("Started stub proxy for outbound calls on :8084 using %s\n", bundle.OutboundLog)
+		}
+	}
+
 	events, err := replaydriver.LoadInboundEvents(bundle.InboundLog)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "diff: load events: %v\n", err)
@@ -1353,6 +1523,7 @@ func runDiff(args []string) int {
 		Density:      1.0,
 		MinGap:       2 * time.Millisecond,
 		MaxWallClock: *maxWall,
+		SafeMode:     !*allowWrites,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "diff: replay: %v\n", err)

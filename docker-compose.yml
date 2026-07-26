@@ -1,15 +1,16 @@
 services:
   infernosim-capture:
     image: infernosim:local
-    privileged: true
     volumes:
       - ${INCIDENT_DIR:-./.incident}:/incident
-    command: 
-        - "--mode=proxy"
-        - "--listen=:19000"
-        - "--log=/incident/outbound.log"
+    command:
+      - "--mode=proxy"
+      - "--listen=:19000"
+      - "--log=/incident/outbound.log"
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
-      test: ["CMD-SHELL", "bash -lc 'exec 3<>/dev/tcp/127.0.0.1/19000'"]
+      test: ["CMD", "nc", "-z", "127.0.0.1", "19000"]
       interval: 2s
       timeout: 2s
       retries: 20

@@ -82,12 +82,12 @@ func (b IncidentBundle) ReadMetadata() (IncidentMetadata, error) {
 
 // WriteMetadata writes m to incident.json, creating the directory if needed.
 func WriteMetadata(dir string, m IncidentMetadata) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "incident.json"), data, 0o644)
+	return os.WriteFile(filepath.Join(dir, "incident.json"), data, 0o600)
 }

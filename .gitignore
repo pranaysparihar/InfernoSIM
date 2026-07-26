@@ -1,28 +1,15 @@
-# Compiled binaries
+# Compiled binaries and release output
+agent
 infernosim
-test-*
 infernosim-*
+test-*
 build/
 bin/
-
-# Log files
-*.log
-
-# Temporary testing output
-*.txt
-
-# Local CA and certs
-ca/
-~/.infernosim/
-# Binaries
-infernosim
-infernosim-*
-
-#Go Artifacts
+dist/
 *.test
 coverage.out
 
-# Runtime output
+# Runtime incident artifacts
 *.log
 *.out
 replay_result.txt
@@ -30,10 +17,12 @@ verify_result.txt
 deterministic-replay-output.txt
 .infernosim_last_run.json
 
-# OS/editor
+# Local CA material
+ca/
+.infernosim/
+
+# OS and editor files
 .DS_Store
 
-# Node
+# Runtime dependencies
 node_modules/
-# Added by goreleaser init:
-dist/

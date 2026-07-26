@@ -3,18 +3,20 @@ package replaydriver
 import (
 	"fmt"
 	"infernosim/pkg/event"
+	"net/http"
+	"sort"
 	"time"
 )
 
 type EventDiff struct {
-	Index       int
-	Captured    event.Event
-	Replayed    event.Event
+	Index        int
+	Captured     event.Event
+	Replayed     event.Event
 	StatusDiff   string
 	StatusChange string
 	HeaderDiff   []string
-	BodyDiff    string
-	LatencyDiff string
+	BodyDiff     string
+	LatencyDiff  string
 }
 
 func CompareEvents(captured, replayed event.Event, index int) *EventDiff {
@@ -45,13 +47,38 @@ func CompareEvents(captured, replayed event.Event, index int) *EventDiff {
 		hasDiff = true
 	}
 
-	// 3. Header check — compare all headers present in the captured event
-	for h, cv := range captured.Headers {
-		rv := replayed.Headers[h]
+	// 3. Response header check. Volatile transport headers are excluded.
+	capturedHeaders := capturedResponseHeaders(captured)
+	replayedHeaders := replayed.ResponseHeaders
+	if replayedHeaders == nil {
+		replayedHeaders = replayed.Headers
+	}
+	keys := make([]string, 0, len(capturedHeaders))
+	for h := range capturedHeaders {
+		if isVolatileResponseHeader(h) {
+			continue
+		}
+		keys = append(keys, h)
+	}
+	sort.Strings(keys)
+	for _, h := range keys {
+		cv := capturedHeaders[h]
+		rv := replayedHeaders[h]
 		if len(cv) > 0 && (len(rv) == 0 || cv[0] != rv[0]) {
 			diff.HeaderDiff = append(diff.HeaderDiff, fmt.Sprintf("Header %s: Expected %v, Got %v", h, cv, rv))
 			hasDiff = true
 		}
+	}
+
+	// 4. Body fingerprint check.
+	expectedHash := capturedResponseHash(captured)
+	actualHash := replayed.ResponseBodySha256
+	if actualHash == "" {
+		actualHash = replayed.BodySha256
+	}
+	if expectedHash != "" && actualHash != "" && expectedHash != actualHash {
+		diff.BodyDiff = fmt.Sprintf("Expected SHA-256 %s, Got %s", expectedHash, actualHash)
+		hasDiff = true
 	}
 
 	if !hasDiff {
@@ -78,6 +105,18 @@ func PrintDiffs(diffs []*EventDiff) {
 		for _, hd := range d.HeaderDiff {
 			fmt.Printf("  [HEADER]  %s\n", hd)
 		}
+		if d.BodyDiff != "" {
+			fmt.Printf("  [BODY]    %s\n", d.BodyDiff)
+		}
 	}
 	fmt.Println("============================")
+}
+
+func isVolatileResponseHeader(name string) bool {
+	switch http.CanonicalHeaderKey(name) {
+	case "Date", "Server", "Set-Cookie", "Content-Length":
+		return true
+	default:
+		return false
+	}
 }

@@ -4,7 +4,7 @@ Thanks for contributing.
 
 ## Development Setup
 
-1. Install Go (1.22+ recommended).
+1. Install Go 1.25.12 or newer in the 1.25 line.
 2. Clone the repo.
 3. Build:
 
@@ -30,6 +30,9 @@ go test ./...
 Before opening a PR, ensure:
 
 - `go test ./...` passes.
+- `go test -race ./...` passes.
+- `go vet ./...` passes.
+- `gofmt -l` reports no files.
 - New flags or summary fields are documented.
 - No generated runtime artifacts are committed.
 

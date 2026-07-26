@@ -27,14 +27,16 @@ import (
 
 // ReplayConfig controls how a replay is executed
 type ReplayConfig struct {
-	Strict bool // if true, any unexpected behavior aborts replay
+	Strict      bool // if true, any unexpected behavior aborts replay
+	AllowWrites bool // explicit opt-in for POST/PUT/PATCH/DELETE
 }
 
 // Replayer executes a deterministic replay from an event log
 type Replayer struct {
-	events []event.Event
-	config ReplayConfig
-	client *http.Client
+	events     []event.Event
+	config     ReplayConfig
+	client     *http.Client
+	targetBase *url.URL
 }
 
 // NewReplayer loads events from a log file
@@ -58,6 +60,12 @@ func NewReplayer(logFile string, config ReplayConfig) (*Replayer, error) {
 	if len(events) == 0 {
 		return nil, errors.New("no events found in log")
 	}
+	sort.SliceStable(events, func(i, j int) bool {
+		if events[i].Timestamp.Equal(events[j].Timestamp) {
+			return events[i].Sequence < events[j].Sequence
+		}
+		return events[i].Timestamp.Before(events[j].Timestamp)
+	})
 
 	// Create a client that uses HTTP/2 transport seamlessly for generic outbound reqs
 	client := &http.Client{
@@ -86,6 +94,9 @@ func (r *Replayer) PreflightValidation(targetBase string) error {
 	} else {
 		host = u.Host
 	}
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return fmt.Errorf("preflight failed: target must be an absolute http(s) URL")
+	}
 
 	if !strings.Contains(host, ":") {
 		if strings.HasPrefix(targetBase, "https") {
@@ -101,6 +112,7 @@ func (r *Replayer) PreflightValidation(targetBase string) error {
 		return fmt.Errorf("preflight failed: target %s unreachable: %v", targetBase, err)
 	}
 	conn.Close()
+	r.targetBase = u
 	return nil
 }
 
@@ -111,11 +123,6 @@ func (r *Replayer) Replay() error {
 	var lastTime time.Time
 	var outboundExpected int
 	var outboundObserved int
-
-	// Sort events chronologically to gracefully handle concurrent proxy logs
-	sort.Slice(r.events, func(i, j int) bool {
-		return r.events[i].Timestamp.Before(r.events[j].Timestamp)
-	})
 
 	for i, evt := range r.events {
 		// Enforce ordering by timestamp
@@ -148,6 +155,12 @@ func (r *Replayer) Replay() error {
 }
 
 func (r *Replayer) executeOutboundCall(evt event.Event) error {
+	if !r.config.AllowWrites {
+		switch strings.ToUpper(evt.Method) {
+		case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+			return fmt.Errorf("write replay blocked for %s; pass --allow-writes only for an isolated target", evt.Method)
+		}
+	}
 	var bodyReader io.Reader
 
 	if evt.BodyB64 != "" {
@@ -166,25 +179,40 @@ func (r *Replayer) executeOutboundCall(evt event.Event) error {
 		bodyReader = bytes.NewReader(bodyBytes)
 	}
 
-	req, err := http.NewRequest(evt.Method, evt.URL, bodyReader)
+	if r.targetBase == nil {
+		return fmt.Errorf("replay target was not initialized")
+	}
+	original, err := url.Parse(evt.URL)
+	if err != nil {
+		return fmt.Errorf("invalid captured URL: %w", err)
+	}
+	target := *r.targetBase
+	target.Path = original.Path
+	target.RawPath = original.RawPath
+	target.RawQuery = original.RawQuery
+	req, err := http.NewRequest(evt.Method, target.String(), bodyReader)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %v", err)
 	}
 
 	for k, vals := range evt.Headers {
+		if strings.EqualFold(k, "Authorization") || strings.EqualFold(k, "Cookie") {
+			continue
+		}
 		for _, v := range vals {
+			if v == "[REDACTED]" {
+				continue
+			}
 			req.Header.Add(k, v)
 		}
 	}
 
 	// Use standard Transport for HTTP/1.1 if not explicitly gRPC
 	if evt.GrpcServiceMethod == "" {
-		resp, err := http.DefaultClient.Do(req)
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Do(req)
 		if err != nil {
-			if r.config.Strict && evt.Status > 0 {
-				return fmt.Errorf("FAIL_SLO_MISSED: expected status %d but got network dial error", evt.Status)
-			}
-			return nil
+			return fmt.Errorf("FAIL_SLO_MISSED: request failed: %w", err)
 		}
 		defer resp.Body.Close()
 

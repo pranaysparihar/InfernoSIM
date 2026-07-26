@@ -66,6 +66,20 @@ func TestOutcomeNoCoverageWhenNotTransparent(t *testing.T) {
 	}
 }
 
+func TestOutcomeInboundOnlyIsWeakPass(t *testing.T) {
+	summary := NewReplaySummary()
+	summary.ProxyStatus = "BOUND"
+	summary.RunsRequested = 1
+	summary.RunsExecuted = 1
+	summary.RunsCompleted = 1
+	summary.InboundEventsReplayed = 1
+	summary.TargetInbound = 1
+	summary.Finalize()
+	if summary.Outcome != "PASS_WEAK" {
+		t.Fatalf("expected PASS_WEAK, got %s", summary.Outcome)
+	}
+}
+
 func TestOutcomeTransparentProxyOnlyWhenTransparent(t *testing.T) {
 	summary := NewReplaySummary()
 	summary.ProxyStatus = "BOUND"

@@ -2,6 +2,7 @@ package stubproxy
 
 import (
 	"bufio"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"infernosim/pkg/event"
@@ -18,15 +19,15 @@ import (
 )
 
 type StubProxy struct {
-	events []event.Event
-	i      int64
-	seen   int64
+	events  []event.Event
+	i       int64
+	seen    int64
 	maxSeen int64
 
 	rules []inject.Rule
 
 	// per-dep attempt counters (for retry-limit behavior)
-	attempts map[string]int
+	attempts   map[string]int
 	attemptsMu sync.Mutex
 
 	mu                 sync.Mutex
@@ -38,6 +39,11 @@ type StubProxy struct {
 	forwardErrors  int64
 	forwardSuccess int64
 	cycleExpected  bool
+
+	matchMu         sync.Mutex
+	eventsByKey     map[string][]event.Event
+	matchCounts     map[string]int
+	matchMultiplier int
 }
 
 func LoadOutboundEvents(path string) ([]event.Event, error) {
@@ -69,17 +75,31 @@ func LoadOutboundEvents(path string) ([]event.Event, error) {
 func New(outboundLog string, observedLog string, rules []inject.Rule) (*StubProxy, error) {
 	evs, err := LoadOutboundEvents(outboundLog)
 	if err != nil {
-		return nil, err
+		if !os.IsNotExist(err) {
+			return nil, err
+		}
+		evs = nil
 	}
 	var observedLogger *event.Logger
 	if observedLog != "" {
-		observedLogger, _ = event.NewLogger(observedLog)
+		observedLogger, err = event.NewLogger(observedLog)
+		if err != nil {
+			return nil, err
+		}
+	}
+	eventsByKey := make(map[string][]event.Event)
+	for _, evt := range evs {
+		key := eventMatchKey(evt)
+		eventsByKey[key] = append(eventsByKey[key], evt)
 	}
 	return &StubProxy{
-		events:         evs,
-		rules:          rules,
-		attempts:       map[string]int{},
-		observedLogger: observedLogger,
+		events:          evs,
+		rules:           rules,
+		attempts:        map[string]int{},
+		observedLogger:  observedLogger,
+		eventsByKey:     eventsByKey,
+		matchCounts:     make(map[string]int),
+		matchMultiplier: 1,
 	}, nil
 }
 
@@ -96,6 +116,9 @@ func (s *StubProxy) Reset() {
 	s.divergenceReasons = nil
 	s.unexpectedOutbound = false
 	s.mu.Unlock()
+	s.matchMu.Lock()
+	s.matchCounts = make(map[string]int)
+	s.matchMu.Unlock()
 }
 
 // ConfigureReplayCardinality controls how many outbound events this run may observe.
@@ -106,6 +129,15 @@ func (s *StubProxy) ConfigureReplayCardinality(cycleExpected bool, maxObserved i
 		maxObserved = 0
 	}
 	atomic.StoreInt64(&s.maxSeen, int64(maxObserved))
+	s.matchMu.Lock()
+	s.matchMultiplier = 1
+	if cycleExpected && len(s.events) > 0 {
+		s.matchMultiplier = (maxObserved + len(s.events) - 1) / len(s.events)
+		if s.matchMultiplier < 1 {
+			s.matchMultiplier = 1
+		}
+	}
+	s.matchMu.Unlock()
 }
 
 // depKey returns a stable dependency identifier from a proxied request.
@@ -138,7 +170,6 @@ func (s *StubProxy) divergence(expected event.Event, got *http.Request, idx int6
 }
 
 func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	idx := atomic.LoadInt64(&s.i)
 	seen := atomic.AddInt64(&s.seen, 1)
 
 	observedHost := r.Host
@@ -149,7 +180,7 @@ func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	maxSeen := atomic.LoadInt64(&s.maxSeen)
 	if maxSeen > 0 && seen > maxSeen {
-		msg := fmt.Sprintf("DIVERGENCE at outbound event index=%d why=unexpected_outbound_call", idx)
+		msg := fmt.Sprintf("DIVERGENCE at outbound event index=%d why=unexpected_outbound_call", seen-1)
 		fmt.Fprintln(os.Stderr, msg)
 		s.mu.Lock()
 		s.divergenceReasons = append(s.divergenceReasons, msg)
@@ -163,9 +194,15 @@ func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	expected := s.events[idx%int64(len(s.events))]
-	if !s.cycleExpected && int(idx) >= len(s.events) {
-		msg := fmt.Sprintf("DIVERGENCE at outbound event index=%d why=unexpected_outbound_call", idx)
+	expected, _, matched := s.matchExpected(r)
+	if !matched {
+		msg := fmt.Sprintf(
+			"DIVERGENCE at outbound event index=%d why=no_matching_captured_call got={method=%s url=%s host=%s}",
+			seen-1,
+			r.Method,
+			r.URL.String(),
+			r.Host,
+		)
 		fmt.Fprintln(os.Stderr, msg)
 		s.mu.Lock()
 		s.divergenceReasons = append(s.divergenceReasons, msg)
@@ -174,19 +211,6 @@ func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unexpected outbound call", http.StatusBadGateway)
 		return
 	}
-
-	// --- basic matching (v0 tolerant) ---
-	if expected.Method != "" && r.Method != expected.Method {
-		s.divergence(expected, r, idx, "method_mismatch")
-	}
-
-	gotURL := r.URL.String()
-	if expected.URL != "" &&
-		!strings.Contains(gotURL, strings.TrimPrefix(expected.URL, "http://")) {
-		s.divergence(expected, r, idx, "url_mismatch")
-	}
-
-	atomic.AddInt64(&s.i, 1)
 
 	dep := depKey(r)
 	s.attemptsMu.Lock()
@@ -223,7 +247,68 @@ func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	copyHeaders(w.Header(), http.Header(expected.ResponseHeaders))
+	body, bodyErr := base64.StdEncoding.DecodeString(expected.ResponseBodyB64)
+	if bodyErr != nil {
+		http.Error(w, "captured dependency body is invalid", http.StatusBadGateway)
+		return
+	}
 	w.WriteHeader(status)
+	if len(body) > 0 {
+		_, _ = w.Write(body)
+	}
+}
+
+func (s *StubProxy) matchExpected(r *http.Request) (event.Event, int64, bool) {
+	key := requestMatchKey(r)
+	s.matchMu.Lock()
+	defer s.matchMu.Unlock()
+
+	candidates := s.eventsByKey[key]
+	if len(candidates) == 0 {
+		return event.Event{}, 0, false
+	}
+	count := s.matchCounts[key]
+	limit := len(candidates) * s.matchMultiplier
+	if count >= limit {
+		return event.Event{}, int64(count), false
+	}
+	s.matchCounts[key] = count + 1
+	return candidates[count%len(candidates)], int64(count), true
+}
+
+func eventMatchKey(e event.Event) string {
+	parsed, err := url.Parse(e.URL)
+	if err != nil {
+		return strings.ToUpper(e.Method) + " " + e.URL
+	}
+	return canonicalMatchKey(e.Method, parsed.Host, parsed.EscapedPath(), parsed.RawQuery)
+}
+
+func requestMatchKey(r *http.Request) string {
+	host := r.Host
+	if r.URL != nil && r.URL.Host != "" {
+		host = r.URL.Host
+	}
+	path := "/"
+	query := ""
+	if r.URL != nil {
+		if r.URL.EscapedPath() != "" {
+			path = r.URL.EscapedPath()
+		}
+		query = r.URL.RawQuery
+	}
+	return canonicalMatchKey(r.Method, host, path, query)
+}
+
+func canonicalMatchKey(method, host, path, query string) string {
+	if path == "" {
+		path = "/"
+	}
+	if query != "" {
+		path += "?" + query
+	}
+	return strings.ToUpper(method) + " " + strings.ToLower(host) + path
 }
 
 func (s *StubProxy) forwardProxyRequest(w http.ResponseWriter, r *http.Request) error {

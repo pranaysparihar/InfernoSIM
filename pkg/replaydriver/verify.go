@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 )
@@ -35,8 +36,8 @@ func VerifyIncident(inboundLog string) (VerifyResult, error) {
 
 	var issues []VerifyIssue
 
-	// Build a set of locators produced by prior requests (for missing-dep detection).
-	producedLocators := make(map[string]struct{})
+	// Build a set of values produced by prior responses.
+	producedValues := make(map[string]struct{})
 
 	for i, e := range events {
 		idx := i + 1
@@ -54,7 +55,8 @@ func VerifyIncident(inboundLog string) (VerifyResult, error) {
 		// --- Missing dependency detection ---
 		consumed := IdentifyConsumers(e)
 		for _, c := range consumed {
-			if _, ok := producedLocators[c.Locator]; !ok {
+			key := string(c.Kind) + "\x00" + c.Value
+			if _, ok := producedValues[key]; !ok {
 				issues = append(issues, VerifyIssue{
 					RequestIndex: idx,
 					Severity:     "error",
@@ -83,12 +85,10 @@ func VerifyIncident(inboundLog string) (VerifyResult, error) {
 		}
 
 		// Update produced locators from this event's response body.
-		if e.BodyB64 != "" {
-			if body, err := base64.StdEncoding.DecodeString(e.BodyB64); err == nil {
-				produced := extractBodyProducedLocators(body, e)
-				for loc := range produced {
-					producedLocators[loc] = struct{}{}
-				}
+		if body, ok := capturedResponseBody(e); ok {
+			fakeResp := &http.Response{Header: capturedResponseHeaders(e)}
+			for _, produced := range ExtractResponseValues(fakeResp, body) {
+				producedValues[string(produced.Kind)+"\x00"+produced.Value] = struct{}{}
 			}
 		}
 	}

@@ -113,15 +113,32 @@ func (rw *RequestRewriter) PrepareBody(e event.Event) ([]byte, bool) {
 // captured counterparts. It uses the pre-built consumedValueIndex (from all captured events)
 // to find what "old" value each produced value should replace.
 func (rw *RequestRewriter) UpdateState(captured event.Event, resp *http.Response, bodyBytes []byte) {
-	produced := ExtractResponseValues(resp, bodyBytes)
-	for _, p := range produced {
-		consumers, ok := rw.consumedIndex[p.Locator]
-		if !ok {
-			continue
+	liveProduced := ExtractResponseValues(resp, bodyBytes)
+	capturedBody, _ := capturedResponseBody(captured)
+	capturedResp := &http.Response{Header: capturedResponseHeaders(captured)}
+	capturedProduced := ExtractResponseValues(capturedResp, capturedBody)
+
+	for _, oldValue := range capturedProduced {
+		for _, newValue := range liveProduced {
+			if oldValue.Kind == newValue.Kind &&
+				(oldValue.Name == newValue.Name || oldValue.Locator == newValue.Locator) &&
+				oldValue.Value != "" && newValue.Value != "" &&
+				oldValue.Value != newValue.Value {
+				rw.state.Put(oldValue.Value, newValue.Value)
+			}
 		}
-		for _, c := range consumers {
-			if c.Kind == p.Kind && c.Value != p.Value {
-				rw.state.Put(c.Value, p.Value)
+	}
+
+	// Compatibility fallback for older captures that lack a response payload:
+	// pair a live produced value with later consumers of the same value kind.
+	if len(capturedProduced) == 0 {
+		for _, newValue := range liveProduced {
+			for _, consumers := range rw.consumedIndex {
+				for _, consumer := range consumers {
+					if consumer.Kind == newValue.Kind && consumer.Value != newValue.Value {
+						rw.state.Put(consumer.Value, newValue.Value)
+					}
+				}
 			}
 		}
 	}

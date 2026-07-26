@@ -72,11 +72,16 @@ for dir in "$CORPUS_DIR"/*/; do
   fi
 
   for ((i=1;i<=RUNS;i++)); do
-    if $BIN replay "$dir" \
+    set +e
+    output=$($BIN replay \
         --target-base "$TARGET" \
         --runs 1 \
         --max-wall-time 30s \
-        $extra_flags >/dev/null 2>&1; then
+        "$dir" \
+        $extra_flags 2>&1)
+    replay_rc=$?
+    set -e
+    if [ "$replay_rc" -eq 0 ] || { [ "$replay_rc" -eq 1 ] && grep -q 'Outcome: PASS_WEAK' <<<"$output"; }; then
       scenario_pass=$((scenario_pass + 1))
     else
       scenario_fail=$((scenario_fail + 1))

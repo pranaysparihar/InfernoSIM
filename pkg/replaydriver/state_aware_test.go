@@ -21,7 +21,7 @@ func TestDependencyExtraction(t *testing.T) {
 	}
 	resp.Header.Set("Content-Type", "application/json")
 	body := []byte(`{"access_token": "secret123", "id": "order456"}`)
-	
+
 	produced := ExtractResponseValues(resp, body)
 
 	foundToken := false
@@ -62,13 +62,13 @@ func TestSubstitutionEngine(t *testing.T) {
 	state := NewRuntimeState()
 	state.Put("old_token", "new_token")
 	state.Put("order_001", "order_999")
-	
+
 	rewriter := NewRequestRewriter(state)
 
 	// Test Header Substitution
 	req, _ := http.NewRequest("GET", "http://api.com/orders/order_001", nil)
 	req.Header.Set("Authorization", "Bearer old_token")
-	
+
 	rewriter.Rewrite(event.Event{}, req)
 
 	if req.Header.Get("Authorization") != "Bearer new_token" {
@@ -104,33 +104,33 @@ func TestSubstitutionEngine_NoReplacement(t *testing.T) {
 
 func TestChainedAuthFlow(t *testing.T) {
 	// Integration test: login -> call protected
-	
+
 	// In memory replayer would be ideal, but for now we'll test the logic chain
 	state := NewRuntimeState()
 	rewriter := NewRequestRewriter(state)
 
 	// 1. Captured "Login" Response
 	loginResp := &http.Response{
-		Header: make(http.Header),
+		Header:     make(http.Header),
 		StatusCode: 200,
 	}
 	loginResp.Header.Set("Content-Type", "application/json")
-	
-	// In a real run, ReplayEvents would call UpdateState. 
+
+	// In a real run, ReplayEvents would call UpdateState.
 	// To test the chain, we simulate finding the "old" value from capture metadata
 	// Since our current UpdateState is simplified, we'll manually seed the state
 	state.Put("stale_token", "fresh_token")
 
 	// 2. Mock replaying "Protected" Request
 	protectedReq := event.Event{
-		Method: "GET",
-		URL: "http://api/protected",
+		Method:  "GET",
+		URL:     "http://api/protected",
 		Headers: map[string][]string{"Authorization": {"Bearer stale_token"}},
 	}
 
 	req, _ := http.NewRequest(protectedReq.Method, protectedReq.URL, nil)
 	req.Header.Set("Authorization", protectedReq.Headers["Authorization"][0])
-	
+
 	rewriter.Rewrite(protectedReq, req)
 
 	if req.Header.Get("Authorization") != "Bearer fresh_token" {
@@ -169,17 +169,17 @@ func TestCookieSessionChain(t *testing.T) {
 func TestDeterministicChaosReplay(t *testing.T) {
 	// Simulate request 7 having +500ms latency injected
 	// We'll verify that the replayed event records the increased duration
-	
+
 	capturedEvent := event.Event{
-		ID: "7",
-		Method: "GET",
-		URL: "http://api/slow",
+		ID:       "7",
+		Method:   "GET",
+		URL:      "http://api/slow",
 		Duration: 10 * time.Millisecond,
 	}
 
 	replayedEvent := event.Event{
-		Method: "GET",
-		URL: "http://api/slow",
+		Method:   "GET",
+		URL:      "http://api/slow",
 		Duration: 510 * time.Millisecond, // Injected +500ms
 	}
 
@@ -188,7 +188,7 @@ func TestDeterministicChaosReplay(t *testing.T) {
 	if diff == nil || diff.LatencyDiff == "" {
 		t.Errorf("chaos replay test failed: latency difference not detected")
 	}
-	
+
 	if !strings.Contains(diff.LatencyDiff, "delta 500ms") {
 		t.Errorf("chaos replay test failed: expected 500ms delta report, got %s", diff.LatencyDiff)
 	}
@@ -247,7 +247,7 @@ func TestGoldenReplayScenario(t *testing.T) {
 	}
 
 	// Seed state for substitution (simulating dependency detection)
-	// In a real system, the first response would update this. 
+	// In a real system, the first response would update this.
 	// For the golden test, we verify the chain works.
 	cfg := ReplayConfig{
 		TimeScale: 1.0,
@@ -255,11 +255,11 @@ func TestGoldenReplayScenario(t *testing.T) {
 		MinGap:    0,
 	}
 
-	// Since ReplayEvents creates its own state/rewriter, we'll manually verify 
+	// Since ReplayEvents creates its own state/rewriter, we'll manually verify
 	// the core logic by setting a mapping that the protected request should use.
-	// NOTE: ReplayEvents is currently a black box for state. 
+	// NOTE: ReplayEvents is currently a black box for state.
 	// We'll rely on the replayer's internal logic which we tested in units.
-	
+
 	result, err := ReplayEvents(events, server.URL, cfg)
 	if err != nil {
 		t.Fatalf("replay failed: %v", err)
@@ -268,8 +268,11 @@ func TestGoldenReplayScenario(t *testing.T) {
 	if result.CompletedEvents != 2 {
 		t.Errorf("expected 2 events replayed, got %d", result.CompletedEvents)
 	}
+	if len(result.ReplayedEvents) != 2 || result.ReplayedEvents[1].Status != http.StatusOK {
+		t.Fatalf("state-aware auth replay did not reach protected endpoint successfully: %+v", result.ReplayedEvents)
+	}
 
 	// The first event is /login (200), the second should be /protected (200 if substituted)
-	// Note: Currently ReplayEvents state heuristic is simple. 
+	// Note: Currently ReplayEvents state heuristic is simple.
 	// This golden test validates the execution flow.
 }

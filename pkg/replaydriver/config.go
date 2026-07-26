@@ -1,6 +1,7 @@
 package replaydriver
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"time"
@@ -40,9 +41,9 @@ type ChaosConfig struct {
 // LatencyConfig injects artificial latency into replayed requests.
 type LatencyConfig struct {
 	// Request is the 1-based index of the request to affect. 0 means all requests.
-	Request int    `yaml:"request"`
+	Request int `yaml:"request"`
 	// Delay is the duration string to add (e.g. "500ms", "1s").
-	Delay   string `yaml:"delay"`
+	Delay string `yaml:"delay"`
 }
 
 // StateConfig points to an external state snapshot file.
@@ -58,21 +59,37 @@ func LoadReplayConfig(path string) (ReplayYAMLConfig, error) {
 		return ReplayYAMLConfig{}, fmt.Errorf("load replay config %q: %w", path, err)
 	}
 	var cfg ReplayYAMLConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&cfg); err != nil {
+		return ReplayYAMLConfig{}, fmt.Errorf("parse replay config %q: %w", path, err)
+	}
+	if cfg.Runs < 0 {
+		return ReplayYAMLConfig{}, fmt.Errorf("parse replay config %q: runs must be >= 0", path)
+	}
+	if cfg.TimeScale < 0 {
+		return ReplayYAMLConfig{}, fmt.Errorf("parse replay config %q: time_scale must be >= 0", path)
+	}
+	if cfg.Chaos.Latency.Request < 0 {
+		return ReplayYAMLConfig{}, fmt.Errorf("parse replay config %q: chaos.latency.request must be >= 0", path)
+	}
+	if _, err := cfg.Chaos.ChaosDelay(); err != nil {
 		return ReplayYAMLConfig{}, fmt.Errorf("parse replay config %q: %w", path, err)
 	}
 	return cfg, nil
 }
 
 // ChaosDelay parses the Latency.Delay string into a time.Duration.
-// Returns 0 if empty or unparseable.
-func (c ChaosConfig) ChaosDelay() time.Duration {
+func (c ChaosConfig) ChaosDelay() (time.Duration, error) {
 	if c.Latency.Delay == "" {
-		return 0
+		return 0, nil
 	}
 	d, err := time.ParseDuration(c.Latency.Delay)
 	if err != nil {
-		return 0
+		return 0, fmt.Errorf("invalid chaos.latency.delay %q: %w", c.Latency.Delay, err)
 	}
-	return d
+	if d < 0 {
+		return 0, fmt.Errorf("chaos.latency.delay must be >= 0")
+	}
+	return d, nil
 }

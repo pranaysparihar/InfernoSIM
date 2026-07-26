@@ -3,7 +3,7 @@
 go build -o infernosim-agent ./cmd/agent
 
 # Start the example service (Go app) on 8081 in the background
-PORT=8081 go run examples/goapp/main.go & 
+PORT=8081 OUTBOUND_PROXY=http://127.0.0.1:9000 go run examples/goapp/main.go &
 SERVICE_PID=$!
 echo "Started example service (goapp) with PID $SERVICE_PID"
 
@@ -13,7 +13,7 @@ INBOUND_PID=$!
 echo "Started InfernoSIM inbound agent (PID $INBOUND_PID)"
 
 # Start InfernoSIM outbound proxy on 9000
-./infernosim-agent --mode=proxy --listen=:9000 --log=events.log & 
+./infernosim-agent --mode=proxy --listen=:9000 --log=events.log --allow-private-destinations --capture-sensitive-data &
 PROXY_PID=$!
 echo "Started InfernoSIM forward proxy agent (PID $PROXY_PID)"
 

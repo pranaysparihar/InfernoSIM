@@ -1,7 +1,6 @@
 package replaydriver
 
 import (
-	"encoding/base64"
 	"infernosim/pkg/event"
 	"net/http"
 	"net/url"
@@ -60,17 +59,9 @@ func InspectIncident(inboundLog string) (InspectResult, error) {
 
 		// Extract produced values from the captured response body + headers.
 		var produced []ProducedValue
-		if e.BodyB64 != "" {
-			if body, err := base64.StdEncoding.DecodeString(e.BodyB64); err == nil {
-				// Copy all event headers to fakeResp so cookies and Content-Type are available.
-				fakeResp := &http.Response{Header: make(http.Header)}
-				for k, vals := range e.Headers {
-					for _, v := range vals {
-						fakeResp.Header.Add(k, v)
-					}
-				}
-				produced = ExtractResponseValues(fakeResp, body)
-			}
+		if body, ok := capturedResponseBody(e); ok {
+			fakeResp := &http.Response{Header: capturedResponseHeaders(e)}
+			produced = ExtractResponseValues(fakeResp, body)
 		}
 
 		// Count unique value kinds and register produced values for future chain detection.

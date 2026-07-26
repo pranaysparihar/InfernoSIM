@@ -1,271 +1,224 @@
 # InfernoSIM
 
+InfernoSIM is an open-source Go sidecar for capturing HTTP traffic and replaying
+incidents against an isolated service. It supports inbound request capture,
+outbound dependency stubbing, state-aware replay, fault injection, replay diffs,
+and concurrency pressure.
 
-InfernoSIM is not just a proxy—it's a strict deterministic chaos engineering, traffic interception, and CI/CD validation engine. Designed for modern microservices architectures, it enforces strict API contracts, breaks your local services before they break in production, and automatically discovers the performance limits of your infrastructure.
+## Requirements
 
----
+- Go 1.25.12 or newer in the 1.25 line
+- Docker with Compose for the container examples
+- Linux with `NET_ADMIN` only for optional transparent replay
 
-## Part 1: Core Guide (Features & Usage)
-
-This section outlines how to configure, run, and utilize the core capabilities of InfernoSIM.
-
-### Installation & Basic Setup
-Ensure you have Go 1.22+ installed. Build the agent binary:
-=======
-InfernoSIM is an open-source sidecar-style traffic capture and deterministic replay tool for backend services.
-
-It captures inbound and outbound HTTP traffic as JSONL logs, then replays real incidents against a live service with deterministic timing controls, fault injection, and concurrency pressure.
-
-## Features
-
-- Inbound + outbound capture via lightweight proxies.
-- **State-aware replay**: automatic extraction and substitution of auth tokens, session IDs, and resource IDs.
-- **Deterministic replay** across repeated runs with full header/body fidelity.
-- **Replay diff analysis**: detailed delta reporting for status codes, headers, and performance via `--diff`.
-- Causal concurrency pressure with `--fanout`.
-- Replay SLO checks with `--window`.
-- Fault injection (`latency`, `timeout`) for dependencies.
-- Actionable replay summary: limiting factor, sustained envelope, delta from last run.
-
-## Repository Layout
-
-- `cmd/agent/main.go`: InfernoSIM binary entrypoint.
-- `pkg/`: capture/replay/stub/injection/event internals.
-- `examples/goapp-deterministic`: deterministic Go sample app.
-- `examples/nodeapp-deterministic`: deterministic Node sample app.
-
-## Build
+## Build and test
 
 ```bash
-go build -o infernosim ./cmd/agent
+go build -trimpath -o infernosim ./cmd/agent
+go test -race ./...
+go vet ./...
 ```
 
+## Safety defaults
 
-### 1. Bounded HTTP Body Capture
-InfernoSIM cleanly captures both incoming and outgoing payloads without destroying memory. It strictly bounds bodies to 256KB by default. Captured payloads are automatically Base64-encoded and fingerprinted with a SHA-256 hash.
+- Listeners bind to loopback unless another address is explicitly supplied.
+- Replay skips POST, PUT, PATCH, and DELETE by default.
+- Legacy replay rewrites traffic to `--target`; it never intentionally calls the
+  captured origin.
+- Capture redacts authorization, cookie, API-key, and set-cookie values.
+- Raw bodies are fingerprinted but omitted unless `--capture-sensitive-data` is
+  explicitly supplied.
+- Incident logs and metadata use owner-only file permissions.
+- Forward proxies block loopback, link-local, and private destinations unless
+  `--allow-private-destinations` is supplied.
 
-**Usage:**
+Do not use `--allow-writes`, `--capture-sensitive-data`,
+`--allow-private-destinations`, or `--insecure-upstream` without understanding
+their scope.
+
+## Capture an incident
+
+Start the application, then run:
+
 ```bash
-./infernosim --mode=proxy --listen=:9000 --log=events.log
+./infernosim capture \
+  --listen 127.0.0.1:18080 \
+  --forward 127.0.0.1:8081 \
+  --out ./incident-001
 ```
-*Any HTTP(S) traffic routed through the proxy (e.g., `https://api.github.com/`) will log deterministic fingerprints (`bodySha256`) and the `bodyTruncated` status.*
 
-### 2. HTTPS Deep Capture (MITM Decryption)
-Standard proxies treat encrypted `CONNECT` tunnels as black boxes. InfernoSIM dynamically intercepts HTTPS handshakes, spins up a dynamic local Certificate Authority (`~/.infernosim/ca/`), generates leaf certificates per-host on the fly, and exposes the decrypted interior payload for logging and replay.
+This starts an inbound reverse proxy at `127.0.0.1:18080` and an outbound
+forward proxy at `127.0.0.1:8084`. Configure the application process to use the
+outbound proxy:
 
-**Usage:**
 ```bash
-./infernosim --mode=proxy --listen=:9000 --https-mode=mitm --log=events_https.log
+HTTP_PROXY=http://127.0.0.1:8084 \
+HTTPS_PROXY=http://127.0.0.1:8084 \
+./your-application
 ```
-*Note: The client application or OS must trust the local `infernosim-ca.crt` root certificate to smoothly decrypt external domains like `https://api.stripe.com`.*
 
-### 3. gRPC Unary Telemetry via HTTP/2
-InfernoSIM utilizes native `golang.org/x/net/http2/h2c` multiplexing to peek inside gRPC streams routed over plaintext proxies. It intercepts the HTTP/2 trailers without requiring custom Protobuf decoders, providing deep visibility into your service calls.
+Exercise the application through the inbound proxy, then press Ctrl-C. The
+incident directory contains `incident.json`, `inbound.log`, and `outbound.log`.
 
-**What it captures:**
-- `grpcServiceMethod`
-- `grpcStatus`
+For a local private dependency and replayable payload bytes:
 
-### 4. Deterministic Fault Injection (Chaos Engineering)
-Test how your application behaves when downstream APIs fail, lag, or completely drop connections, all defined by deterministic PRNG states.
-
-**Usage:**
 ```bash
-./infernosim --mode=proxy --listen=:9000 --inject="jitter=50ms,drop=5%,reset=5%,status=503,rate=100%"
+./infernosim capture \
+  --listen 127.0.0.1:18080 \
+  --forward 127.0.0.1:8081 \
+  --outbound-listen 127.0.0.1:8084 \
+  --allow-private-destinations \
+  --capture-sensitive-data \
+  --out ./incident-001
 ```
-*For example, this forces a severe outage simulation where 100% of traffic to `https://aws.amazon.com` receives a `503 Service Unavailable` accompanied by latency spikes.*
 
-### 5. Deterministic Replay (Contract Enforcement)
-Take previously recorded traffic from production, staging, or integration tests, and replay it locally. InfernoSIM enforces strict determinism. If the target service tries to return a different status code, or if the replayed payload hash mismatches, the simulation loudly aborts (`FAIL_NON_DETERMINISTIC` or `FAIL_SLO_MISSED`).
+`--capture-sensitive-data` can store credentials and PII. Treat such incident
+bundles as secrets. Existing non-empty bundles are rejected unless `--append`
+is explicitly supplied.
 
-**Usage:**
+## Inspect and verify
+
 ```bash
-# Replay traffic natively against the original external APIs (e.g., api.stripe.com)
-./infernosim replay --log=events.log --target=https://api.stripe.com
-
-# State-aware replay against local staging with detailed diff analysis
-./infernosim replay --incident . --target-base http://localhost:8081 --diff
+./infernosim inspect ./incident-001
+./infernosim verify ./incident-001
 ```
 
-### 6. Auto-Envelope Search (Load Boundary Discovery)
-Rather than manually guessing load test parameters, pass your production traffic logs into the search engine. InfernoSIM automatically extrapolates concurrency, multiplying traffic fanout until the target application begins to drop requests or break SLOs, reporting the exact maximum stable boundary.
+`inspect` prints the request timeline and discovered state chains. `verify`
+reports side effects, missing dependencies, and expired JWTs.
 
-**Usage:**
+## Replay
+
+Safe replay:
+
 ```bash
-./infernosim search --log=events.log --target=https://staging-cluster.internal.com
+./infernosim replay ./incident-001 \
+  --target-base http://127.0.0.1:8081 \
+  --runs 3
 ```
 
-### 7. Inbound Reverse-Proxy Mode
-InfernoSIM doesn't just act as an outbound proxy for third-party APIs. It can be spun up as an Inbound sidecar to natively intercept, log, and manipulate traffic coming *into* your service from load balancers or gateways.
+The positional incident directory may appear before the flags. Write requests
+are skipped unless explicitly enabled:
 
-**Usage:**
 ```bash
-./infernosim --mode=inbound --forward=http://localhost:8081 --listen=:8080 --log=inbound.log
+./infernosim replay ./incident-001 \
+  --target-base http://127.0.0.1:8081 \
+  --allow-writes \
+  --runs 3
 ```
 
-### 8. Portable Cross-Team JSON Logs
-Every event is entirely self-contained within flat JSON files. Because payloads are Base64 encoded and hashed directly in the log file, developers can easily share a single `events.log` file securely. Another developer can instantly reproduce the exact traffic state locally without needing database dumps.
+Only use `--allow-writes` with an isolated target whose data may be changed.
+Inbound-only incidents are supported and produce a weak pass because dependency
+behavior was not verified.
 
-### 9. Granular SLA Telemetry Tracking
-Every single intercepted event explicitly tracks `bytesSent`, `bytesReceived`, and precise millisecond `duration`. It acts as a lightweight observability agent without needing a massive Datadog or Prometheus setup.
+### Replay flags
 
-## Deterministic Compose Smoke Test
+- `--target-base`: isolated service receiving captured inbound requests
+- `--runs`: number of replay iterations
+- `--time-scale`: scale captured timing
+- `--density`: compress request gaps
+- `--min-gap`: minimum gap between requests
+- `--max-wall-time`: total replay budget
+- `--max-idle-time`: per-request progress budget
+- `--max-events`: maximum inbound events
+- `--fanout`: concurrent replay workers
+- `--window`: optional SLO completion window
+- `--inject`: dependency latency/timeout/retry rule
+- `--diff`: show status, stable-header, body-hash, and latency changes
+- `--safe-mode`: skip writes; enabled by default
+- `--allow-writes`: explicitly disable safe mode
+- `--stub-listen`: primary dependency stub address
+- `--stub-compat-listen`: optional compatibility stub address
 
-Use the built-in smoke workflow for runtime validation without ad-hoc package installs:
+Examples:
+
+```bash
+./infernosim replay ./incident-001 \
+  --target-base http://127.0.0.1:8081 \
+  --inject "dep=payments.test latency=+200ms"
+
+./infernosim replay ./incident-001 \
+  --target-base http://127.0.0.1:8081 \
+  --fanout 8 \
+  --window 30s
+```
+
+## Replay configuration
+
+An incident may contain `replay.yaml`:
+
+```yaml
+target: http://127.0.0.1:8081
+runs: 3
+time_scale: 1.0
+safe_mode: true
+chaos:
+  latency:
+    request: 2
+    delay: 250ms
+state:
+  file: ./state.json
+```
+
+Unknown fields and invalid values are rejected. Relative state paths are
+resolved relative to `replay.yaml`.
+
+## Standalone capture proxy
+
+Inbound:
+
+```bash
+./infernosim --mode=inbound \
+  --listen 127.0.0.1:18080 \
+  --forward 127.0.0.1:8081 \
+  --log inbound.log
+```
+
+Outbound with repeatable fault injection:
+
+```bash
+./infernosim --mode=proxy \
+  --listen 127.0.0.1:9000 \
+  --log outbound.log \
+  --inject "jitter=50ms,drop=5%,status=503,rate=10%" \
+  --inject-seed 42
+```
+
+## HTTPS MITM
+
+MITM capture is opt-in:
+
+```bash
+./infernosim --mode=proxy \
+  --listen 127.0.0.1:9000 \
+  --https-mode mitm \
+  --mitm-allow-hosts api.example.test \
+  --log outbound.log
+```
+
+The generated CA is stored under `~/.infernosim/ca`. The client must trust that
+CA. Only explicitly allowlisted hosts receive leaf certificates. Local/private
+MITM additionally requires `--allow-private-destinations`.
+
+HTTPS dependency replay still requires the application to support an HTTP test
+endpoint or another TLS termination layer in front of the stub. Native
+CONNECT/TLS response stubbing is not yet implemented.
+
+## Docker examples
 
 ```bash
 scripts/compose-smoke.sh node
 scripts/compose-smoke.sh go
 ```
 
-What it validates:
+The default capture container is unprivileged. Transparent replay requires an
+explicit root user and `NET_ADMIN`; do not grant those permissions to ordinary
+capture deployments.
 
-- `infernosim:local` image builds.
-- Runtime-agnostic capture sidecar (`docker-compose.yml`) boots cleanly.
-- Runtime example profile (`docker-compose.examples.yml`) boots cleanly.
-- Capture healthcheck passes.
-- A live request is executed.
-- Runtime incident log contains captured `OutboundCall` events.
+## Development
 
-Compose files:
-
-- `docker-compose.yml`: capture sidecar only (runtime-agnostic).
-- `docker-compose.examples.yml`: optional deterministic Go/Node example services via profiles.
-
-## Capture Modes
-
-### Inbound capture
-
-```bash
-./infernosim --mode=inbound --listen=:18080 --forward=localhost:8084 --log=inbound.log
-```
-
-### Outbound capture
-
-```bash
-./infernosim --mode=proxy --listen=:9000 --log=outbound.log
-```
-
-## Quickstart: Deterministic Go
-
-### Terminal 1
-
-```bash
-./infernosim --mode=proxy --listen=:9000 --log=outbound.log
-```
-
-### Terminal 2
-
-```bash
-HTTP_PROXY=http://localhost:9000 \
-HTTPS_PROXY=http://localhost:9000 \
-PORT=8084 \
-go run examples/goapp-deterministic/main.go
-```
-
-### Terminal 3
-
-```bash
-./infernosim --mode=inbound --listen=:18080 --forward=localhost:8084 --log=inbound.log
-```
-
-### Generate + replay
-
-```bash
-curl http://localhost:18080/api/demo
-
-# stop capture sidecars first (:9000 and :18080), keep app running
-./infernosim replay --incident . --target-base http://localhost:8084 --runs 3
-```
-
-## Quickstart: Deterministic Node
-
-### Terminal 1
-
-```bash
-./infernosim --mode=proxy --listen=:9000 --log=outbound.log
-```
-
-### Terminal 2
-
-```bash
-PORT=8083 OUTBOUND_PROXY_PORT=9000 node examples/nodeapp-deterministic/app.js
-```
-
-### Terminal 3
-
-```bash
-./infernosim --mode=inbound --listen=:18080 --forward=localhost:8083 --log=inbound.log
-```
-
-### Generate + replay
-
-```bash
-curl http://localhost:18080/api/demo
-./infernosim replay --incident . --target-base http://localhost:8083 --runs 3
-```
-
-## Replay Command
-
-```bash
-./infernosim replay --incident . --target-base http://localhost:8084 --runs 10
-```
-
-## Replay Flags
-
-- `--incident` (default `.`): path containing `inbound.log` and `outbound.log`.
-- `--target-base` (default `http://localhost:18080`): replay target URL base.
-- `--runs` (default `10`): number of replay iterations.
-- `--time-scale` (default `1.0`): replay time scaling.
-- `--density` (default `1.0`): replay density multiplier.
-- `--min-gap` (default `2ms`): minimum inter-event replay gap.
-- `--max-wall-time` (default `30s`): max replay wall-clock budget.
-- `--max-idle-time` (default `5s`): max idle duration without progress.
-- `--max-events` (default `0`): max inbound events replayed (`0` = unlimited).
-- `--inject` (repeatable): injection rule.
-  - Example: `--inject "dep=worldtimeapi.org latency=+200ms"`
-  - Example: `--inject "dep=worldtimeapi.org timeout=1s"`
-- `--stub-listen` (default `:19000`): primary replay stub listen address.
-- `--stub-compat-listen` (default `:9000`): compatibility listen address for fixed app proxy ports.
-- `--fanout` (default `1`): concurrent causal replay workers per run.
-- `--window` (default `0s`): replay SLO window; can trigger `FAIL_SLO_MISSED`.
-- `--diff` (default `false`): show detailed differences between captured and replayed events (status, latency, headers).
-
-## Example Replay Scenarios
-
-```bash
-# baseline
-./infernosim replay --incident . --target-base http://localhost:8084 --runs 10
-
-# faster replay
-./infernosim replay --incident . --target-base http://localhost:8084 --runs 5 --time-scale 0.1
-
-# dependency fault injection
-./infernosim replay --incident . --target-base http://localhost:8084 --runs 5 --inject "dep=worldtimeapi.org latency=+200ms"
-
-# causal concurrency + SLO window
-./infernosim replay --incident . --target-base http://localhost:8084 --runs 5 --fanout 167 --window 5m
-```
-
-## Summary Semantics
-
-Replay summary includes:
-
-- `Outcome` and `Primary failure reason`.
-- Inbound/outbound observed vs expected/target counts.
-- Achieved vs target request rate.
-- `Limiting factor` classification.
-- `SUSTAINABLE ENVELOPE (observed)`.
-- `Change from last run` deltas.
-
-## Production Notes
-
-- Keep incident logs immutable between analysis runs.
-- Ensure replay stub ports are free (`:19000` and optional compat `:9000`).
-- Stop capture sidecars before running replay.
-- Commit source only; runtime artifacts are ignored by `.gitignore`.
+See [CONTRIBUTING.md](CONTRIBUTING.md), [SCENARIOS.md](SCENARIOS.md), and
+[SECURITY.md](SECURITY.md).
 
 ## License
 
-Add an OSS license file (`LICENSE`) before public release.
-
+MIT. See [LICENSE](LICENSE).
