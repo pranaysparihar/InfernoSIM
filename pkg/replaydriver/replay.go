@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -84,6 +85,7 @@ func LoadInboundEvents(inboundLog string) ([]event.Event, error) {
 		evs[i].Duration = resp.Timestamp.Sub(evs[i].Timestamp)
 		evs[i].ResponseCaptured = true
 		evs[i].ResponseHeaders = resp.Headers
+		evs[i].ResponseTrailers = resp.ResponseTrailers
 		evs[i].ResponseBodyB64 = resp.BodyB64
 		evs[i].ResponseBodySha256 = resp.BodySha256
 		evs[i].ResponseBodyTruncated = resp.BodyTruncated
@@ -363,13 +365,19 @@ func ReplayEvents(
 			Method:             req.Method,
 			URL:                req.URL.String(),
 			Status:             resp.StatusCode,
-			Headers:            resp.Header.Clone(),
-			BodySha256:         fmt.Sprintf("%x", respHash),
+			Headers:            req.Header.Clone(),
+			BodySize:           int64(len(bodyBytes)),
 			Duration:           time.Since(startTime),
 			Timestamp:          e.Timestamp, // preserve captured timestamp for apples-to-apples diff
 			ResponseCaptured:   true,
 			ResponseHeaders:    resp.Header.Clone(),
 			ResponseBodySha256: fmt.Sprintf("%x", respHash),
+			ResponseBodyB64:    base64.StdEncoding.EncodeToString(respBody),
+		}
+		if hasBody {
+			requestHash := sha256.Sum256(bodyBytes)
+			replayedEvt.BodyB64 = base64.StdEncoding.EncodeToString(bodyBytes)
+			replayedEvt.BodySha256 = fmt.Sprintf("%x", requestHash)
 		}
 		replayedEvents = append(replayedEvents, replayedEvt)
 

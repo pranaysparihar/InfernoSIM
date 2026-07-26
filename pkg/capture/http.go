@@ -19,6 +19,7 @@ import (
 
 	"infernosim/pkg/event"
 	"infernosim/pkg/inject"
+	"infernosim/pkg/privacy"
 
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -44,6 +45,9 @@ type ProxyContext struct {
 	// CaptureSensitiveData stores raw headers and bodies. The secure default
 	// redacts credentials and omits payload bytes while retaining fingerprints.
 	CaptureSensitiveData bool
+	// Privacy applies configurable redaction/tokenization before data is
+	// written. A policy may explicitly permit storage of transformed bodies.
+	Privacy *privacy.Policy
 }
 
 type replayReadCloser struct {
@@ -174,17 +178,47 @@ var sensitiveHeaderNames = map[string]struct{}{
 	"x-api-key":           {},
 }
 
-func headersForLog(h http.Header, captureSensitive bool) http.Header {
+func headersForLog(h http.Header, captureSensitive bool, policy *privacy.Policy) http.Header {
 	out := cloneHeaders(h)
+	if policy != nil {
+		out = policy.ApplyHeaders(out)
+	}
 	if captureSensitive {
 		return out
 	}
 	for name := range out {
 		if _, sensitive := sensitiveHeaderNames[strings.ToLower(name)]; sensitive {
+			if _, configured := policy.HeaderRule(name); configured {
+				continue
+			}
 			out[name] = []string{"[REDACTED]"}
 		}
 	}
 	return out
+}
+
+func payloadForLog(body []byte, ctx *ProxyContext) (payload []byte, store bool, transformed bool) {
+	payload = append([]byte(nil), body...)
+	store = ctx.CaptureSensitiveData
+	if ctx.Privacy == nil {
+		return payload, store, false
+	}
+	processed, err := ctx.Privacy.ApplyBody(payload)
+	if err != nil {
+		log.Printf("privacy policy omitted body: %v", err)
+		return nil, false, true
+	}
+	return processed, store || ctx.Privacy.CaptureBodies, !bytes.Equal(processed, body)
+}
+
+func urlForLog(input *url.URL, policy *privacy.Policy) string {
+	if input == nil {
+		return ""
+	}
+	if policy == nil {
+		return input.String()
+	}
+	return policy.ApplyURL(input).String()
 }
 
 func extractGRPCStatus(resp *http.Response) string {
@@ -214,25 +248,26 @@ func StartInboundProxy(listenAddr string, targetURL *url.URL, ctx *ProxyContext)
 		bodyBytes, truncated, newRc, _ := peekBody(resp.Body)
 		resp.Body = newRc
 
+		logBody, storeBody, transformed := payloadForLog(bodyBytes, ctx)
 		evt := &event.Event{
 			ID:        event.GenerateID(),
 			Type:      "InboundResponse",
 			Timestamp: time.Now().UTC(),
 			Service:   targetURL.Host,
 			Method:    req.Method,
-			URL:       req.URL.String(),
+			URL:       urlForLog(req.URL, ctx.Privacy),
 			Status:    statusCode,
 			TraceID:   corrID,
-			Headers:   headersForLog(resp.Header, ctx.CaptureSensitiveData),
+			Headers:   headersForLog(resp.Header, ctx.CaptureSensitiveData, ctx.Privacy),
 		}
 
-		if len(bodyBytes) > 0 {
-			hash := sha256.Sum256(bodyBytes)
+		if len(logBody) > 0 {
+			hash := sha256.Sum256(logBody)
 			evt.BodySha256 = hex.EncodeToString(hash[:])
 			evt.BodyTruncated = truncated
-			evt.BodyRedacted = !ctx.CaptureSensitiveData
-			if !truncated && ctx.CaptureSensitiveData {
-				evt.BodyB64 = base64.StdEncoding.EncodeToString(bodyBytes)
+			evt.BodyRedacted = !storeBody || transformed
+			if !truncated && storeBody {
+				evt.BodyB64 = base64.StdEncoding.EncodeToString(logBody)
 			}
 			evt.BytesSent = int64(len(bodyBytes))
 			if resp.ContentLength >= 0 {
@@ -263,25 +298,26 @@ func StartInboundProxy(listenAddr string, targetURL *url.URL, ctx *ProxyContext)
 		bodyBytes, truncated, newRc, _ := peekBody(req.Body)
 		req.Body = newRc
 
+		logBody, storeBody, transformed := payloadForLog(bodyBytes, ctx)
 		evt := &event.Event{
 			ID:        event.GenerateID(),
 			Type:      "InboundRequest",
 			Timestamp: time.Now().UTC(),
 			Service:   targetURL.Host,
 			Method:    req.Method,
-			URL:       req.URL.String(),
-			Headers:   headersForLog(req.Header, ctx.CaptureSensitiveData),
+			URL:       urlForLog(req.URL, ctx.Privacy),
+			Headers:   headersForLog(req.Header, ctx.CaptureSensitiveData, ctx.Privacy),
 			BodySize:  req.ContentLength,
 			TraceID:   req.Header.Get("X-Inferno-TraceID"),
 		}
 
-		if len(bodyBytes) > 0 {
-			hash := sha256.Sum256(bodyBytes)
+		if len(logBody) > 0 {
+			hash := sha256.Sum256(logBody)
 			evt.BodySha256 = hex.EncodeToString(hash[:])
 			evt.BodyTruncated = truncated
-			evt.BodyRedacted = !ctx.CaptureSensitiveData
-			if !truncated && ctx.CaptureSensitiveData {
-				evt.BodyB64 = base64.StdEncoding.EncodeToString(bodyBytes)
+			evt.BodyRedacted = !storeBody || transformed
+			if !truncated && storeBody {
+				evt.BodyB64 = base64.StdEncoding.EncodeToString(logBody)
 			}
 			evt.BytesReceived = int64(len(bodyBytes))
 			if req.ContentLength >= 0 {
@@ -437,12 +473,43 @@ func handleHTTP(w http.ResponseWriter, req *http.Request, ctx *ProxyContext) {
 
 	var resp *http.Response
 	if IsGRPCRequest(req) {
-		// gRPC requires an http2 explicit transport
+		// gRPC requires an explicit HTTP/2 transport. For HTTPS, retain the
+		// validated destination dial and then perform a real TLS handshake;
+		// returning a raw socket here would silently break gRPC over TLS.
 		proxyCtx := ctx
+		useTLS := strings.EqualFold(outReq.URL.Scheme, "https")
+		defaultPort := "80"
+		if useTLS {
+			defaultPort = "443"
+		}
 		t2 := &http2.Transport{
-			AllowHTTP: true,
+			AllowHTTP: !useTLS,
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: proxyCtx.AllowInsecureUpstream, //nolint:gosec // explicit CLI opt-in
+				MinVersion:         tls.VersionTLS12,
+				NextProtos:         []string{"h2"},
+			},
 			DialTLSContext: func(dialCtx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error) {
-				return dialDestination(dialCtx, network, addr, "80", proxyCtx.AllowPrivateDestinations)
+				rawConn, dialErr := dialDestination(dialCtx, network, addr, defaultPort, proxyCtx.AllowPrivateDestinations)
+				if dialErr != nil || !useTLS {
+					return rawConn, dialErr
+				}
+				tlsConfig := &tls.Config{}
+				if cfg != nil {
+					tlsConfig = cfg.Clone()
+				}
+				tlsConfig.InsecureSkipVerify = proxyCtx.AllowInsecureUpstream //nolint:gosec // explicit CLI opt-in
+				tlsConfig.MinVersion = tls.VersionTLS12
+				tlsConfig.NextProtos = []string{"h2"}
+				if tlsConfig.ServerName == "" {
+					tlsConfig.ServerName = outReq.URL.Hostname()
+				}
+				tlsConn := tls.Client(rawConn, tlsConfig)
+				if handshakeErr := tlsConn.HandshakeContext(dialCtx); handshakeErr != nil {
+					_ = rawConn.Close()
+					return nil, handshakeErr
+				}
+				return tlsConn, nil
 			},
 		}
 		resp, err = t2.RoundTrip(outReq)
@@ -462,20 +529,22 @@ func handleHTTP(w http.ResponseWriter, req *http.Request, ctx *ProxyContext) {
 	} else {
 		statusCode = resp.StatusCode
 		respBodyBytes, respBodyTruncated, resp.Body, _ = peekBody(resp.Body)
+		copyResponse(w, resp)
 		if IsGRPCRequest(req) {
 			grpcStatus = extractGRPCStatus(resp)
 		}
-		copyResponse(w, resp)
 		resp.Body.Close()
 	}
 
+	logRequestBody, storeRequestBody, requestTransformed := payloadForLog(bodyBytes, ctx)
+	logResponseBody, storeResponseBody, responseTransformed := payloadForLog(respBodyBytes, ctx)
 	evt := &event.Event{
 		ID:               event.GenerateID(),
 		Type:             "OutboundCall",
 		Timestamp:        startTime,
 		Method:           req.Method,
-		URL:              req.URL.String(),
-		Headers:          headersForLog(req.Header, ctx.CaptureSensitiveData),
+		URL:              urlForLog(req.URL, ctx.Privacy),
+		Headers:          headersForLog(req.Header, ctx.CaptureSensitiveData, ctx.Privacy),
 		BodySize:         req.ContentLength,
 		Status:           statusCode,
 		Duration:         time.Since(startTime),
@@ -489,12 +558,12 @@ func handleHTTP(w http.ResponseWriter, req *http.Request, ctx *ProxyContext) {
 
 	evt.BodyTruncated = truncated
 
-	if len(bodyBytes) > 0 {
-		hash := sha256.Sum256(bodyBytes)
+	if len(logRequestBody) > 0 {
+		hash := sha256.Sum256(logRequestBody)
 		evt.BodySha256 = hex.EncodeToString(hash[:])
-		evt.BodyRedacted = !ctx.CaptureSensitiveData
-		if !truncated && ctx.CaptureSensitiveData {
-			evt.BodyB64 = base64.StdEncoding.EncodeToString(bodyBytes)
+		evt.BodyRedacted = !storeRequestBody || requestTransformed
+		if !truncated && storeRequestBody {
+			evt.BodyB64 = base64.StdEncoding.EncodeToString(logRequestBody)
 		}
 		evt.BytesSent = int64(len(bodyBytes))
 		if req.ContentLength >= 0 {
@@ -502,20 +571,21 @@ func handleHTTP(w http.ResponseWriter, req *http.Request, ctx *ProxyContext) {
 		}
 	}
 
-	if len(respBodyBytes) > 0 && evt.Error == "" {
+	if len(logResponseBody) > 0 && evt.Error == "" {
 		evt.BytesReceived = int64(len(respBodyBytes))
 		if resp.ContentLength >= 0 {
 			evt.BytesReceived = resp.ContentLength
 		}
-		hash := sha256.Sum256(respBodyBytes)
+		hash := sha256.Sum256(logResponseBody)
 		evt.ResponseBodySha256 = hex.EncodeToString(hash[:])
-		evt.ResponseBodyRedacted = !ctx.CaptureSensitiveData
-		if ctx.CaptureSensitiveData && !respBodyTruncated {
-			evt.ResponseBodyB64 = base64.StdEncoding.EncodeToString(respBodyBytes)
+		evt.ResponseBodyRedacted = !storeResponseBody || responseTransformed
+		if storeResponseBody && !respBodyTruncated {
+			evt.ResponseBodyB64 = base64.StdEncoding.EncodeToString(logResponseBody)
 		}
 	}
 	if resp != nil {
-		evt.ResponseHeaders = headersForLog(resp.Header, ctx.CaptureSensitiveData)
+		evt.ResponseHeaders = headersForLog(resp.Header, ctx.CaptureSensitiveData, ctx.Privacy)
+		evt.ResponseTrailers = headersForLog(resp.Trailer, ctx.CaptureSensitiveData, ctx.Privacy)
 		evt.ResponseCaptured = true
 	}
 
@@ -717,8 +787,14 @@ func copyResponse(w http.ResponseWriter, resp *http.Response) {
 			w.Header().Add(k, v)
 		}
 	}
+	for name := range resp.Trailer {
+		w.Header().Add("Trailer", name)
+	}
 	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+	_, _ = io.Copy(w, resp.Body)
+	for name, values := range resp.Trailer {
+		w.Header()[name] = append([]string(nil), values...)
+	}
 }
 
 func cloneHeaders(h http.Header) http.Header {

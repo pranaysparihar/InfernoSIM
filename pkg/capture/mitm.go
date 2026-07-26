@@ -40,7 +40,13 @@ func NewCAStore() (*CAStore, error) {
 		return nil, fmt.Errorf("failed to get home dir: %w", err)
 	}
 
-	caDir := filepath.Join(home, ".infernosim", "ca")
+	return NewCAStoreAt(filepath.Join(home, ".infernosim", "ca"))
+}
+
+// NewCAStoreAt initializes or loads a CA in dir. It is useful for isolated
+// test environments and deployments that mount CA material outside a home
+// directory.
+func NewCAStoreAt(caDir string) (*CAStore, error) {
 	if err := os.MkdirAll(caDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create CA dir: %w", err)
 	}
@@ -56,6 +62,17 @@ func NewCAStore() (*CAStore, error) {
 	}
 
 	return store, nil
+}
+
+// CertificatePath returns the root CA certificate applications must trust for
+// HTTPS capture or response stubbing.
+func (s *CAStore) CertificatePath() string {
+	return s.certPath
+}
+
+// IsAllowed reports whether host is permitted to receive a generated leaf.
+func (s *CAStore) IsAllowed(host string) bool {
+	return s.isAllowed(host)
 }
 
 func (s *CAStore) loadOrGenerateCA() error {

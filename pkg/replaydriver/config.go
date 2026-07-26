@@ -6,6 +6,9 @@ import (
 	"os"
 	"time"
 
+	"infernosim/pkg/matcher"
+	"infernosim/pkg/scenario"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -25,12 +28,25 @@ import (
 //	state:
 //	  file: ./state.json
 type ReplayYAMLConfig struct {
-	Target    string      `yaml:"target"`
-	TimeScale float64     `yaml:"time_scale"`
-	Runs      int         `yaml:"runs"`
-	SafeMode  bool        `yaml:"safe_mode"`
-	Chaos     ChaosConfig `yaml:"chaos"`
-	State     StateConfig `yaml:"state"`
+	Target    string            `yaml:"target"`
+	TimeScale float64           `yaml:"time_scale"`
+	Runs      int               `yaml:"runs"`
+	SafeMode  bool              `yaml:"safe_mode"`
+	Chaos     ChaosConfig       `yaml:"chaos"`
+	State     StateConfig       `yaml:"state"`
+	Matching  matcher.Config    `yaml:"matching"`
+	Scenarios []scenario.Config `yaml:"scenarios"`
+	Stub      StubConfig        `yaml:"stub"`
+}
+
+type StubConfig struct {
+	HTTPS HTTPSStubConfig `yaml:"https"`
+}
+
+type HTTPSStubConfig struct {
+	Enabled    bool     `yaml:"enabled"`
+	CADir      string   `yaml:"ca_dir"`
+	AllowHosts []string `yaml:"allow_hosts"`
 }
 
 // ChaosConfig defines fault injection settings.
@@ -74,6 +90,12 @@ func LoadReplayConfig(path string) (ReplayYAMLConfig, error) {
 		return ReplayYAMLConfig{}, fmt.Errorf("parse replay config %q: chaos.latency.request must be >= 0", path)
 	}
 	if _, err := cfg.Chaos.ChaosDelay(); err != nil {
+		return ReplayYAMLConfig{}, fmt.Errorf("parse replay config %q: %w", path, err)
+	}
+	if _, err := matcher.New(cfg.Matching); err != nil {
+		return ReplayYAMLConfig{}, fmt.Errorf("parse replay config %q: %w", path, err)
+	}
+	if _, err := scenario.New(cfg.Scenarios); err != nil {
 		return ReplayYAMLConfig{}, fmt.Errorf("parse replay config %q: %w", path, err)
 	}
 	return cfg, nil

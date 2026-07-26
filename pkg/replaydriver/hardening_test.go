@@ -80,6 +80,59 @@ func TestLoadReplayConfigRejectsUnknownFields(t *testing.T) {
 	}
 }
 
+func TestLoadReplayConfigParsesMatchersScenariosAndHTTPS(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "replay.yaml")
+	writeTestFile(t, path, []byte(`target: http://localhost
+matching:
+  ignored_query_parameters: [timestamp]
+  rules:
+    - name: payment
+      methods: [POST]
+      path_regex: "^/payments/[0-9]+$"
+      header_regex:
+        X-Tenant: "^acme$"
+      jsonpath_regex:
+        $.id: "^[0-9]+$"
+scenarios:
+  - name: auth
+    initial_state: logged_out
+    steps:
+      - name: login
+        state: logged_out
+        next_state: logged_in
+        match:
+          methods: [POST]
+          path_regex: "^/login$"
+        response:
+          status: 200
+      - name: profile
+        state: logged_in
+        match:
+          methods: [GET]
+          path_regex: "^/profile$"
+        response:
+          status: 200
+stub:
+  https:
+    enabled: true
+    ca_dir: ./ca
+    allow_hosts: [dependency.test]
+`))
+	cfg, err := LoadReplayConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Matching.Rules) != 1 || len(cfg.Scenarios) != 1 || !cfg.Stub.HTTPS.Enabled {
+		t.Fatalf("config not parsed: %#v", cfg)
+	}
+}
+
+func TestReplayV2ExampleIsValid(t *testing.T) {
+	if _, err := LoadReplayConfig(filepath.Join("..", "..", "examples", "replay-v2.yaml")); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func writeTestFile(t *testing.T, path string, data []byte) {
 	t.Helper()
 	if err := os.WriteFile(path, data, 0o600); err != nil {

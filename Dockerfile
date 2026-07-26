@@ -1,8 +1,12 @@
 # Build stage
 ARG LDFLAGS
-FROM golang:1.25.12-alpine3.22 AS builder
-ARG TARGETOS=linux
-ARG TARGETARCH=amd64
+# The official image can lag the newest Go patch by one release. Go's
+# toolchain auto-selection reads go.mod and downloads the required 1.25.12
+# toolchain inside this pinned Alpine builder.
+FROM golang:1.25.11-alpine3.22 AS builder
+ARG TARGETOS
+ARG TARGETARCH
+ENV GOTOOLCHAIN=auto
 
 WORKDIR /app
 

@@ -39,6 +39,7 @@ type Event struct {
 	// and response are correlated or when an outbound dependency call is
 	// captured as a single exchange.
 	ResponseHeaders       map[string][]string `json:"responseHeaders,omitempty"`
+	ResponseTrailers      map[string][]string `json:"responseTrailers,omitempty"`
 	ResponseBodyB64       string              `json:"responseBodyB64,omitempty"`
 	ResponseBodySha256    string              `json:"responseBodySha256,omitempty"`
 	ResponseBodyTruncated bool                `json:"responseBodyTruncated,omitempty"`

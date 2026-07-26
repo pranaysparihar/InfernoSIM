@@ -2,11 +2,19 @@ package stubproxy
 
 import (
 	"bufio"
+	"bytes"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"infernosim/pkg/capture"
 	"infernosim/pkg/event"
 	"infernosim/pkg/inject"
+	"infernosim/pkg/matcher"
+	"infernosim/pkg/scenario"
+
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 	"io"
 	"net"
 	"net/http"
@@ -44,6 +52,17 @@ type StubProxy struct {
 	eventsByKey     map[string][]event.Event
 	matchCounts     map[string]int
 	matchMultiplier int
+
+	semanticMatcher *matcher.Matcher
+	eventUseCounts  map[int]int
+	scenarios       *scenario.Engine
+	tlsCA           *capture.CAStore
+}
+
+type Options struct {
+	Matching  matcher.Config
+	Scenarios []scenario.Config
+	TLSCA     *capture.CAStore
 }
 
 func LoadOutboundEvents(path string) ([]event.Event, error) {
@@ -73,6 +92,10 @@ func LoadOutboundEvents(path string) ([]event.Event, error) {
 }
 
 func New(outboundLog string, observedLog string, rules []inject.Rule) (*StubProxy, error) {
+	return NewWithOptions(outboundLog, observedLog, rules, Options{})
+}
+
+func NewWithOptions(outboundLog string, observedLog string, rules []inject.Rule, opts Options) (*StubProxy, error) {
 	evs, err := LoadOutboundEvents(outboundLog)
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -92,6 +115,14 @@ func New(outboundLog string, observedLog string, rules []inject.Rule) (*StubProx
 		key := eventMatchKey(evt)
 		eventsByKey[key] = append(eventsByKey[key], evt)
 	}
+	semanticMatcher, err := matcher.New(opts.Matching)
+	if err != nil {
+		return nil, err
+	}
+	scenarioEngine, err := scenario.New(opts.Scenarios)
+	if err != nil {
+		return nil, err
+	}
 	return &StubProxy{
 		events:          evs,
 		rules:           rules,
@@ -100,6 +131,10 @@ func New(outboundLog string, observedLog string, rules []inject.Rule) (*StubProx
 		eventsByKey:     eventsByKey,
 		matchCounts:     make(map[string]int),
 		matchMultiplier: 1,
+		semanticMatcher: semanticMatcher,
+		eventUseCounts:  make(map[int]int),
+		scenarios:       scenarioEngine,
+		tlsCA:           opts.TLSCA,
 	}, nil
 }
 
@@ -118,7 +153,9 @@ func (s *StubProxy) Reset() {
 	s.mu.Unlock()
 	s.matchMu.Lock()
 	s.matchCounts = make(map[string]int)
+	s.eventUseCounts = make(map[int]int)
 	s.matchMu.Unlock()
+	s.scenarios.Reset()
 }
 
 // ConfigureReplayCardinality controls how many outbound events this run may observe.
@@ -170,6 +207,26 @@ func (s *StubProxy) divergence(expected event.Event, got *http.Request, idx int6
 }
 
 func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodConnect {
+		if s.tlsCA == nil {
+			http.Error(w, "HTTPS stubbing is not enabled", http.StatusNotImplemented)
+			return
+		}
+		s.serveTLSConnect(w, r)
+		return
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, 16*1024*1024+1))
+	if err != nil {
+		http.Error(w, "could not read request body", http.StatusBadRequest)
+		return
+	}
+	if len(body) > 16*1024*1024 {
+		http.Error(w, "request body exceeds 16 MiB safety limit", http.StatusRequestEntityTooLarge)
+		return
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+
 	seen := atomic.AddInt64(&s.seen, 1)
 
 	observedHost := r.Host
@@ -189,12 +246,30 @@ func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unexpected outbound call", http.StatusBadGateway)
 		return
 	}
+	if result, matched := s.scenarios.Match(r, body); matched {
+		responseBody, bodyErr := result.Response.Bytes()
+		if bodyErr != nil {
+			http.Error(w, "scenario response body is invalid", http.StatusBadGateway)
+			return
+		}
+		headers := http.Header(result.Response.Headers).Clone()
+		if headers == nil {
+			headers = make(http.Header)
+		}
+		headers.Set("X-Inferno-Scenario", result.Scenario)
+		grpcStatus := result.Response.GRPCStatus
+		if isGRPCRequest(r) && grpcStatus == "" {
+			grpcStatus = "0"
+		}
+		writeStubResponse(w, result.Response.Status, headers, http.Header(result.Response.Trailers), grpcStatus, responseBody)
+		return
+	}
 	if len(s.events) == 0 {
-		http.Error(w, "no captured outbound events", http.StatusBadGateway)
+		http.Error(w, "no captured outbound events or matching scenario", http.StatusBadGateway)
 		return
 	}
 
-	expected, _, matched := s.matchExpected(r)
+	expected, _, matched := s.matchExpected(r, body)
 	if !matched {
 		msg := fmt.Sprintf(
 			"DIVERGENCE at outbound event index=%d why=no_matching_captured_call got={method=%s url=%s host=%s}",
@@ -247,35 +322,156 @@ func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	copyHeaders(w.Header(), http.Header(expected.ResponseHeaders))
 	body, bodyErr := base64.StdEncoding.DecodeString(expected.ResponseBodyB64)
 	if bodyErr != nil {
 		http.Error(w, "captured dependency body is invalid", http.StatusBadGateway)
 		return
 	}
+	grpcStatus := expected.GrpcStatus
+	if isGRPCRequest(r) && grpcStatus == "" {
+		grpcStatus = "0"
+	}
+	writeStubResponse(
+		w,
+		status,
+		http.Header(expected.ResponseHeaders),
+		http.Header(expected.ResponseTrailers),
+		grpcStatus,
+		body,
+	)
+}
+
+func isGRPCRequest(r *http.Request) bool {
+	return strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "application/grpc")
+}
+
+func writeStubResponse(
+	w http.ResponseWriter,
+	status int,
+	headers http.Header,
+	trailers http.Header,
+	grpcStatus string,
+	body []byte,
+) {
+	copyHeaders(w.Header(), headers)
+	trailerValues := trailers.Clone()
+	if trailerValues == nil {
+		trailerValues = make(http.Header)
+	}
+	if grpcStatus != "" && trailerValues.Get("Grpc-Status") == "" {
+		trailerValues.Set("Grpc-Status", grpcStatus)
+	}
+	for name := range trailerValues {
+		w.Header().Add("Trailer", name)
+	}
 	w.WriteHeader(status)
 	if len(body) > 0 {
 		_, _ = w.Write(body)
 	}
+	for name, values := range trailerValues {
+		w.Header()[name] = append([]string(nil), values...)
+	}
 }
 
-func (s *StubProxy) matchExpected(r *http.Request) (event.Event, int64, bool) {
-	key := requestMatchKey(r)
+// Handler serves both HTTP/1.1 and cleartext HTTP/2 (h2c), which is required
+// for plaintext gRPC dependency virtualization.
+func (s *StubProxy) Handler() http.Handler {
+	return h2c.NewHandler(s, &http2.Server{})
+}
+
+func (s *StubProxy) matchExpected(r *http.Request, body []byte) (event.Event, int64, bool) {
 	s.matchMu.Lock()
 	defer s.matchMu.Unlock()
 
-	candidates := s.eventsByKey[key]
-	if len(candidates) == 0 {
-		return event.Event{}, 0, false
+	for index, candidate := range s.events {
+		matched, _ := s.semanticMatcher.Match(candidate, r, body)
+		if !matched {
+			continue
+		}
+		if s.eventUseCounts[index] >= s.matchMultiplier {
+			continue
+		}
+		count := s.eventUseCounts[index]
+		s.eventUseCounts[index] = count + 1
+		return candidate, int64(index), true
 	}
-	count := s.matchCounts[key]
-	limit := len(candidates) * s.matchMultiplier
-	if count >= limit {
-		return event.Event{}, int64(count), false
-	}
-	s.matchCounts[key] = count + 1
-	return candidates[count%len(candidates)], int64(count), true
+	return event.Event{}, 0, false
 }
+
+func (s *StubProxy) serveTLSConnect(w http.ResponseWriter, r *http.Request) {
+	host := r.Host
+	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+		host = parsedHost
+	}
+	host = strings.Trim(host, "[]")
+	if !s.tlsCA.IsAllowed(host) {
+		http.Error(w, "HTTPS stub host is not allowlisted", http.StatusForbidden)
+		return
+	}
+	hijacker, ok := w.(http.Hijacker)
+	if !ok {
+		http.Error(w, "HTTPS stub requires connection hijacking", http.StatusInternalServerError)
+		return
+	}
+	clientConn, _, err := hijacker.Hijack()
+	if err != nil {
+		return
+	}
+	if _, err := io.WriteString(clientConn, "HTTP/1.1 200 Connection Established\r\n\r\n"); err != nil {
+		_ = clientConn.Close()
+		return
+	}
+	cert, err := s.tlsCA.GenerateLeafCert(host)
+	if err != nil {
+		_ = clientConn.Close()
+		return
+	}
+	tlsConn := tls.Server(clientConn, &tls.Config{
+		Certificates: []tls.Certificate{*cert},
+		MinVersion:   tls.VersionTLS12,
+		NextProtos:   []string{"h2", "http/1.1"},
+	})
+	if err := tlsConn.Handshake(); err != nil {
+		_ = tlsConn.Close()
+		return
+	}
+	destination := r.Host
+	handler := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		request.URL.Scheme = "https"
+		request.URL.Host = destination
+		request.Host = destination
+		s.ServeHTTP(response, request)
+	})
+	server := &http.Server{
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+	}
+	if tlsConn.ConnectionState().NegotiatedProtocol == "h2" {
+		h2Server := &http2.Server{}
+		h2Server.ServeConn(tlsConn, &http2.ServeConnOpts{Handler: handler})
+		return
+	}
+	if err := server.Serve(&tlsSingleConnListener{conn: tlsConn}); err != nil && err != http.ErrServerClosed && err != io.EOF {
+		fmt.Fprintf(os.Stderr, "HTTPS stub connection error: %v\n", err)
+	}
+}
+
+type tlsSingleConnListener struct {
+	conn net.Conn
+	done bool
+}
+
+func (l *tlsSingleConnListener) Accept() (net.Conn, error) {
+	if l.done {
+		return nil, io.EOF
+	}
+	l.done = true
+	return l.conn, nil
+}
+
+func (l *tlsSingleConnListener) Close() error   { return nil }
+func (l *tlsSingleConnListener) Addr() net.Addr { return l.conn.LocalAddr() }
 
 func eventMatchKey(e event.Event) string {
 	parsed, err := url.Parse(e.URL)
