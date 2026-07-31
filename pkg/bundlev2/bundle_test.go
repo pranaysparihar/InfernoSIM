@@ -3,6 +3,7 @@ package bundlev2
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -41,7 +42,7 @@ func TestSealAndOpenRoundTrip(t *testing.T) {
 		t.Fatalf("roundtrip content=%q", got)
 	}
 	info, _ := os.Stat(filepath.Join(destination, "inbound.log"))
-	if info.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("extracted mode=%o", info.Mode().Perm())
 	}
 }

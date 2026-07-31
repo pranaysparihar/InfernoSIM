@@ -1,6 +1,7 @@
 services:
   infernosim-capture:
     image: infernosim:local
+    user: "${INFERNOSIM_UID:-65532}:${INFERNOSIM_GID:-65532}"
     volumes:
       - ${INCIDENT_DIR:-./.incident}:/incident
     command:

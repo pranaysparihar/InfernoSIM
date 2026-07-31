@@ -17,7 +17,10 @@ type Logger struct {
 }
 
 func NewLogger(path string) (*Logger, error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o600)
+	// Keep a seekable read/write handle while repairing a partial JSONL tail.
+	// Windows does not permit truncating a handle opened with append semantics;
+	// writes remain serialized by Logger.mu after the explicit seek to EOF below.
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, err
 	}

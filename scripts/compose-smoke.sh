@@ -28,6 +28,13 @@ INCIDENT_DIR=$(cd "$INCIDENT_DIR" && pwd)
 LOG_FILE="${INCIDENT_DIR}/outbound.log"
 COMPOSE_FILES=(-f docker-compose.yml -f docker-compose.examples.yml)
 
+# Bind mounts retain host ownership on Linux. Run the smoke-test service as
+# the invoking user so the non-root process can create its capture log without
+# broadening directory permissions. docker-compose.yml still defaults to the
+# image's unprivileged 65532:65532 identity outside this script.
+export INFERNOSIM_UID="${INFERNOSIM_UID:-$(id -u)}"
+export INFERNOSIM_GID="${INFERNOSIM_GID:-$(id -g)}"
+
 cleanup() {
   if [ "${KEEP_ON_FAIL:-0}" != "1" ]; then
     docker compose "${COMPOSE_FILES[@]}" --profile "$PROFILE" down >/dev/null 2>&1 || true
