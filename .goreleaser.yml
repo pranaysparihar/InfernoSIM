@@ -25,17 +25,6 @@ archives:
 checksum:
   name_template: 'checksums.txt'
   algorithm: sha256
-sboms:
-  - artifacts: archive
-signs:
-  - cmd: cosign
-    signature: "${artifact}.sigstore.json"
-    args:
-      - "sign-blob"
-      - "--bundle=${signature}"
-      - "${artifact}"
-      - "--yes"
-    artifacts: checksum
 snapshot:
   version_template: "{{ .Tag }}-next"
 changelog:
