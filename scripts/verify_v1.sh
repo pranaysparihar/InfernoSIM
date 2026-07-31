@@ -33,7 +33,7 @@ go build -o $TEST_HTTPSAPP examples/httpsapp/main.go
 rm -f events_*.log
 
 echo "[3/7] Generating CA for HTTPS Tests (if missing)..."
-./$BUILD_BIN --mode=proxy --https-mode=mitm --listen=:9001 &
+./$BUILD_BIN --mode=proxy --https-mode=mitm --listen=:9001 --allow-private-destinations &
 INIT_PID=$!
 sleep 2
 kill $INIT_PID 2>/dev/null || true
@@ -43,7 +43,7 @@ wait $INIT_PID 2>/dev/null || true
 echo "[4/7] Testing Bounded HTTP Capture & HTTP Pipeline (Proxy)..."
 HTTP_PROXY=http://localhost:9000 PORT=8081 ./$TEST_GOAPP >/dev/null 2>&1 &
 APP_PID=$!
-./$BUILD_BIN --mode=proxy --listen=:9000 --log=events_http.log >/dev/null 2>&1 &
+./$BUILD_BIN --mode=proxy --listen=:9000 --log=events_http.log --allow-private-destinations --capture-sensitive-data >/dev/null 2>&1 &
 PROXY_PID=$!
 
 sleep 2
@@ -64,7 +64,7 @@ echo "✓ Bounded HTTP Capture Verified"
 echo "[5/7] Testing gRPC Unary Tracking..."
 ./$TEST_GRPCAPP --mode=server --addr=:50051 >/dev/null 2>&1 &
 GRPC_S_PID=$!
-./$BUILD_BIN --mode=proxy --listen=:9000 --log=events_grpc.log >/dev/null 2>&1 &
+./$BUILD_BIN --mode=proxy --listen=:9000 --log=events_grpc.log --allow-private-destinations --capture-sensitive-data >/dev/null 2>&1 &
 PROXY2_PID=$!
 
 sleep 2
@@ -85,7 +85,7 @@ echo "[6/7] Testing Outbound MITM Decryption (HTTPS CONNECT)..."
 ./$TEST_HTTPSAPP --mode=server --addr=:8443 >/dev/null 2>&1 &
 HTTPS_S_PID=$!
 
-./$BUILD_BIN --mode=proxy --listen=:9000 --https-mode=mitm --log=events_https.log >proxy_https.log 2>&1 &
+./$BUILD_BIN --mode=proxy --listen=:9000 --https-mode=mitm --log=events_https.log --allow-private-destinations --capture-sensitive-data >proxy_https.log 2>&1 &
 PROXY3_PID=$!
 
 sleep 2
@@ -108,7 +108,7 @@ APP2_PID=$!
 
 # Execute Search bounded by SLO injection
 # Start proxy with explicit high failure fault injection
-./$BUILD_BIN --mode=proxy --listen=:9000 --inject="status=503,rate=100%" --log=events_faults.log >/dev/null 2>&1 &
+./$BUILD_BIN --mode=proxy --listen=:9000 --inject="status=503,rate=100%" --log=events_faults.log --allow-private-destinations --capture-sensitive-data >/dev/null 2>&1 &
 PROXY4_PID=$!
 sleep 2
 

@@ -1,5 +1,11 @@
 # Real-World Use Cases (Live Data Context)
 
+> These are illustrative scenarios, not formal guarantees. Replay must target an
+> isolated environment. Raw payload replay requires capture with
+> `--capture-sensitive-data`. HTTPS CONNECT, HTTP/2, and gRPC response
+> virtualization are opt-in and require an explicitly allowlisted replay CA.
+> See `README.md` for the current safety model and limits.
+
 InfernoSIM solves immediate, expensive engineering pain points. Below are simulated real-world scenarios running against live local processes to demonstrate how InfernoSIM evaluates strict API constraints and enforces determinism.
 
 ## Use Case A: "Time Travel" for Microservices (The Undebuggable Production Crash)
@@ -7,7 +13,7 @@ InfernoSIM solves immediate, expensive engineering pain points. Below are simula
 **The InfernoSIM Solution:** 
 By deploying InfernoSIM as an outbound proxy, the exact crashing request is captured to disk—complete with its SHA-256 payload hash and exact base64 structure. A developer downloads `events.log` and runs `infernosim replay`. 
 
-* **The Magic:** InfernoSIM ensures absolute 1:1 reconstruction. If the local client tries to replay a corrupted payload (simulated here by mutating the hash), InfernoSIM catches it immediately and halts execution to protect against invalid state replication.
+* **The behavior:** InfernoSIM fingerprints captured payloads and can detect mutations when the payload was retained for replay.
 
 **Live Data Output (Replay Aborting due to Payload Hash Mutation):**
 ```text
@@ -61,11 +67,11 @@ Testing fanout multiplier 5...
 === PASS_STRONG: InfernoSIM Replay Completed Successfully ===
 === PASS_STRONG: Envelope stable up to fanout 5 ===
 ```
-*InfernoSIM mathematically guarantees infrastructure stress limitations.*
+*The observed failure boundary is a test result for that target and workload, not a mathematical infrastructure guarantee.*
 
 ## Use Case D: Tuning Rate Limiters and Backoff Logic
 **The Situation:** You consume an external API that strictly limits you to 50 requests per second, returning HTTP 429 (Too Many Requests) if you breach it. You need to verify that your application's exponential backoff logic works gracefully.
-**The InfernoSIM Solution:** Using the `inject` flag, you force the proxy to return `status=429,rate=30%`. This deterministic mapping allows you to easily write an integration test that guarantees your application queues and retries requests perfectly, instead of catastrophically failing.
+**The InfernoSIM Solution:** Using the `inject` flag, you force the proxy to return `status=429,rate=30%`. With a fixed injection seed, this provides a repeatable integration test for queue and retry behavior.
 
 **Live Data Output (Injecting rate limits dynamically via `--inject="status=429"`):**
 ```http
@@ -105,7 +111,7 @@ Content-Length: 0
 === InfernoSIM Replay Started ===
 === PASS_STRONG: InfernoSIM Replay Completed Successfully ===
 ```
-*Contracts are mathematically verified without requiring functional 3rd party uplinks.*
+*Captured status, selected headers, payload fingerprints, and dependency-call coverage can be checked without a live third party.*
 
 ## Use Case G: API Payload Bloat (Cost Optimization)
 **The Situation:** Your cloud egress costs are spiking, but it's unclear which microservice is pulling massive amounts of bloated JSON from external APIs.
@@ -150,7 +156,7 @@ Content-Length: 0
 **The Situation:** You are integrating with a public HTTPS service like `https://httpbin.org` or `https://api.stripe.com`, and you need to capture the external traffic directly connecting over the public internet to prove your payloads are valid. 
 **The InfernoSIM Solution:** By dropping the proxy locally with `--https-mode=mitm`, InfernoSIM natively catches outbound DNS targets and uses the localized CA to intercept payloads leaving your network toward the external domain.
 
-* **The Magic:** You do not need to rewrite your application's URLs to point at a local mock server. It transparently captures the traffic, allows it to continue to the real internet, and lets you securely replay your exact network calls back against the external provider via `--target=https://httpbin.org`.
+* **The behavior:** MITM capture can inspect an explicitly allowlisted HTTPS host after the client trusts the generated CA. Replay should still target an isolated test endpoint.
 
 **Live Data Output (Intercepting a secure public endpoint):**
 ```json
@@ -167,4 +173,39 @@ Content-Length: 0
   "bytesReceived": 432
 }
 ```
-*The agent seamlessly records the dynamic TLS tunnel directly to the external domain `httpbin.org:443` and provides instant replay validations against public networks.*
+*The agent can record and virtualize an allowlisted TLS exchange, including
+HTTP/2 and gRPC frames and trailers. Descriptor-aware gRPC rules can synthesize
+new typed responses when Protobuf schemas are configured.*
+## Use Case J: "The Broken Auth Chain" (Stateful Dependency Replay)
+**The Situation:** You have a flow where `POST /login` returns a dynamic JWT that must be used in a subsequent `GET /profile` request. Standard replay tools fail because the replayed login returns a *new* token, but the replayed profile request tries to use the *old* token from the recording, resulting in a `401 Unauthorized`.
+**The InfernoSIM Solution:** 
+InfernoSIM's **State-Aware Engine** automatically detects tokens in JSON responses and maps them to later requests. It substitutes the stale captured token with the fresh runtime token on the fly.
+
+* **The Magic:** You can replay complex multi-step sessions where every request depends on a value from the previous one. InfernoSIM maintains a "Live State" during replay that keeps the entire chain functional.
+
+**Live Data Output (Replaying with fresh token substitution):**
+```text
+2026/03/15 13:52:59 Replay 1/2 | rawGap=0s scaledGap=0s
+2026/03/15 13:53:00 [STATE] Captured token 'old_abc' -> Fresh token 'new_xyz'
+2026/03/15 13:53:01 [REWRITE] Updated Authorization: Bearer new_xyz
+=== PASS: Golden Replay Scenario ===
+```
+
+## Use Case K: Identifying "Shadow" Regressions (Replay Diff Analysis)
+**The Situation:** You just refactored a major service. The unit tests pass, and the application seems fine, but you're worried about subtle "shadow" regressions—like slight latency increases or missing headers that don't cause failures but affect downstream systems.
+**The InfernoSIM Solution:**
+Run your production logs through the replayer with the `--diff` flag: `infernosim replay --incident . --diff`.
+
+* **The Magic:** InfernoSIM doesn't just check if the request finished; it compares the live replay against the production recording. It flags if a status code changed, if an important header like `Content-Type` is different, or if the latency has deviated by more than 20%.
+
+**Live Data Output (Surfacing subtle deltas via `--diff`):**
+```text
+=== REPLAY DIFF ANALYSIS ===
+
+Event #3: GET /api/v1/user/profile
+  [STATUS]  Expected 200, Got 500
+  [HEADER]  Header Content-Type: Expected [application/json], Got [text/html]
+  [LATENCY] Expected 12ms, Got 542ms (delta 530ms)
+============================
+```
+*Subtle regressions that would be "green" in a standard CI pass are instantly flagged.*

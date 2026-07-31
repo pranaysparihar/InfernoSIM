@@ -1,0 +1,63 @@
+target: http://127.0.0.1:8081
+runs: 1
+time_scale: 1.0
+safe_mode: true
+
+matching:
+  ignored_query_parameters:
+    - timestamp
+  ignored_headers:
+    - X-Request-ID
+  ignored_json_paths:
+    - $.metadata.request_id
+  rules:
+    - name: payment-by-id
+      methods: [POST]
+      host_regex: "^payments\\.example\\.test$"
+      path_regex: "^/v1/payments/[0-9]+$"
+      header_regex:
+        X-Tenant: "^tenant-[a-z]+$"
+      query_regex:
+        mode: "^(sync|async)$"
+      jsonpath_regex:
+        $.customer.id: "^cust_[0-9]+$"
+      compare_headers: true
+      compare_json: true
+
+scenarios:
+  - name: authenticated-payment
+    initial_state: logged_out
+    steps:
+      - name: issue-token
+        state: logged_out
+        next_state: logged_in
+        match:
+          methods: [POST]
+          host_regex: "^auth\\.example\\.test$"
+          path_regex: "^/oauth/token$"
+        response:
+          status: 200
+          headers:
+            Content-Type: [application/json]
+          body: '{"access_token":"scenario-token"}'
+      - name: accept-payment
+        state: logged_in
+        match:
+          methods: [POST]
+          host_regex: "^payments\\.example\\.test$"
+          path_regex: "^/v1/payments$"
+          header_regex:
+            Authorization: "^Bearer .+$"
+        response:
+          status: 202
+          headers:
+            Content-Type: [application/json]
+          body: '{"status":"accepted"}'
+
+stub:
+  https:
+    enabled: true
+    ca_dir: ./.infernosim-ca
+    allow_hosts:
+      - auth.example.test
+      - payments.example.test

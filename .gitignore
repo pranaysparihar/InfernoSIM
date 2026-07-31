@@ -1,36 +1,30 @@
-<<<<<<< HEAD
-# Compiled binaries
+# Compiled binaries and release output
+agent
 infernosim
-test-*
 infernosim-*
+test-*
 build/
 bin/
+dist/
+*.test
+coverage.out
 
-# Log files
+# Runtime incident artifacts
 *.log
-
-# Temporary testing output
-*.txt
-
-# Local CA and certs
-ca/
-~/.infernosim/
-=======
-# Binaries
-infernosim
-infernosim-*
-
-# Runtime output
-*.log
+# Replay-driver incident logs below are synthetic, sanitized test fixtures.
+!pkg/replaydriver/testdata/incidents/**/inbound.log
 *.out
 replay_result.txt
 verify_result.txt
 deterministic-replay-output.txt
 .infernosim_last_run.json
 
-# OS/editor
+# Local CA material
+ca/
+.infernosim/
+
+# OS and editor files
 .DS_Store
 
-# Node
+# Runtime dependencies
 node_modules/
->>>>>>> origin/main

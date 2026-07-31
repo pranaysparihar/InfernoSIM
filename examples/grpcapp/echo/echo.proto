@@ -5,6 +5,9 @@ option go_package = "infernosim/examples/grpcapp/echo";
 
 service EchoService {
   rpc Echo (EchoRequest) returns (EchoResponse);
+  rpc ServerStream (EchoRequest) returns (stream EchoResponse);
+  rpc ClientStream (stream EchoRequest) returns (EchoResponse);
+  rpc BidiStream (stream EchoRequest) returns (stream EchoResponse);
 }
 
 message EchoRequest {

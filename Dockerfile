@@ -1,28 +1,43 @@
-FROM ubuntu:22.04
+# Build stage
+ARG LDFLAGS
+# The official image can lag the newest Go patch by one release. Go's
+# toolchain auto-selection reads go.mod and downloads the required 1.25.12
+# toolchain inside this pinned Alpine builder.
+FROM golang:1.25.11-alpine3.22 AS builder
+ARG LDFLAGS
+ARG TARGETOS
+ARG TARGETARCH
+ENV GOTOOLCHAIN=auto
 
-ENV DEBIAN_FRONTEND=noninteractive
+WORKDIR /app
 
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    curl \
-    git \
-    ca-certificates \
-    pkg-config \
-    golang-go \
-    libfaketime \
-    iptables \
-    && rm -rf /var/lib/apt/lists/*
+# Copy go mod and sum files
+COPY go.mod go.sum ./
 
-ENV GOPATH=/go
-ENV PATH=$PATH:/go/bin
+# Download dependencies
+RUN go mod download
 
-WORKDIR /infernosim
-
-# Copy source
+# Copy source code
 COPY . .
 
-# Build Linux binary OUTSIDE the bind-mounted directory
-RUN go build -o /usr/local/bin/infernosim ./cmd/agent
+# Build the binary
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="${LDFLAGS}" -o infernosim ./cmd/agent
+
+# Final stage
+FROM alpine:3.22
+
+RUN apk --no-cache add ca-certificates iptables \
+    && addgroup -S -g 65532 infernosim \
+    && adduser -S -D -H -u 65532 -G infernosim infernosim \
+    && mkdir -p /app /incident \
+    && chown -R infernosim:infernosim /app /incident
+
+WORKDIR /app
+
+# Copy the pre-built binary from builder stage
+COPY --from=builder /app/infernosim /usr/local/bin/infernosim
+
+USER infernosim
 
 EXPOSE 18080 19000
 

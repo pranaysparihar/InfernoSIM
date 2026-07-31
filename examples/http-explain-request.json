@@ -1,0 +1,8 @@
+{
+  "method": "GET",
+  "url": "http://worldtimeapi.org/api/timezone/Etc/UTC",
+  "headers": {
+    "Accept-Encoding": ["gzip"],
+    "User-Agent": ["Go-http-client/1.1"]
+  }
+}

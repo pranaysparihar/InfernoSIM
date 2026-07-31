@@ -1,8 +1,16 @@
 .git
+.github
 .gitignore
 infernosim
+agent
+dist/
+demo_bug/
+ebpf/
 *.log
+*.zip
+*.tar.gz
 replay_result.txt
 verify_result.txt
 .infernosim_last_run.json
+.DS_Store
 node_modules

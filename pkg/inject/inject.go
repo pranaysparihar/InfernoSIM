@@ -1,11 +1,12 @@
 package inject
 
 import (
-"fmt"
-"math/rand"
-"strconv"
-"strings"
-"time"
+	"fmt"
+	"math/rand"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
 )
 
 // InjectConfig models the parsed fault injection parameters.
@@ -16,6 +17,7 @@ type InjectConfig struct {
 	Status     int     // Override HTTP status
 	StatusRate float64 // 0.0 to 1.0 probability to apply status override
 	rng        *rand.Rand
+	mu         sync.Mutex
 }
 
 // ParseConfig parses a string like "jitter=50ms,drop=5%,reset=5%,status=503,rate=10%"
@@ -37,7 +39,7 @@ func ParseConfig(config string, seed int64) (*InjectConfig, error) {
 	for _, p := range parts {
 		kv := strings.SplitN(strings.TrimSpace(p), "=", 2)
 		if len(kv) != 2 {
-			continue // skip malformed
+			return nil, fmt.Errorf("invalid injection token %q", p)
 		}
 		key := strings.ToLower(kv[0])
 		val := kv[1]
@@ -77,7 +79,24 @@ func ParseConfig(config string, seed int64) (*InjectConfig, error) {
 			} else {
 				return nil, fmt.Errorf("invalid status rate: %v", val)
 			}
+		default:
+			return nil, fmt.Errorf("unknown injection key %q", key)
 		}
+	}
+	if cfg.JitterMs < 0 {
+		return nil, fmt.Errorf("jitter must be >= 0")
+	}
+	if cfg.DropRate < 0 || cfg.DropRate > 1 {
+		return nil, fmt.Errorf("drop rate must be between 0%% and 100%%")
+	}
+	if cfg.ResetRate < 0 || cfg.ResetRate > 1 {
+		return nil, fmt.Errorf("reset rate must be between 0%% and 100%%")
+	}
+	if cfg.StatusRate < 0 || cfg.StatusRate > 1 {
+		return nil, fmt.Errorf("status rate must be between 0%% and 100%%")
+	}
+	if cfg.Status != 0 && (cfg.Status < 100 || cfg.Status > 599) {
+		return nil, fmt.Errorf("status must be a valid HTTP status code")
 	}
 	return cfg, nil
 }
@@ -98,13 +117,14 @@ func (cfg *InjectConfig) Evaluate(isHTTP bool) Action {
 	if cfg == nil {
 		return act
 	}
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
 
 	applied := []string{}
 
 	// Evaluate Jitter
 	if cfg.JitterMs > 0 {
-		// ± jitter
-		jitter := cfg.rng.Intn(cfg.JitterMs*2) - cfg.JitterMs
+		jitter := cfg.rng.Intn(cfg.JitterMs + 1)
 		if jitter != 0 {
 			act.Delay = time.Duration(jitter) * time.Millisecond
 			applied = append(applied, fmt.Sprintf("jitter=%dms", jitter))
@@ -159,7 +179,7 @@ func (e *ValidationError) Error() string {
 
 func supportedKeysForOutput() []string {
 	// Keep this list aligned with CLI messaging requirements.
-	return []string{"latency", "timeout"}
+	return []string{"latency", "timeout", "retries"}
 }
 
 func ParseRules(flags []string) ([]Rule, error) {
@@ -191,6 +211,12 @@ func ParseRules(flags []string) ([]Rule, error) {
 					}
 				}
 				r.AddLatency = d
+				if d < 0 {
+					return nil, &ValidationError{
+						SupportedKeys: supportedKeysForOutput(),
+						Reason:        "latency must be >= 0",
+					}
+				}
 			case "timeout":
 				d, err := time.ParseDuration(v)
 				if err != nil {
@@ -200,6 +226,12 @@ func ParseRules(flags []string) ([]Rule, error) {
 					}
 				}
 				r.Timeout = d
+				if d <= 0 {
+					return nil, &ValidationError{
+						SupportedKeys: supportedKeysForOutput(),
+						Reason:        "timeout must be > 0",
+					}
+				}
 			case "retries":
 				n, err := strconv.Atoi(v)
 				if err != nil || n < 0 {

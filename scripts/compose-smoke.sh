@@ -28,6 +28,13 @@ INCIDENT_DIR=$(cd "$INCIDENT_DIR" && pwd)
 LOG_FILE="${INCIDENT_DIR}/outbound.log"
 COMPOSE_FILES=(-f docker-compose.yml -f docker-compose.examples.yml)
 
+# Bind mounts retain host ownership on Linux. Run the smoke-test service as
+# the invoking user so the non-root process can create its capture log without
+# broadening directory permissions. docker-compose.yml still defaults to the
+# image's unprivileged 65532:65532 identity outside this script.
+export INFERNOSIM_UID="${INFERNOSIM_UID:-$(id -u)}"
+export INFERNOSIM_GID="${INFERNOSIM_GID:-$(id -g)}"
+
 cleanup() {
   if [ "${KEEP_ON_FAIL:-0}" != "1" ]; then
     docker compose "${COMPOSE_FILES[@]}" --profile "$PROFILE" down >/dev/null 2>&1 || true
@@ -69,7 +76,7 @@ wait_healthy infernosim-capture
 sleep 2
 
 echo "[5/5] Run smoke request and verify outbound capture"
-if ! INCIDENT_DIR="$INCIDENT_DIR" docker compose "${COMPOSE_FILES[@]}" --profile "$PROFILE" exec -T "$APP_SERVICE" sh -lc "for i in 1 2 3 4 5; do wget -qO- http://127.0.0.1:${APP_PORT}/api/demo >/dev/null 2>&1 && exit 0; sleep 1; done; exit 1"; then
+if ! INCIDENT_DIR="$INCIDENT_DIR" docker compose "${COMPOSE_FILES[@]}" --profile "$PROFILE" exec -T "$APP_SERVICE" sh -lc "for i in \$(seq 1 30); do wget -qO- http://127.0.0.1:${APP_PORT}/api/demo >/dev/null 2>&1 && exit 0; sleep 1; done; exit 1"; then
   echo "Smoke failed: app request did not succeed" >&2
   INCIDENT_DIR="$INCIDENT_DIR" docker compose "${COMPOSE_FILES[@]}" --profile "$PROFILE" ps -a || true
   INCIDENT_DIR="$INCIDENT_DIR" docker compose "${COMPOSE_FILES[@]}" --profile "$PROFILE" logs --no-color --tail=120 infernosim-capture "$APP_SERVICE" || true

@@ -1,0 +1,7 @@
+{
+  "captured_at": "2026-03-16T00:00:00Z",
+  "env": "test",
+  "host": "api.example.com",
+  "inbound_count": 2,
+  "outbound_count": 0
+}

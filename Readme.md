@@ -1,268 +1,550 @@
 # InfernoSIM
 
+InfernoSIM is an open-source Go sidecar for capturing HTTP traffic and replaying
+incidents against an isolated service. It supports inbound request capture,
+outbound dependency stubbing, state-aware replay, fault injection, replay diffs,
+concurrency pressure, native HTTPS dependency stubbing, semantic request
+matching, explicit scenarios, OpenAPI release gates, CI reports, encrypted
+incident bundles, and policy-driven privacy controls.
 
-InfernoSIM is not just a proxy—it's a strict deterministic chaos engineering, traffic interception, and CI/CD validation engine. Designed for modern microservices architectures, it enforces strict API contracts, breaks your local services before they break in production, and automatically discovers the performance limits of your infrastructure.
+## Feature guide
 
----
+| Area | Features |
+| --- | --- |
+| Capture | Inbound reverse proxy, outbound HTTP/HTTPS MITM proxy, HTTP/2 and gRPC exchanges including trailers, bounded payload capture |
+| Replay | Timing preservation, density, fanout, safe mode, runtime state substitution, dependency fault injection |
+| Virtualization | Captured HTTP/HTTPS and gRPC responses over HTTP/2/h2c, deterministic dynamic templates, descriptor-aware Protobuf matching and synthesis, stateful scenarios |
+| Release gates | OpenAPI 3.x request/response validation, status/content-type drift, JUnit, SARIF, and HTML reports |
+| Privacy | Built-in secret redaction, configurable redact/drop/tokenize rules, deterministic HMAC tokens |
+| Portability | Authenticated encrypted v2 bundles using AES-256-GCM and PBKDF2-HMAC-SHA256 |
 
-## Part 1: Core Guide (Features & Usage)
+## Requirements
 
-This section outlines how to configure, run, and utilize the core capabilities of InfernoSIM.
+- Go 1.25.12 or newer in the 1.25 line
+- Docker with Compose for the container examples
+- Linux with `NET_ADMIN` only for optional transparent replay
 
-### Installation & Basic Setup
-Ensure you have Go 1.22+ installed. Build the agent binary:
-=======
-InfernoSIM is an open-source sidecar-style traffic capture and deterministic replay tool for backend services.
-
-It captures inbound and outbound HTTP traffic as JSONL logs, then replays real incidents against a live service with deterministic timing controls, fault injection, and concurrency pressure.
-
-## Features
-
-- Inbound + outbound capture via lightweight proxies.
-- Deterministic replay across repeated runs.
-- Causal concurrency pressure with `--fanout`.
-- Replay SLO checks with `--window`.
-- Fault injection (`latency`, `timeout`) for dependencies.
-- Actionable replay summary: limiting factor, sustained envelope, delta from last run.
-
-## Repository Layout
-
-- `cmd/agent/main.go`: InfernoSIM binary entrypoint.
-- `pkg/`: capture/replay/stub/injection/event internals.
-- `examples/goapp-deterministic`: deterministic Go sample app.
-- `examples/nodeapp-deterministic`: deterministic Node sample app.
-
-## Build
+## Build and test
 
 ```bash
-go build -o infernosim ./cmd/agent
+go build -trimpath -o infernosim ./cmd/agent
+go test -race ./...
+go vet ./...
 ```
 
+Release CI also runs fuzz smoke tests, cross-platform builds, multi-architecture
+container builds, Compose integration profiles, SBOM generation, and keyless
+Sigstore signing. See [the release process](docs/RELEASING.md).
 
-### 1. Bounded HTTP Body Capture
-InfernoSIM cleanly captures both incoming and outgoing payloads without destroying memory. It strictly bounds bodies to 256KB by default. Captured payloads are automatically Base64-encoded and fingerprinted with a SHA-256 hash.
+## Safety defaults
 
-**Usage:**
+- Listeners bind to loopback unless another address is explicitly supplied.
+- Replay skips POST, PUT, PATCH, and DELETE by default.
+- Legacy replay rewrites traffic to `--target`; it never intentionally calls the
+  captured origin.
+- Capture redacts authorization, cookie, API-key, and set-cookie values.
+- Raw bodies are fingerprinted but omitted unless `--capture-sensitive-data` is
+  explicitly supplied or a privacy policy explicitly enables transformed body
+  capture.
+- Incident logs and metadata use owner-only file permissions.
+- Forward proxies block loopback, link-local, and private destinations unless
+  `--allow-private-destinations` is supplied.
+
+Do not use `--allow-writes`, `--capture-sensitive-data`,
+`--allow-private-destinations`, or `--insecure-upstream` without understanding
+their scope.
+
+## Capture an incident
+
+Start the application, then run:
+
 ```bash
-./infernosim --mode=proxy --listen=:9000 --log=events.log
+./infernosim capture \
+  --listen 127.0.0.1:18080 \
+  --forward 127.0.0.1:8081 \
+  --out ./incident-001
 ```
-*Any HTTP(S) traffic routed through the proxy (e.g., `https://api.github.com/`) will log deterministic fingerprints (`bodySha256`) and the `bodyTruncated` status.*
 
-### 2. HTTPS Deep Capture (MITM Decryption)
-Standard proxies treat encrypted `CONNECT` tunnels as black boxes. InfernoSIM dynamically intercepts HTTPS handshakes, spins up a dynamic local Certificate Authority (`~/.infernosim/ca/`), generates leaf certificates per-host on the fly, and exposes the decrypted interior payload for logging and replay.
+This starts an inbound reverse proxy at `127.0.0.1:18080` and an outbound
+forward proxy at `127.0.0.1:8084`. Configure the application process to use the
+outbound proxy:
 
-**Usage:**
 ```bash
-./infernosim --mode=proxy --listen=:9000 --https-mode=mitm --log=events_https.log
+HTTP_PROXY=http://127.0.0.1:8084 \
+HTTPS_PROXY=http://127.0.0.1:8084 \
+./your-application
 ```
-*Note: The client application or OS must trust the local `infernosim-ca.crt` root certificate to smoothly decrypt external domains like `https://api.stripe.com`.*
 
-### 3. gRPC Unary Telemetry via HTTP/2
-InfernoSIM utilizes native `golang.org/x/net/http2/h2c` multiplexing to peek inside gRPC streams routed over plaintext proxies. It intercepts the HTTP/2 trailers without requiring custom Protobuf decoders, providing deep visibility into your service calls.
+Exercise the application through the inbound proxy, then press Ctrl-C. The
+incident directory contains `incident.json`, `inbound.log`, and `outbound.log`.
 
-**What it captures:**
-- `grpcServiceMethod`
-- `grpcStatus`
+For a local private dependency and replayable payload bytes:
 
-### 4. Deterministic Fault Injection (Chaos Engineering)
-Test how your application behaves when downstream APIs fail, lag, or completely drop connections, all defined by deterministic PRNG states.
-
-**Usage:**
 ```bash
-./infernosim --mode=proxy --listen=:9000 --inject="jitter=50ms,drop=5%,reset=5%,status=503,rate=100%"
+./infernosim capture \
+  --listen 127.0.0.1:18080 \
+  --forward 127.0.0.1:8081 \
+  --outbound-listen 127.0.0.1:8084 \
+  --allow-private-destinations \
+  --capture-sensitive-data \
+  --out ./incident-001
 ```
-*For example, this forces a severe outage simulation where 100% of traffic to `https://aws.amazon.com` receives a `503 Service Unavailable` accompanied by latency spikes.*
 
-### 5. Deterministic Replay (Contract Enforcement)
-Take previously recorded traffic from production, staging, or integration tests, and replay it locally. InfernoSIM enforces strict determinism. If the target service tries to return a different status code, or if the replayed payload hash mismatches, the simulation loudly aborts (`FAIL_NON_DETERMINISTIC` or `FAIL_SLO_MISSED`).
+`--capture-sensitive-data` can store credentials and PII. Treat such incident
+bundles as secrets. Existing non-empty bundles are rejected unless `--append`
+is explicitly supplied.
 
-**Usage:**
+## Inspect and verify
+
 ```bash
-# Replay traffic natively against the original external APIs (e.g., api.stripe.com)
-./infernosim replay --log=events.log --target=https://api.stripe.com
-
-# Overwrite target to route external payloads to your local staging environment
-./infernosim replay --log=events.log --target=http://localhost:8081
+./infernosim inspect ./incident-001
+./infernosim verify ./incident-001
 ```
 
-### 6. Auto-Envelope Search (Load Boundary Discovery)
-Rather than manually guessing load test parameters, pass your production traffic logs into the search engine. InfernoSIM automatically extrapolates concurrency, multiplying traffic fanout until the target application begins to drop requests or break SLOs, reporting the exact maximum stable boundary.
+`inspect` prints the request timeline and discovered state chains. `verify`
+reports side effects, missing dependencies, and expired JWTs.
 
-**Usage:**
+## Replay
+
+Safe replay:
+
 ```bash
-./infernosim search --log=events.log --target=https://staging-cluster.internal.com
+./infernosim replay ./incident-001 \
+  --target-base http://127.0.0.1:8081 \
+  --runs 3
 ```
 
-### 7. Inbound Reverse-Proxy Mode
-InfernoSIM doesn't just act as an outbound proxy for third-party APIs. It can be spun up as an Inbound sidecar to natively intercept, log, and manipulate traffic coming *into* your service from load balancers or gateways.
+The positional incident directory may appear before the flags. Write requests
+are skipped unless explicitly enabled:
 
-**Usage:**
 ```bash
-./infernosim --mode=inbound --forward=http://localhost:8081 --listen=:8080 --log=inbound.log
+./infernosim replay ./incident-001 \
+  --target-base http://127.0.0.1:8081 \
+  --allow-writes \
+  --runs 3
 ```
 
-### 8. Portable Cross-Team JSON Logs
-Every event is entirely self-contained within flat JSON files. Because payloads are Base64 encoded and hashed directly in the log file, developers can easily share a single `events.log` file securely. Another developer can instantly reproduce the exact traffic state locally without needing database dumps.
+Only use `--allow-writes` with an isolated target whose data may be changed.
+Inbound-only incidents are supported and produce a weak pass because dependency
+behavior was not verified.
 
-### 9. Granular SLA Telemetry Tracking
-Every single intercepted event explicitly tracks `bytesSent`, `bytesReceived`, and precise millisecond `duration`. It acts as a lightweight observability agent without needing a massive Datadog or Prometheus setup.
+### Replay flags
 
-## Deterministic Compose Smoke Test
+- `--target-base`: isolated service receiving captured inbound requests
+- `--runs`: number of replay iterations
+- `--time-scale`: scale captured timing
+- `--density`: compress request gaps
+- `--min-gap`: minimum gap between requests
+- `--max-wall-time`: total replay budget
+- `--max-idle-time`: per-request progress budget
+- `--max-events`: maximum inbound events
+- `--fanout`: concurrent replay workers
+- `--window`: optional SLO completion window
+- `--inject`: dependency latency/timeout/retry rule
+- `--diff`: show status, stable-header, body-hash, and latency changes
+- `--openapi`: validate captured and replayed exchanges against OpenAPI 3.x
+- `--report-formats`: generate `junit`, `sarif`, and/or `html` reports
+- `--report-dir`: choose the report output directory
+- `--safe-mode`: skip writes; enabled by default
+- `--allow-writes`: explicitly disable safe mode
+- `--stub-listen`: primary dependency stub address
+- `--stub-compat-listen`: optional compatibility stub address
+- `--https-stub`: enable native CONNECT/TLS dependency stubbing
+- `--stub-ca-dir`: use an isolated replay CA directory
+- `--stub-mitm-allow-hosts`: allowlist HTTPS dependency hosts
 
-Use the built-in smoke workflow for runtime validation without ad-hoc package installs:
+Examples:
+
+```bash
+./infernosim replay ./incident-001 \
+  --target-base http://127.0.0.1:8081 \
+  --inject "dep=payments.test latency=+200ms"
+
+./infernosim replay ./incident-001 \
+  --target-base http://127.0.0.1:8081 \
+  --fanout 8 \
+  --window 30s
+```
+
+## Replay configuration
+
+An incident may contain `replay.yaml`:
+
+```yaml
+target: http://127.0.0.1:8081
+runs: 3
+time_scale: 1.0
+safe_mode: true
+chaos:
+  latency:
+    request: 2
+    delay: 250ms
+state:
+  file: ./state.json
+```
+
+Unknown fields and invalid values are rejected. Relative state paths are
+resolved relative to `replay.yaml`.
+
+### Semantic matching
+
+The `matching` section allows captured dependency calls to match runtime values
+without weakening every request:
+
+```yaml
+matching:
+  ignored_query_parameters: [timestamp]
+  ignored_headers: [X-Request-ID]
+  ignored_json_paths: [$.metadata.request_id]
+  rules:
+    - name: payment
+      methods: [POST]
+      host_regex: "^payments\\.example\\.test$"
+      path_regex: "^/v1/payments/[0-9]+$"
+      header_regex:
+        X-Tenant: "^tenant-[a-z]+$"
+      query_regex:
+        mode: "^(sync|async)$"
+      jsonpath_regex:
+        $.customer.id: "^cust_[0-9]+$"
+      compare_headers: true
+      compare_json: true
+```
+
+Regexes use Go RE2 syntax. InfernoSIM's deterministic JSONPath subset supports
+the root `$`, dotted object keys, and numeric indexes such as
+`$.orders[0].id`. Query fields and JSON paths with regex predicates are
+automatically excluded from exact equality; additional volatile values can be
+listed in the ignored fields.
+
+### Explicit stateful scenarios
+
+Scenarios are evaluated before captured events. A matching step returns its
+configured response and atomically advances the named scenario:
+
+```yaml
+scenarios:
+  - name: authentication
+    initial_state: logged_out
+    steps:
+      - name: login
+        state: logged_out
+        next_state: logged_in
+        match:
+          methods: [POST]
+          path_regex: "^/login$"
+        response:
+          status: 200
+          headers:
+            Content-Type: [application/json]
+          body: '{"token":"test-token"}'
+      - name: profile
+        state: logged_in
+        match:
+          methods: [GET]
+          path_regex: "^/profile$"
+        response:
+          status: 200
+          body: '{"name":"Replay User"}'
+```
+
+Scenario state resets at the beginning of each replay run. See
+[`examples/replay-v2.yaml`](examples/replay-v2.yaml) for the v3.2 schema and
+[`examples/replay-v3.yaml`](examples/replay-v3.yaml) for templates and
+descriptor-aware gRPC.
+
+### Deterministic dynamic responses
+
+Scenario bodies, headers, trailers, and Protobuf JSON documents can derive
+values from the runtime request:
+
+```yaml
+templates:
+  seed: checkout-ci
+  max_output_bytes: 1048576
+
+scenarios:
+  - name: orders
+    initial_state: ready
+    steps:
+      - name: create
+        state: ready
+        match:
+          methods: [POST]
+          path_regex: "^/orders$"
+        response:
+          status: 201
+          headers:
+            Content-Type: [application/json]
+            X-Customer: ['{{ jsonPath "$.customer_id" }}']
+          body_template: |
+            {
+              "id": "{{ uuid "order" }}",
+              "customer_id": "{{ jsonPath "$.customer_id" }}",
+              "created_at": "{{ now }}"
+            }
+```
+
+Available functions are `jsonPath`, `proto`, `header`, `query`, `uuid`,
+`token`, `now`, `nowUnix`, `toJSON`, and `default`. Generated values are stable
+for the same seed and request. Templates have bounded source and output sizes
+and cannot execute programs, access files, read environment variables, or open
+network connections.
+
+### Descriptor-aware gRPC
+
+Load `.proto` sources or binary `FileDescriptorSet` files to match Protobuf
+fields and synthesize typed unary or streaming response frames:
+
+```yaml
+matching:
+  grpc:
+    proto_files: [grpcapp/echo/echo.proto]
+    import_paths: [grpcapp/echo]
+  rules:
+    - name: echo
+      methods: [POST]
+      grpc_method: /echo.EchoService/Echo
+      protobuf_field_regex:
+        $.message: "^hello"
+      ignored_protobuf_fields: [$.message]
+      compare_protobuf: true
+
+scenarios:
+  - name: typed-echo
+    initial_state: ready
+    steps:
+      - name: echo
+        state: ready
+        match:
+          methods: [POST]
+          grpc_method: /echo.EchoService/Echo
+          protobuf_field_regex:
+            $.message: "^hello"
+        response:
+          status: 200
+          headers:
+            Content-Type: [application/grpc]
+          grpc_status: OK
+          protobuf_type: echo.EchoResponse
+          protobuf_json: '{"message":"{{ proto "$.message" }} virtualized"}'
+```
+
+Use `protobuf_stream` instead of `protobuf_json` to produce multiple response
+messages. `stream_message_delay` optionally spaces frames, for example `50ms`.
+Request streams are decoded as an array, so predicates can address fields such
+as `$[0].account_id`. Compressed gRPC messages remain available for wire-level
+replay but are rejected by semantic decoding.
+
+### Generate, lint, and explain
+
+Create starting simulations directly from contracts:
+
+```bash
+infernosim generate --openapi ./openapi.yaml --out replay.yaml
+infernosim generate \
+  --proto ./proto/payments.proto \
+  --import-path ./proto \
+  --out replay.grpc.yaml
+```
+
+Generation never overwrites an existing file without `--force`. Generated
+examples are deterministic starting points and should be reviewed before use.
+
+Validate configuration structure, template syntax, state reachability, and
+shadowed matchers:
+
+```bash
+infernosim lint replay.yaml
+infernosim lint --json replay.yaml
+```
+
+Explain matching against every captured outbound call:
+
+```bash
+infernosim match explain ./incident \
+  --request ./request.json \
+  --config ./incident/replay.yaml
+```
+
+## Standalone capture proxy
+
+Inbound:
+
+```bash
+./infernosim --mode=inbound \
+  --listen 127.0.0.1:18080 \
+  --forward 127.0.0.1:8081 \
+  --log inbound.log
+```
+
+Outbound with repeatable fault injection:
+
+```bash
+./infernosim --mode=proxy \
+  --listen 127.0.0.1:9000 \
+  --log outbound.log \
+  --inject "jitter=50ms,drop=5%,status=503,rate=10%" \
+  --inject-seed 42
+```
+
+## HTTPS MITM
+
+MITM capture is opt-in:
+
+```bash
+./infernosim --mode=proxy \
+  --listen 127.0.0.1:9000 \
+  --https-mode mitm \
+  --mitm-allow-hosts api.example.test \
+  --log outbound.log
+```
+
+The generated CA is stored under `~/.infernosim/ca`. The client must trust that
+CA. Only explicitly allowlisted hosts receive leaf certificates. Local/private
+MITM additionally requires `--allow-private-destinations`.
+
+### Native HTTPS response stubbing
+
+Replay can terminate application CONNECT/TLS traffic and return captured or
+scenario responses without contacting the dependency:
+
+```yaml
+stub:
+  https:
+    enabled: true
+    ca_dir: ./.infernosim-ca
+    allow_hosts:
+      - payments.example.test
+```
+
+Start the application with both proxy variables pointing to the replay stub and
+trust the printed CA:
+
+```bash
+HTTP_PROXY=http://127.0.0.1:19000 \
+HTTPS_PROXY=http://127.0.0.1:19000 \
+SSL_CERT_FILE="$PWD/incident/.infernosim-ca/infernosim-ca.crt" \
+./your-application
+
+./infernosim replay ./incident \
+  --https-stub \
+  --stub-ca-dir ./incident/.infernosim-ca \
+  --stub-mitm-allow-hosts payments.example.test
+```
+
+HTTPS stubbing is opt-in and refuses hosts outside the allowlist. It negotiates
+HTTP/2 with ALPN inside CONNECT and also accepts cleartext HTTP/2 (h2c), so
+captured gRPC response frames and trailers can be replayed without an HTTP test
+endpoint. Older captures that contain `grpcStatus` but no response trailer map
+are upgraded during replay by emitting the corresponding `grpc-status`
+trailer.
+
+Explicit scenarios can return captured gRPC wire data using `body_base64`,
+`trailers`, and `grpc_status`, or synthesize typed messages with
+`protobuf_json` and `protobuf_stream` when descriptors are configured.
+`body_base64` must contain standard gRPC wire frames, not unframed Protobuf
+bytes. Payloads larger than the 256 KiB capture bound remain fingerprint-only
+and cannot be used as captured replay bodies; generated scenario responses use
+a separate 16 MiB per-message safety bound.
+
+## OpenAPI validation and release reports
+
+Validate an incident without replaying it:
+
+```bash
+./infernosim contract ./incident \
+  --spec ./openapi.yaml \
+  --report-formats junit,sarif,html
+```
+
+Validate both the baseline and a candidate, including status and content-type
+drift:
+
+```bash
+./infernosim replay ./incident \
+  --target-base http://127.0.0.1:8081 \
+  --openapi ./openapi.yaml \
+  --report-formats junit,sarif,html \
+  --report-dir ./artifacts
+```
+
+OpenAPI 3.0/3.1 path templates, request/response JSON schemas, local component
+schema references, required properties, primitive types, arrays, enums,
+documented statuses, and required response headers are supported. Unsupported
+external `$ref` values produce explicit findings instead of being silently
+accepted.
+
+## Privacy policies
+
+Privacy policies operate on the copy written to the incident; forwarded traffic
+is unchanged. Rules can redact, drop, or deterministically tokenize headers,
+query parameters, and JSON fields:
+
+```bash
+export INFERNOSIM_TOKEN_KEY='replace-with-at-least-16-random-bytes'
+./infernosim capture \
+  --forward 127.0.0.1:8081 \
+  --privacy-policy ./examples/privacy-policy.yaml \
+  --out ./incident
+```
+
+`capture_bodies: true` stores the transformed body, enabling replay without
+retaining the original sensitive value. Tokens are `tok_` plus a keyed
+HMAC-SHA256 digest and cannot be reversed. Keep the token key outside the
+incident. See [`examples/privacy-policy.yaml`](examples/privacy-policy.yaml).
+
+## Encrypted incident bundles v2
+
+Seal a completed incident into an authenticated portable archive:
+
+```bash
+export INFERNOSIM_BUNDLE_PASSPHRASE='use-a-long-random-passphrase'
+./infernosim bundle seal \
+  --out incident-001.inferno \
+  ./incident-001
+
+./infernosim bundle open \
+  --out ./incident-001-opened \
+  incident-001.inferno
+```
+
+Bundle v2 uses AES-256-GCM authenticated encryption and derives its key with
+PBKDF2-HMAC-SHA256 using a random salt and 600,000 iterations. Passphrases are
+read only from the named environment variable, never a command-line argument.
+Extraction rejects path traversal, links, oversized files, and non-empty
+destinations.
+
+## Docker examples
 
 ```bash
 scripts/compose-smoke.sh node
 scripts/compose-smoke.sh go
 ```
 
-What it validates:
+The default capture container is unprivileged. Transparent replay requires an
+explicit root user and `NET_ADMIN`; do not grant those permissions to ordinary
+capture deployments.
 
-- `infernosim:local` image builds.
-- Runtime-agnostic capture sidecar (`docker-compose.yml`) boots cleanly.
-- Runtime example profile (`docker-compose.examples.yml`) boots cleanly.
-- Capture healthcheck passes.
-- A live request is executed.
-- Runtime incident log contains captured `OutboundCall` events.
+## Development
 
-Compose files:
-
-- `docker-compose.yml`: capture sidecar only (runtime-agnostic).
-- `docker-compose.examples.yml`: optional deterministic Go/Node example services via profiles.
-
-## Capture Modes
-
-### Inbound capture
+To contribute, build and validate a focused change before opening a pull
+request:
 
 ```bash
-./infernosim --mode=inbound --listen=:18080 --forward=localhost:8084 --log=inbound.log
+go build -trimpath -o infernosim ./cmd/agent
+go test -race ./...
+go vet ./...
+go mod tidy -diff
+./infernosim lint examples/replay-v3.yaml
 ```
 
-### Outbound capture
-
-```bash
-./infernosim --mode=proxy --listen=:9000 --log=outbound.log
-```
-
-## Quickstart: Deterministic Go
-
-### Terminal 1
-
-```bash
-./infernosim --mode=proxy --listen=:9000 --log=outbound.log
-```
-
-### Terminal 2
-
-```bash
-HTTP_PROXY=http://localhost:9000 \
-HTTPS_PROXY=http://localhost:9000 \
-PORT=8084 \
-go run examples/goapp-deterministic/main.go
-```
-
-### Terminal 3
-
-```bash
-./infernosim --mode=inbound --listen=:18080 --forward=localhost:8084 --log=inbound.log
-```
-
-### Generate + replay
-
-```bash
-curl http://localhost:18080/api/demo
-
-# stop capture sidecars first (:9000 and :18080), keep app running
-./infernosim replay --incident . --target-base http://localhost:8084 --runs 3
-```
-
-## Quickstart: Deterministic Node
-
-### Terminal 1
-
-```bash
-./infernosim --mode=proxy --listen=:9000 --log=outbound.log
-```
-
-### Terminal 2
-
-```bash
-PORT=8083 OUTBOUND_PROXY_PORT=9000 node examples/nodeapp-deterministic/app.js
-```
-
-### Terminal 3
-
-```bash
-./infernosim --mode=inbound --listen=:18080 --forward=localhost:8083 --log=inbound.log
-```
-
-### Generate + replay
-
-```bash
-curl http://localhost:18080/api/demo
-./infernosim replay --incident . --target-base http://localhost:8083 --runs 3
-```
-
-## Replay Command
-
-```bash
-./infernosim replay --incident . --target-base http://localhost:8084 --runs 10
-```
-
-## Replay Flags
-
-- `--incident` (default `.`): path containing `inbound.log` and `outbound.log`.
-- `--target-base` (default `http://localhost:18080`): replay target URL base.
-- `--runs` (default `10`): number of replay iterations.
-- `--time-scale` (default `1.0`): replay time scaling.
-- `--density` (default `1.0`): replay density multiplier.
-- `--min-gap` (default `2ms`): minimum inter-event replay gap.
-- `--max-wall-time` (default `30s`): max replay wall-clock budget.
-- `--max-idle-time` (default `5s`): max idle duration without progress.
-- `--max-events` (default `0`): max inbound events replayed (`0` = unlimited).
-- `--inject` (repeatable): injection rule.
-  - Example: `--inject "dep=worldtimeapi.org latency=+200ms"`
-  - Example: `--inject "dep=worldtimeapi.org timeout=1s"`
-- `--stub-listen` (default `:19000`): primary replay stub listen address.
-- `--stub-compat-listen` (default `:9000`): compatibility listen address for fixed app proxy ports.
-- `--fanout` (default `1`): concurrent causal replay workers per run.
-- `--window` (default `0s`): replay SLO window; can trigger `FAIL_SLO_MISSED`.
-
-## Example Replay Scenarios
-
-```bash
-# baseline
-./infernosim replay --incident . --target-base http://localhost:8084 --runs 10
-
-# faster replay
-./infernosim replay --incident . --target-base http://localhost:8084 --runs 5 --time-scale 0.1
-
-# dependency fault injection
-./infernosim replay --incident . --target-base http://localhost:8084 --runs 5 --inject "dep=worldtimeapi.org latency=+200ms"
-
-# causal concurrency + SLO window
-./infernosim replay --incident . --target-base http://localhost:8084 --runs 5 --fanout 167 --window 5m
-```
-
-## Summary Semantics
-
-Replay summary includes:
-
-- `Outcome` and `Primary failure reason`.
-- Inbound/outbound observed vs expected/target counts.
-- Achieved vs target request rate.
-- `Limiting factor` classification.
-- `SUSTAINABLE ENVELOPE (observed)`.
-- `Change from last run` deltas.
-
-## Production Notes
-
-- Keep incident logs immutable between analysis runs.
-- Ensure replay stub ports are free (`:19000` and optional compat `:9000`).
-- Stop capture sidecars before running replay.
-- Commit source only; runtime artifacts are ignored by `.gitignore`.
+The [contributor guide](CONTRIBUTING.md) covers deterministic fixtures, fuzzing,
+container smoke tests, generated Protobuf changes, and security expectations.
+See [SCENARIOS.md](SCENARIOS.md), [SECURITY.md](SECURITY.md), [upgrade
+guidance](docs/UPGRADING.md), and the [release process](docs/RELEASING.md) for
+the corresponding operational guidance.
 
 ## License
 
-Add an OSS license file (`LICENSE`) before public release.
-
+MIT. See [LICENSE](LICENSE).

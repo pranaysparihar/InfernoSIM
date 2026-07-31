@@ -1,0 +1,63 @@
+version: 2
+# .goreleaser.yml for InfernoSIM v3
+builds:
+  - id: infernosim
+    binary: infernosim
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    main: ./cmd/agent/main.go
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}} -X main.versionBy=goreleaser
+archives:
+  - id: infernosim-archive
+    ids: [infernosim]
+    # GoReleaser emits multiple micro-architecture variants for amd64. Keep
+    # those artifacts distinct so a release snapshot cannot overwrite one.
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Amd64 }}_{{ . }}{{ end }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+sboms:
+  - artifacts: archive
+signs:
+  - cmd: cosign
+    signature: "${artifact}.sigstore.json"
+    args:
+      - "sign-blob"
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
+snapshot:
+  version_template: "{{ .Tag }}-next"
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+
+homebrew_casks:
+  - name: infernosim
+    repository:
+      owner: pranaysparihar
+      name: homebrew-infernosim
+
+    homepage: "https://github.com/pranaysparihar/InfernoSIM"
+    description: "Deterministic incident replay for backend systems"
+    license: "MIT"
+
+    commit_author:
+      name: Pranay Singh Parihar
+      email: pranaysparihar@gmail.com
+
+    binaries:
+      - infernosim

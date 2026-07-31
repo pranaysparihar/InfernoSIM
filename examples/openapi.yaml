@@ -1,0 +1,66 @@
+openapi: 3.1.0
+info:
+  title: InfernoSIM example service
+  version: 1.0.0
+paths:
+  /login:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: authenticated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [access_token]
+                properties:
+                  access_token:
+                    type: string
+  /orders:
+    get:
+      responses:
+        "200":
+          description: orders
+          content:
+            application/json:
+              schema:
+                type: object
+  /health:
+    get:
+      responses:
+        "200":
+          description: healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+  /orders/{id}:
+    get:
+      responses:
+        "200":
+          description: order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+components:
+  schemas:
+    Order:
+      type: object
+      required: [id, status]
+      properties:
+        id:
+          type: string
+        status:
+          type: string

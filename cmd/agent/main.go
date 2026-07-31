@@ -1,47 +1,142 @@
 package main
 
 import (
-"encoding/json"
-"errors"
-"flag"
-"fmt"
-"io"
-"log"
-"net"
-"net/http"
-"net/url"
-"os"
-"os/exec"
-"os/signal"
-"path/filepath"
-"sync"
-"strings"
-"syscall"
-"time"
+	"bytes"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"log"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"os/exec"
+	"os/signal"
+	"path/filepath"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
 
-"infernosim/pkg/capture"
-"infernosim/pkg/event"
-"infernosim/pkg/inject"
-"infernosim/pkg/replay" 
-"infernosim/pkg/replaydriver"
-"infernosim/pkg/stubproxy"
+	"infernosim/pkg/bundlev2"
+	"infernosim/pkg/capture"
+	"infernosim/pkg/contract"
+	"infernosim/pkg/event"
+	"infernosim/pkg/generator"
+	"infernosim/pkg/grpcsim"
+	"infernosim/pkg/inject"
+	"infernosim/pkg/matcher"
+	"infernosim/pkg/privacy"
+	"infernosim/pkg/replay"
+	"infernosim/pkg/replaydriver"
+	"infernosim/pkg/reporting"
+	"infernosim/pkg/scenario"
+	"infernosim/pkg/simlint"
+	"infernosim/pkg/simtemplate"
+	"infernosim/pkg/stubproxy"
+)
+
+// Version variables set by goreleaser during build
+var (
+	version   = "dev"
+	commit    = "none"
+	date      = "unknown"
+	versionBy = "goreleaser"
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "replay" {
-		code := runReplay(os.Args[2:])
-		os.Exit(code)
+	if len(os.Args) < 2 {
+		printUsage()
+		os.Exit(1)
 	}
-	if len(os.Args) > 1 && os.Args[1] == "search" {
+
+	// Top-level flags
+	switch os.Args[1] {
+	case "--version", "-v":
+		fmt.Printf("infernosim version %s, commit %s, built at %s by %s\n", version, commit, date, versionBy)
+		os.Exit(0)
+	case "--help", "-h":
+		printUsage()
+		os.Exit(0)
+	}
+
+	switch os.Args[1] {
+	case "capture", "record":
+		os.Exit(runRecord(os.Args[2:]))
+	case "replay":
+		os.Exit(runReplay(os.Args[2:]))
+	case "inspect":
+		os.Exit(runInspect(os.Args[2:]))
+	case "verify":
+		os.Exit(runVerify(os.Args[2:]))
+	case "diff":
+		os.Exit(runDiff(os.Args[2:]))
+	case "bundle":
+		os.Exit(runBundle(os.Args[2:]))
+	case "contract":
+		os.Exit(runContract(os.Args[2:]))
+	case "generate":
+		os.Exit(runGenerate(os.Args[2:]))
+	case "lint":
+		os.Exit(runLint(os.Args[2:]))
+	case "match":
+		os.Exit(runMatch(os.Args[2:]))
+	case "version":
+		fmt.Printf("infernosim version %s, commit %s, built at %s by %s\n", version, commit, date, versionBy)
+		os.Exit(0)
+	// legacy commands kept for backwards compatibility
+	case "search":
 		runSearch(os.Args[2:])
 		os.Exit(0)
-	}
-	// fallback if strict replay from verify script is used
-	if len(os.Args) > 1 && os.Args[1] == "strict-replay" {
+	case "strict-replay":
 		runStrictReplay(os.Args[2:])
 		os.Exit(0)
+	default:
+		if strings.HasPrefix(os.Args[1], "-") {
+			runAgent()
+			os.Exit(0)
+		}
+		fmt.Fprintf(os.Stderr, "infernosim: unknown command %q\n\n", os.Args[1])
+		printUsage()
+		os.Exit(1)
 	}
-	runAgent()
+}
+
+func printUsage() {
+	fmt.Fprintln(os.Stderr, `Usage: infernosim <command> [flags]
+
+Commands:
+  capture  Capture incident traffic (starts an inbound proxy) [alias: record]
+  inspect  Analyse an incident bundle (dependency graph, timeline)
+  verify   Check replay safety of an incident bundle
+  replay   Replay a captured incident against a target
+  diff     Replay and show divergences from the captured baseline
+  bundle   Seal or open an encrypted incident bundle v2
+  contract Validate an incident against an OpenAPI 3.x contract
+  generate Generate a simulation from OpenAPI or Protobuf schemas
+  lint     Validate a replay configuration and report design problems
+  match    Explain semantic matcher decisions for a captured incident
+  version  Print version information
+
+General Flags:
+  -v, --version  Print version and exit
+  -h, --help     Show this help message
+
+Examples:
+  # Capture production traffic to an incident directory
+  infernosim capture --forward localhost:8080 --out ./incident-001
+
+  # Deep dive into captured dependencies
+  infernosim inspect ./incident-001
+
+  # Replay with state-aware substitution and diff analysis
+  infernosim replay ./incident-001 --target http://staging-api:8080 --diff
+
+  # Find the architectural breaking point (Auto-Envelope Search)
+  infernosim search --log ./incident-001/inbound.log --target http://staging-api:8080`)
 }
 
 func runStrictReplay(args []string) {
@@ -49,13 +144,14 @@ func runStrictReplay(args []string) {
 	replayCmd := flag.NewFlagSet("strict-replay", flag.ExitOnError)
 	rLogFile := replayCmd.String("log", "events.log", "Event log to replay")
 	rTarget := replayCmd.String("target", "", "Target base URL (e.g. http://localhost:8081)")
+	allowWrites := replayCmd.Bool("allow-writes", false, "Permit POST/PUT/PATCH/DELETE against the selected target")
 	replayCmd.Parse(args)
 
 	if *rTarget == "" {
 		log.Fatal("strict-replay requires --target")
 	}
 
-	replayer, err := replay.NewReplayer(*rLogFile, replay.ReplayConfig{Strict: true})
+	replayer, err := replay.NewReplayer(*rLogFile, replay.ReplayConfig{Strict: true, AllowWrites: *allowWrites})
 	if err != nil {
 		log.Fatalf("Failed to initialize replay: %v", err)
 	}
@@ -94,8 +190,25 @@ func runSearch(args []string) {
 	fanout := 1
 	for {
 		fmt.Printf("Testing fanout multiplier %d...\n", fanout)
-		err := replayer.Replay()
-		if err != nil {
+		errs := make(chan error, fanout)
+		var wg sync.WaitGroup
+		for i := 0; i < fanout; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				errs <- replayer.Replay()
+			}()
+		}
+		wg.Wait()
+		close(errs)
+		var replayErr error
+		for err := range errs {
+			if err != nil {
+				replayErr = err
+				break
+			}
+		}
+		if replayErr != nil {
 			fmt.Printf("=== FAIL_SLO_MISSED: Envelope breached at fanout %d ===\n", fanout)
 			break
 		}
@@ -109,12 +222,22 @@ func runSearch(args []string) {
 
 func runAgent() {
 	mode := flag.String("mode", "inbound", "Mode: 'inbound' or 'proxy'")
-	listen := flag.String("listen", ":8080", "Listen address")
+	listen := flag.String("listen", "127.0.0.1:8080", "Listen address (default: loopback; use 0.0.0.0 to expose externally)")
 	forward := flag.String("forward", "", "Forward address (inbound mode)")
 	logFile := flag.String("log", "events.log", "Event log file")
 	httpsMode := flag.String("https-mode", "tunnel", "Outbound HTTPS behavior: 'tunnel' or 'mitm'")
 	injectParam := flag.String("inject", "", "Fault injection config (e.g. jitter=50ms,drop=5%,reset=5%,status=503,rate=10%)")
+	injectSeed := flag.Int64("inject-seed", 0, "Deterministic fault-injection seed (0 uses a random seed)")
+	insecureUpstream := flag.Bool("insecure-upstream", false, "Skip TLS verification for upstream connections (UNSAFE — never use in production)")
+	mitmAllowHosts := flag.String("mitm-allow-hosts", "", "Comma-separated hostnames permitted to receive MITM certs (default: localhost only)")
+	allowPrivate := flag.Bool("allow-private-destinations", false, "Allow proxy access to loopback/private destinations (local development only)")
+	captureSensitive := flag.Bool("capture-sensitive-data", false, "Store raw headers and bodies, including credentials and PII (UNSAFE)")
+	privacyPolicyPath := flag.String("privacy-policy", "", "Privacy policy YAML for redaction and deterministic tokenization")
 	flag.Parse()
+
+	if *insecureUpstream {
+		fmt.Fprintln(os.Stderr, "\u26a0️  WARNING: --insecure-upstream disables TLS certificate verification. Never use in production.")
+	}
 
 	logger, err := event.NewLogger(*logFile)
 	if err != nil {
@@ -122,9 +245,16 @@ func runAgent() {
 	}
 	defer logger.Close()
 
-	injectCfg, err := inject.ParseConfig(*injectParam, 0)
+	injectCfg, err := inject.ParseConfig(*injectParam, *injectSeed)
 	if err != nil {
 		log.Fatalf("Failed to parse injection config: %v", err)
+	}
+	var privacyPolicy *privacy.Policy
+	if *privacyPolicyPath != "" {
+		privacyPolicy, err = privacy.Load(*privacyPolicyPath)
+		if err != nil {
+			log.Fatalf("Failed to load privacy policy: %v", err)
+		}
 	}
 
 	useMITM := (*httpsMode == "mitm")
@@ -134,16 +264,23 @@ func runAgent() {
 		if err != nil {
 			log.Fatalf("Failed to initialize CA store: %v", err)
 		}
+		if *mitmAllowHosts != "" {
+			caStore.AllowedHosts = strings.Split(*mitmAllowHosts, ",")
+		}
 		log.Println("HTTPS MITM Inspection ENABLED")
 	} else {
 		log.Println("HTTPS Tunneling only (No MITM inspection)")
 	}
 
 	ctx := &capture.ProxyContext{
-		Logger:  logger,
-		CA:      caStore,
-		Inject:  injectCfg,
-		UseMITM: useMITM,
+		Logger:                   logger,
+		CA:                       caStore,
+		Inject:                   injectCfg,
+		UseMITM:                  useMITM,
+		AllowInsecureUpstream:    *insecureUpstream,
+		AllowPrivateDestinations: *allowPrivate,
+		CaptureSensitiveData:     *captureSensitive,
+		Privacy:                  privacyPolicy,
 	}
 
 	stop := make(chan os.Signal, 1)
@@ -184,7 +321,6 @@ func runAgent() {
 }
 func runReplay(args []string) (code int) {
 	summary := NewReplaySummary()
-	summary.PreviousRun = loadReplaySnapshot()
 	defer func() {
 		if r := recover(); r != nil {
 			summary.PrimaryFailureReason = fmt.Sprintf("panic: %v", r)
@@ -197,6 +333,11 @@ func runReplay(args []string) (code int) {
 
 	fs := flag.NewFlagSet("replay", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
+	positionalIncident := ""
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		positionalIncident = args[0]
+		args = args[1:]
+	}
 
 	incidentDir := fs.String(
 		"incident",
@@ -270,6 +411,16 @@ func runReplay(args []string) (code int) {
 		":9000",
 		"Optional compatibility listen address for apps using a fixed outbound proxy port",
 	)
+	httpsStub := fs.Bool("https-stub", false, "Enable native HTTPS CONNECT response stubbing with the InfernoSIM CA")
+	stubCADir := fs.String("stub-ca-dir", "", "Directory containing the HTTPS stub CA (default: ~/.infernosim/ca)")
+	stubAllowHosts := fs.String("stub-mitm-allow-hosts", "", "Comma-separated HTTPS dependency hosts allowed for TLS stubbing")
+	diff := fs.Bool("diff", false, "Show detailed differences between captured and replayed events")
+	safeMode := fs.Bool("safe-mode", true, "Skip non-idempotent requests (POST/PUT/PATCH/DELETE) during replay")
+	allowWrites := fs.Bool("allow-writes", false, "Permit replay of POST/PUT/PATCH/DELETE requests (requires an explicit safe target)")
+	configFile := fs.String("config", "", "Path to replay.yaml config file (overrides defaults)")
+	openAPIFile := fs.String("openapi", "", "OpenAPI 3.x document used to validate baseline and replay responses")
+	reportFormats := fs.String("report-formats", "", "Comma-separated report formats: junit,sarif,html")
+	reportDir := fs.String("report-dir", "", "Report output directory (default: <incident>/reports)")
 
 	injectFlags := multiFlag{}
 	fs.Var(
@@ -284,26 +435,120 @@ func runReplay(args []string) (code int) {
 		return
 	}
 
+	if positionalIncident != "" {
+		*incidentDir = positionalIncident
+	} else if fs.NArg() > 0 {
+		*incidentDir = fs.Arg(0)
+	}
+	if *allowWrites {
+		*safeMode = false
+	}
+	summary.ArtifactDir = *incidentDir
+	summary.ReportFormats = splitNonEmpty(*reportFormats)
+	for _, format := range summary.ReportFormats {
+		switch strings.ToLower(format) {
+		case "junit", "sarif", "html":
+		default:
+			summary.PrimaryFailureReason = fmt.Sprintf("unsupported report format %q", format)
+			summary.Outcome = "FAIL_INVALID_ENV"
+			return
+		}
+	}
+	summary.ReportDir = *reportDir
+	if summary.ReportDir == "" && len(summary.ReportFormats) > 0 {
+		summary.ReportDir = filepath.Join(*incidentDir, "reports")
+	}
+	summary.PreviousRun = loadReplaySnapshot(*incidentDir)
+
 	// ---- resolve logs ----
 	inboundLog := filepath.Join(*incidentDir, "inbound.log")
 	outboundLog := filepath.Join(*incidentDir, "outbound.log")
 
+	// ---- apply replay.yaml config (flags override yaml) ----
+	resolvedConfigFile := *configFile
+	if resolvedConfigFile == "" {
+		bundleConfig := filepath.Join(*incidentDir, "replay.yaml")
+		if _, err := os.Stat(bundleConfig); err == nil {
+			resolvedConfigFile = bundleConfig
+		}
+	}
+	var stateAdapters []replaydriver.StateAdapter
+	var chaosDelay time.Duration
+	var chaosRequest int
+	var matchingCfg matcher.Config
+	var scenariosCfg []scenario.Config
+	var templatesCfg simtemplate.Config
+	var httpsCfg replaydriver.HTTPSStubConfig
+	if resolvedConfigFile != "" {
+		yamlCfg, err := replaydriver.LoadReplayConfig(resolvedConfigFile)
+		if err != nil {
+			summary.PrimaryFailureReason = err.Error()
+			summary.Outcome = "FAIL_INVALID_ENV"
+			return
+		}
+		if yamlCfg.Target != "" && *targetBase == "http://localhost:18080" {
+			*targetBase = yamlCfg.Target
+		}
+		if yamlCfg.Runs > 0 && *runs == 10 {
+			*runs = yamlCfg.Runs
+		}
+		if yamlCfg.TimeScale > 0 && *timeScale == 1.0 {
+			*timeScale = yamlCfg.TimeScale
+		}
+		if yamlCfg.SafeMode {
+			*safeMode = true
+		}
+		chaosDelay, _ = yamlCfg.Chaos.ChaosDelay()
+		chaosRequest = yamlCfg.Chaos.Latency.Request
+		matchingCfg = yamlCfg.Matching
+		scenariosCfg = yamlCfg.Scenarios
+		templatesCfg = yamlCfg.Templates
+		httpsCfg = yamlCfg.Stub.HTTPS
+		if yamlCfg.State.File != "" {
+			statePath := yamlCfg.State.File
+			if !filepath.IsAbs(statePath) {
+				statePath = filepath.Join(filepath.Dir(resolvedConfigFile), statePath)
+			}
+			stateAdapters = append(stateAdapters, &replaydriver.FileStateAdapter{Path: statePath})
+		}
+	}
+	if *httpsStub {
+		httpsCfg.Enabled = true
+	}
+	if *stubCADir != "" {
+		httpsCfg.CADir = *stubCADir
+	}
+	if *stubAllowHosts != "" {
+		httpsCfg.AllowHosts = splitNonEmpty(*stubAllowHosts)
+	}
+
 	executeReplay(replayExecutionInput{
-		Runs:        *runs,
-		TimeScale:   *timeScale,
-		Density:     *density,
-		MinGap:      *minGap,
-		MaxWallTime: *maxWallTime,
-		MaxIdleTime: *maxIdleTime,
-		MaxEvents:   *maxEvents,
-		InboundLog:  inboundLog,
-		OutboundLog: outboundLog,
-		InjectFlags: injectFlags,
-		TargetBase:  *targetBase,
-		StubListen:  *stubListen,
-		StubCompat:  *stubCompatListen,
-		Fanout:      *fanout,
-		Window:      *window,
+		Runs:          *runs,
+		TimeScale:     *timeScale,
+		Density:       *density,
+		MinGap:        *minGap,
+		MaxWallTime:   *maxWallTime,
+		MaxIdleTime:   *maxIdleTime,
+		MaxEvents:     *maxEvents,
+		InboundLog:    inboundLog,
+		OutboundLog:   outboundLog,
+		InjectFlags:   injectFlags,
+		TargetBase:    *targetBase,
+		StubListen:    *stubListen,
+		StubCompat:    *stubCompatListen,
+		Fanout:        *fanout,
+		Window:        *window,
+		Diff:          *diff,
+		SafeMode:      *safeMode,
+		ConfigFile:    resolvedConfigFile,
+		StateAdapters: stateAdapters,
+		ChaosDelay:    chaosDelay,
+		ChaosRequest:  chaosRequest,
+		Matching:      matchingCfg,
+		Scenarios:     scenariosCfg,
+		Templates:     templatesCfg,
+		HTTPSStub:     httpsCfg,
+		OpenAPIFile:   *openAPIFile,
 	}, &summary)
 	return
 }
@@ -317,6 +562,16 @@ func (m *multiFlag) String() string { return "" }
 func (m *multiFlag) Set(v string) error {
 	*m = append(*m, v)
 	return nil
+}
+
+func splitNonEmpty(value string) []string {
+	var out []string
+	for _, item := range strings.Split(value, ",") {
+		if trimmed := strings.TrimSpace(item); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
 
 type ReplayOutcome struct {
@@ -337,6 +592,7 @@ type ReplaySummary struct {
 	InboundEventsReplayed  int
 	OutboundEventsObserved int
 	OutboundEventsExpected int
+	OutboundVerification   string
 	ProxyStatus            string
 	InjectionsApplied      string
 	DependenciesExercised  bool
@@ -366,6 +622,12 @@ type ReplaySummary struct {
 	MaxInjectedLatency     time.Duration
 	MaxInjectedTimeout     time.Duration
 	PreviousRun            *ReplaySnapshot
+	Diff                   bool
+	DiffResults            []*replaydriver.EventDiff
+	ArtifactDir            string
+	Findings               []reporting.Finding
+	ReportFormats          []string
+	ReportDir              string
 }
 
 type ReplaySnapshot struct {
@@ -379,21 +641,32 @@ type ReplaySnapshot struct {
 }
 
 type replayExecutionInput struct {
-	Runs        int
-	TimeScale   float64
-	Density     float64
-	MinGap      time.Duration
-	MaxWallTime time.Duration
-	MaxIdleTime time.Duration
-	MaxEvents   int
-	InboundLog  string
-	OutboundLog string
-	InjectFlags []string
-	TargetBase  string
-	StubListen  string
-	StubCompat  string
-	Fanout      int
-	Window      time.Duration
+	Runs          int
+	TimeScale     float64
+	Density       float64
+	MinGap        time.Duration
+	MaxWallTime   time.Duration
+	MaxIdleTime   time.Duration
+	MaxEvents     int
+	InboundLog    string
+	OutboundLog   string
+	InjectFlags   []string
+	TargetBase    string
+	StubListen    string
+	StubCompat    string
+	Fanout        int
+	Window        time.Duration
+	Diff          bool
+	SafeMode      bool
+	ConfigFile    string
+	StateAdapters []replaydriver.StateAdapter
+	ChaosDelay    time.Duration
+	ChaosRequest  int
+	Matching      matcher.Config
+	Scenarios     []scenario.Config
+	Templates     simtemplate.Config
+	HTTPSStub     replaydriver.HTTPSStubConfig
+	OpenAPIFile   string
 }
 
 func NewReplaySummary() ReplaySummary {
@@ -410,6 +683,9 @@ func (s *ReplaySummary) Finalize() {
 	deriveEnvelope(s)
 	deriveDelta(s)
 	s.Recommendation = recommendationForOutcome(s.Outcome)
+	if len(s.DiffResults) > 0 {
+		s.Recommendation = "Inspect the reported status, header, body, and latency changes before accepting the release."
+	}
 	s.WhatNotTested = computeWhatNotTested(s)
 	s.ExitStatus = exitCodeFromOutcome(s.Outcome)
 	s.Lines = buildSummaryLines(s)
@@ -418,7 +694,27 @@ func (s *ReplaySummary) Finalize() {
 func (s *ReplaySummary) Print() {
 	out := strings.Join(s.Lines, "\n") + "\n"
 	fmt.Print(out)
-	_ = os.WriteFile("replay_result.txt", []byte(out), 0644)
+	outputDir := s.ArtifactDir
+	if outputDir == "" {
+		outputDir = "."
+	}
+	_ = os.WriteFile(filepath.Join(outputDir, "replay_result.txt"), []byte(out), 0o600)
+	if len(s.ReportFormats) > 0 {
+		written, err := reporting.WriteFormats(s.ReportDir, s.ReportFormats, reporting.Result{
+			Tool:      "InfernoSIM",
+			Outcome:   s.Outcome,
+			Summary:   primaryFailureOrNone(s.PrimaryFailureReason),
+			Generated: time.Now().UTC(),
+			Findings:  s.Findings,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "report generation failed: %v\n", err)
+		} else {
+			for _, path := range written {
+				fmt.Printf("Report: %s\n", path)
+			}
+		}
+	}
 	saveReplaySnapshot(s)
 }
 
@@ -439,10 +735,11 @@ func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 		summary.Outcome = "FAIL_INVALID_ENV"
 		return
 	}
-	if _, err := os.Stat(input.OutboundLog); err != nil {
-		summary.PrimaryFailureReason = fmt.Sprintf("Outbound log not found: %s (%v)", input.OutboundLog, err)
-		summary.Outcome = "FAIL_INVALID_ENV"
-		return
+	if _, err := os.Stat(input.OutboundLog); err == nil {
+		summary.OutboundVerification = "enabled"
+	} else {
+		summary.OutboundVerification = "skipped (no outbound.log)"
+		fmt.Println("note: outbound.log not found — running inbound-only replay")
 	}
 
 	events, err := replaydriver.LoadInboundEvents(input.InboundLog)
@@ -458,6 +755,16 @@ func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 	}
 	if input.MaxEvents > 0 && len(events) > input.MaxEvents {
 		events = events[:input.MaxEvents]
+	}
+	var openAPIValidator *contract.Validator
+	if input.OpenAPIFile != "" {
+		openAPIValidator, err = contract.Load(input.OpenAPIFile)
+		if err != nil {
+			summary.PrimaryFailureReason = err.Error()
+			summary.Outcome = "FAIL_INVALID_ENV"
+			return
+		}
+		summary.Findings = append(summary.Findings, openAPIValidator.ValidateEvents(events, "baseline")...)
 	}
 
 	expectedOutbound, err := stubproxy.LoadOutboundEvents(input.OutboundLog)
@@ -486,7 +793,27 @@ func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 	}
 
 	// Do not append observed replay traffic into the captured outbound incident log.
-	stub, err := stubproxy.New(input.OutboundLog, "", rules)
+	var stubCA *capture.CAStore
+	if input.HTTPSStub.Enabled {
+		if input.HTTPSStub.CADir != "" {
+			stubCA, err = capture.NewCAStoreAt(input.HTTPSStub.CADir)
+		} else {
+			stubCA, err = capture.NewCAStore()
+		}
+		if err != nil {
+			summary.PrimaryFailureReason = fmt.Sprintf("HTTPS stub CA init failed: %v", err)
+			summary.Outcome = "FAIL_INVALID_ENV"
+			return
+		}
+		stubCA.AllowedHosts = input.HTTPSStub.AllowHosts
+		fmt.Printf("HTTPS dependency stubbing enabled; trust CA %s\n", stubCA.CertificatePath())
+	}
+	stub, err := stubproxy.NewWithOptions(input.OutboundLog, "", rules, stubproxy.Options{
+		Matching:  input.Matching,
+		Scenarios: input.Scenarios,
+		Templates: input.Templates,
+		TLSCA:     stubCA,
+	})
 	if err != nil {
 		summary.PrimaryFailureReason = fmt.Sprintf("Stub proxy init failed: %v", err)
 		summary.Outcome = "FAIL_INVALID_ENV"
@@ -526,7 +853,7 @@ func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 			}
 			return
 		}
-		stubServer := &http.Server{Handler: stub}
+		stubServer := &http.Server{Handler: stub.Handler()}
 		if err := stubServer.Serve(listener); err != nil && !isExpectedShutdownErr(err) {
 			log.Printf("Stub proxy error: %v", err)
 		}
@@ -543,7 +870,7 @@ func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 			} else {
 				go func() {
 					log.Printf("Stub proxy compat active on %s", compatListen)
-					stubServer := &http.Server{Handler: stub}
+					stubServer := &http.Server{Handler: stub.Handler()}
 					if err := stubServer.Serve(compatListener); err != nil && !isExpectedShutdownErr(err) {
 						log.Printf("Stub proxy compat error: %v", err)
 					}
@@ -558,6 +885,7 @@ func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 	var referenceFingerprint [32]byte
 	var referenceSet bool
 	var nonDeterministic bool
+	contractEvaluated := false
 
 	for i := 0; i < input.Runs; i++ {
 		stub.Reset()
@@ -583,12 +911,16 @@ func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 					events,
 					input.TargetBase,
 					replaydriver.ReplayConfig{
-						TimeScale:    input.TimeScale,
-						Density:      input.Density,
-						MinGap:       input.MinGap,
-						MaxWallClock: remaining,
-						MaxIdleTime:  input.MaxIdleTime,
-						MaxEvents:    input.MaxEvents,
+						TimeScale:     input.TimeScale,
+						Density:       input.Density,
+						MinGap:        input.MinGap,
+						MaxWallClock:  remaining,
+						MaxIdleTime:   input.MaxIdleTime,
+						MaxEvents:     input.MaxEvents,
+						SafeMode:      input.SafeMode,
+						StateAdapters: input.StateAdapters,
+						ChaosDelay:    input.ChaosDelay,
+						ChaosRequest:  input.ChaosRequest,
 					},
 				)
 				results <- replayWaveResult{result: r, err: err}
@@ -621,6 +953,22 @@ func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 			} else if wr.result.Fingerprint != referenceFingerprint {
 				nonDeterministic = true
 			}
+
+			if input.Diff && len(wr.result.ReplayedEvents) > 0 {
+				for idx, replayed := range wr.result.ReplayedEvents {
+					if idx < len(events) {
+						d := replaydriver.CompareEvents(events[idx], replayed, idx+1)
+						if d != nil {
+							summary.DiffResults = append(summary.DiffResults, d)
+						}
+					}
+				}
+			}
+			if openAPIValidator != nil && !contractEvaluated {
+				summary.Findings = append(summary.Findings, openAPIValidator.ValidateEvents(wr.result.ReplayedEvents, "candidate")...)
+				summary.Findings = append(summary.Findings, contract.DriftFindings(events, wr.result.ReplayedEvents)...)
+				contractEvaluated = true
+			}
 		}
 		summary.InboundEventsReplayed += waveInbound
 		outboundObserved := stub.ObservedCount()
@@ -630,6 +978,11 @@ func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 			summary.PrimaryFailureReason = "Proxy forwarding failed"
 			summary.Outcome = "FAIL_PROXY_FORWARDING"
 			break
+		}
+		if reasons := stub.DivergenceReasons(); len(reasons) > 0 {
+			summary.PrimaryFailureReason = reasons[0]
+			summary.Outcome = "FAIL_NON_DETERMINISTIC"
+			waveComplete = false
 		}
 		if waveComplete {
 			summary.RunsCompleted++
@@ -646,6 +999,18 @@ func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 			Detail:          fmt.Sprintf("fanout=%d", input.Fanout),
 		}
 		summary.Outcomes = append(summary.Outcomes, outcome)
+
+	}
+	if input.Diff {
+		replaydriver.PrintDiffs(summary.DiffResults)
+		if len(summary.DiffResults) > 0 && !strings.HasPrefix(summary.Outcome, "FAIL_") {
+			summary.Outcome = "FAIL_NON_DETERMINISTIC"
+			summary.PrimaryFailureReason = fmt.Sprintf("%d replay response divergence(s) detected", len(summary.DiffResults))
+		}
+	}
+	if len(summary.Findings) > 0 && !strings.HasPrefix(summary.Outcome, "FAIL_") {
+		summary.Outcome = "FAIL_CONTRACT_DRIFT"
+		summary.PrimaryFailureReason = fmt.Sprintf("%d OpenAPI or contract drift finding(s) detected", len(summary.Findings))
 	}
 	summary.Elapsed = time.Since(start)
 	if summary.Elapsed > 0 {
@@ -689,7 +1054,7 @@ func computeOutcome(summary *ReplaySummary) string {
 	if summary.TransparentMode && summary.OutboundEventsExpected > 0 && summary.OutboundEventsObserved == 0 {
 		return "FAIL_TRANSPARENT_PROXY"
 	}
-	if summary.OutboundEventsObserved == 0 {
+	if summary.OutboundEventsExpected > 0 && summary.OutboundEventsObserved == 0 {
 		return "FAIL_NO_COVERAGE"
 	}
 	if summary.Window > 0 && summary.InboundEventsReplayed < summary.TargetInbound {
@@ -753,6 +1118,7 @@ func buildSummaryLines(summary *ReplaySummary) []string {
 		fmt.Sprintf("Outbound events observed: %d", summary.OutboundEventsObserved),
 		fmt.Sprintf("Outbound events expected: %d", summary.OutboundEventsExpected),
 		fmt.Sprintf("Outbound target: %d", summary.TargetOutbound),
+		fmt.Sprintf("Outbound verification: %s", summary.OutboundVerification),
 		fmt.Sprintf("Elapsed: %s", summary.Elapsed.Round(time.Millisecond)),
 		fmt.Sprintf("Achieved rate (req/s): %.2f", summary.AchievedRPS),
 		fmt.Sprintf("Target rate (req/s): %.2f", summary.TargetRPS),
@@ -834,6 +1200,8 @@ func recommendationForOutcome(outcome string) string {
 		return "Reduce load or increase timeouts to avoid stalls."
 	case "FAIL_SLO_MISSED":
 		return "Lower fanout or increase window; then inspect app saturation limits and outbound dependency latency."
+	case "FAIL_CONTRACT_DRIFT":
+		return "Review the OpenAPI and response-drift findings before accepting the release."
 	default:
 		return "Inspect logs for additional details."
 	}
@@ -842,6 +1210,12 @@ func recommendationForOutcome(outcome string) string {
 func deriveLimitingFactor(summary *ReplaySummary) string {
 	if summary.Outcome == "PASS_STRONG" || summary.Outcome == "PASS_WEAK" {
 		return "NONE"
+	}
+	if len(summary.DiffResults) > 0 {
+		return "RESPONSE_DIVERGENCE"
+	}
+	if len(summary.Findings) > 0 {
+		return "CONTRACT_DRIFT"
 	}
 	if summary.MaxInjectedTimeout > 0 {
 		return "DEPENDENCY_TIMEOUT"
@@ -974,12 +1348,15 @@ func isExpectedShutdownErr(err error) bool {
 	return strings.Contains(err.Error(), "use of closed network connection")
 }
 
-func replaySnapshotPath() string {
-	return ".infernosim_last_run.json"
+func replaySnapshotPath(dir string) string {
+	if dir == "" {
+		dir = "."
+	}
+	return filepath.Join(dir, ".infernosim_last_run.json")
 }
 
-func loadReplaySnapshot() *ReplaySnapshot {
-	b, err := os.ReadFile(replaySnapshotPath())
+func loadReplaySnapshot(dir string) *ReplaySnapshot {
+	b, err := os.ReadFile(replaySnapshotPath(dir))
 	if err != nil {
 		return nil
 	}
@@ -1004,5 +1381,706 @@ func saveReplaySnapshot(summary *ReplaySummary) {
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(replaySnapshotPath(), b, 0644)
+	_ = os.WriteFile(replaySnapshotPath(summary.ArtifactDir), b, 0o600)
+}
+
+// ---------------------------------------------------------------------------
+// infernosim record
+// ---------------------------------------------------------------------------
+
+func runRecord(args []string) int {
+	fs := flag.NewFlagSet("record", flag.ContinueOnError)
+	listen := fs.String("listen", "127.0.0.1:8080", "Listen address for inbound proxy (default: loopback; use 0.0.0.0 to expose externally)")
+	outboundListen := fs.String("outbound-listen", "127.0.0.1:8084", "Forward-proxy address for capturing application dependencies (empty disables)")
+	forward := fs.String("forward", "", "Backend host:port to forward to (required)")
+	out := fs.String("out", "./incident", "Output directory for the incident bundle")
+	env := fs.String("env", "", "Environment label (e.g. production, staging)")
+	httpsMode := fs.String("https-mode", "tunnel", "HTTPS mode: tunnel or mitm")
+	insecureUpstream := fs.Bool("insecure-upstream", false, "Skip TLS verification for upstream connections (UNSAFE)")
+	mitmAllowHosts := fs.String("mitm-allow-hosts", "", "Comma-separated hostnames permitted to receive MITM certs (default: localhost only)")
+	allowPrivate := fs.Bool("allow-private-destinations", false, "Allow outbound capture to reach loopback/private destinations (local development only)")
+	captureSensitive := fs.Bool("capture-sensitive-data", false, "Store raw headers and bodies, including credentials and PII (UNSAFE)")
+	privacyPolicyPath := fs.String("privacy-policy", "", "Privacy policy YAML for redaction and deterministic tokenization")
+	appendLogs := fs.Bool("append", false, "Append to an existing incident bundle instead of requiring empty logs")
+
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(os.Stderr, "record: %v\n", err)
+		return 1
+	}
+	if *forward == "" {
+		fmt.Fprintln(os.Stderr, "record: --forward host:port is required")
+		return 1
+	}
+
+	if *insecureUpstream {
+		fmt.Fprintln(os.Stderr, "\u26a0️  WARNING: --insecure-upstream disables TLS certificate verification. Never use in production.")
+	}
+	var privacyPolicy *privacy.Policy
+	if *privacyPolicyPath != "" {
+		loadedPolicy, loadErr := privacy.Load(*privacyPolicyPath)
+		if loadErr != nil {
+			fmt.Fprintf(os.Stderr, "record: privacy policy: %v\n", loadErr)
+			return 1
+		}
+		privacyPolicy = loadedPolicy
+	}
+
+	if err := os.MkdirAll(*out, 0o700); err != nil {
+		fmt.Fprintf(os.Stderr, "record: create output dir: %v\n", err)
+		return 1
+	}
+
+	inboundLogPath := filepath.Join(*out, "inbound.log")
+	outboundLogPath := filepath.Join(*out, "outbound.log")
+	if !*appendLogs {
+		for _, path := range []string{inboundLogPath, outboundLogPath} {
+			if info, statErr := os.Stat(path); statErr == nil && info.Size() > 0 {
+				fmt.Fprintf(os.Stderr, "record: %s already contains data; choose a new --out directory or pass --append\n", path)
+				return 1
+			}
+		}
+	}
+
+	inboundLogger, err := event.NewLogger(inboundLogPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "record: open inbound log: %v\n", err)
+		return 1
+	}
+	defer inboundLogger.Close()
+
+	outboundLogger, err := event.NewLogger(outboundLogPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "record: open outbound log: %v\n", err)
+		return 1
+	}
+	defer outboundLogger.Close()
+
+	useMITM := *httpsMode == "mitm"
+	var caStore *capture.CAStore
+	if useMITM {
+		caStore, err = capture.NewCAStore()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "record: CA store: %v\n", err)
+			return 1
+		}
+		if *mitmAllowHosts != "" {
+			caStore.AllowedHosts = strings.Split(*mitmAllowHosts, ",")
+		}
+	}
+
+	ctx := &capture.ProxyContext{
+		Logger:                   inboundLogger,
+		CA:                       caStore,
+		UseMITM:                  useMITM,
+		AllowInsecureUpstream:    *insecureUpstream,
+		AllowPrivateDestinations: *allowPrivate,
+		CaptureSensitiveData:     *captureSensitive,
+		Privacy:                  privacyPolicy,
+	}
+
+	targetURL := &url.URL{Scheme: "http", Host: *forward}
+	inServer, err := capture.StartInboundProxy(*listen, targetURL, ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "record: start inbound proxy: %v\n", err)
+		return 1
+	}
+
+	outCtx := &capture.ProxyContext{
+		Logger:                   outboundLogger,
+		CA:                       caStore,
+		UseMITM:                  useMITM,
+		AllowInsecureUpstream:    *insecureUpstream,
+		AllowPrivateDestinations: *allowPrivate,
+		CaptureSensitiveData:     *captureSensitive,
+		Privacy:                  privacyPolicy,
+	}
+	var outServer *http.Server
+	if strings.TrimSpace(*outboundListen) != "" {
+		outServer, err = capture.StartForwardProxy(*outboundListen, outCtx)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "record: start outbound capture: %v\n", err)
+			return 1
+		}
+	}
+
+	log.Printf("Recording | Inbound: %s → %s | Outbound proxy: %s", *listen, *forward, *outboundListen)
+	if *outboundListen != "" {
+		log.Printf("Configure the application with HTTP_PROXY=http://%s and HTTPS_PROXY=http://%s", *outboundListen, *outboundListen)
+	}
+	log.Printf("Press Ctrl-C to stop recording.")
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	<-stop
+
+	_ = inServer.Close()
+	if outServer != nil {
+		_ = outServer.Close()
+	}
+	_ = inboundLogger.Close()
+	_ = outboundLogger.Close()
+
+	// Count captured events for metadata.
+	inboundCount := countEvents(inboundLogPath, "InboundRequest")
+	outboundCount := countEvents(outboundLogPath, "")
+
+	host := *forward
+	meta := replaydriver.IncidentMetadata{
+		CapturedAt:    time.Now().UTC(),
+		Env:           *env,
+		Host:          host,
+		Listen:        *listen,
+		Forward:       *forward,
+		InboundCount:  inboundCount,
+		OutboundCount: outboundCount,
+	}
+	if err := replaydriver.WriteMetadata(*out, meta); err != nil {
+		fmt.Fprintf(os.Stderr, "record: write incident.json: %v\n", err)
+		return 1
+	}
+
+	fmt.Printf("\nIncident saved to %s\n", *out)
+	fmt.Printf("  inbound events:  %d\n", inboundCount)
+	fmt.Printf("  outbound events: %d\n", outboundCount)
+	return 0
+}
+
+// countEvents counts JSONL lines in a log file, optionally filtered by event type.
+func countEvents(path, eventType string) int {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+	dec := json.NewDecoder(f)
+	count := 0
+	for {
+		var e event.Event
+		if err := dec.Decode(&e); err != nil {
+			break
+		}
+		if eventType == "" || e.Type == eventType {
+			count++
+		}
+	}
+	return count
+}
+
+// ---------------------------------------------------------------------------
+// infernosim inspect
+// ---------------------------------------------------------------------------
+
+func runInspect(args []string) int {
+	fs := flag.NewFlagSet("inspect", flag.ContinueOnError)
+	if err := fs.Parse(args); err != nil || fs.NArg() < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: infernosim inspect <incident-dir>")
+		return 1
+	}
+	dir := fs.Arg(0)
+
+	bundle, err := replaydriver.OpenBundle(dir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "inspect: %v\n", err)
+		return 1
+	}
+
+	result, err := replaydriver.InspectIncident(bundle.InboundLog)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "inspect: %v\n", err)
+		return 1
+	}
+
+	if meta, err := bundle.ReadMetadata(); err == nil && !meta.CapturedAt.IsZero() {
+		fmt.Printf("Captured: %s  Env: %s  Host: %s\n\n", meta.CapturedAt.Format(time.RFC3339), meta.Env, meta.Host)
+	}
+
+	replaydriver.PrintInspectResult(result)
+	return 0
+}
+
+// ---------------------------------------------------------------------------
+// infernosim verify
+// ---------------------------------------------------------------------------
+
+func runVerify(args []string) int {
+	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
+	if err := fs.Parse(args); err != nil || fs.NArg() < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: infernosim verify <incident-dir>")
+		return 1
+	}
+	dir := fs.Arg(0)
+
+	bundle, err := replaydriver.OpenBundle(dir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "verify: %v\n", err)
+		return 1
+	}
+
+	result, err := replaydriver.VerifyIncident(bundle.InboundLog)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "verify: %v\n", err)
+		return 1
+	}
+
+	replaydriver.PrintVerifyResult(result)
+
+	if result.ReadinessScore < 60 {
+		return 1
+	}
+	return 0
+}
+
+// ---------------------------------------------------------------------------
+// infernosim diff
+// ---------------------------------------------------------------------------
+
+func runDiff(args []string) int {
+	fs := flag.NewFlagSet("diff", flag.ContinueOnError)
+	positionalIncident := ""
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		positionalIncident = args[0]
+		args = args[1:]
+	}
+	targetBase := fs.String("target", "http://localhost:8080", "Target base URL to replay against")
+	maxWall := fs.Duration("max-wall-time", 60*time.Second, "Max wall-clock time for the replay run")
+	allowWrites := fs.Bool("allow-writes", false, "Permit diff replay of POST/PUT/PATCH/DELETE requests")
+
+	if err := fs.Parse(args); err != nil || (positionalIncident == "" && fs.NArg() < 1) {
+		fmt.Fprintln(os.Stderr, "Usage: infernosim diff <incident-dir> [--target http://...]")
+		return 1
+	}
+	dir := positionalIncident
+	if dir == "" && fs.NArg() > 0 {
+		dir = fs.Arg(0)
+	}
+
+	bundle, err := replaydriver.OpenBundle(dir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "diff: %v\n", err)
+		return 1
+	}
+
+	// If a replay.yaml exists, load target from it (CLI flag takes precedence if explicitly provided).
+	if bundle.HasConfig() {
+		cfg, err := replaydriver.LoadReplayConfig(bundle.ConfigPath)
+		if err == nil && cfg.Target != "" && *targetBase == "http://localhost:8080" {
+			*targetBase = cfg.Target
+		}
+	}
+
+	// Start stub proxy for outbound calls if outbound.log exists
+	if bundle.HasOutbound() {
+		stub, err := stubproxy.New(bundle.OutboundLog, "", nil)
+		if err == nil {
+			server := &http.Server{Addr: ":8084", Handler: stub.Handler()}
+			go func() {
+				_ = server.ListenAndServe()
+			}()
+			defer server.Close()
+			fmt.Printf("Started stub proxy for outbound calls on :8084 using %s\n", bundle.OutboundLog)
+		}
+	}
+
+	events, err := replaydriver.LoadInboundEvents(bundle.InboundLog)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "diff: load events: %v\n", err)
+		return 1
+	}
+
+	result, err := replaydriver.ReplayEvents(events, *targetBase, replaydriver.ReplayConfig{
+		TimeScale:    1.0,
+		Density:      1.0,
+		MinGap:       2 * time.Millisecond,
+		MaxWallClock: *maxWall,
+		SafeMode:     !*allowWrites,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "diff: replay: %v\n", err)
+		return 1
+	}
+
+	var diffs []*replaydriver.EventDiff
+	for i, replayed := range result.ReplayedEvents {
+		if i < len(events) {
+			if d := replaydriver.CompareEvents(events[i], replayed, i+1); d != nil {
+				diffs = append(diffs, d)
+			}
+		}
+	}
+
+	fmt.Printf("Diff Summary\n")
+	fmt.Printf("------------\n")
+	fmt.Printf("Requests replayed: %d\n", result.CompletedEvents)
+	fmt.Printf("Divergences found: %d\n", len(diffs))
+	if result.SafeModeSkipped > 0 {
+		fmt.Printf("Safe-mode skipped: %d\n", result.SafeModeSkipped)
+	}
+	fmt.Println()
+	replaydriver.PrintDiffs(diffs)
+
+	if len(diffs) > 0 {
+		return 1
+	}
+	return 0
+}
+
+// ---------------------------------------------------------------------------
+// infernosim bundle
+// ---------------------------------------------------------------------------
+
+func runBundle(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "Usage: infernosim bundle <seal|open> [flags] <path>")
+		return 1
+	}
+	switch args[0] {
+	case "seal":
+		fs := flag.NewFlagSet("bundle seal", flag.ContinueOnError)
+		output := fs.String("out", "", "Encrypted .inferno output path")
+		passphraseEnv := fs.String("passphrase-env", "INFERNOSIM_BUNDLE_PASSPHRASE", "Environment variable containing the bundle passphrase")
+		if err := fs.Parse(args[1:]); err != nil || fs.NArg() != 1 {
+			fmt.Fprintln(os.Stderr, "Usage: infernosim bundle seal [--out incident.inferno] [--passphrase-env NAME] <incident-dir>")
+			return 1
+		}
+		source := fs.Arg(0)
+		if *output == "" {
+			*output = strings.TrimSuffix(source, string(filepath.Separator)) + ".inferno"
+		}
+		passphrase, err := bundlePassphrase(*passphraseEnv)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "bundle seal: %v\n", err)
+			return 1
+		}
+		if err := bundlev2.SealDirectory(source, *output, passphrase); err != nil {
+			fmt.Fprintf(os.Stderr, "bundle seal: %v\n", err)
+			return 1
+		}
+		fmt.Printf("Encrypted incident bundle v2 written to %s\n", *output)
+		return 0
+	case "open":
+		fs := flag.NewFlagSet("bundle open", flag.ContinueOnError)
+		output := fs.String("out", "", "Empty directory for decrypted incident files")
+		passphraseEnv := fs.String("passphrase-env", "INFERNOSIM_BUNDLE_PASSPHRASE", "Environment variable containing the bundle passphrase")
+		if err := fs.Parse(args[1:]); err != nil || fs.NArg() != 1 {
+			fmt.Fprintln(os.Stderr, "Usage: infernosim bundle open [--out incident-dir] [--passphrase-env NAME] <incident.inferno>")
+			return 1
+		}
+		source := fs.Arg(0)
+		if *output == "" {
+			*output = strings.TrimSuffix(source, filepath.Ext(source))
+		}
+		passphrase, err := bundlePassphrase(*passphraseEnv)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "bundle open: %v\n", err)
+			return 1
+		}
+		if err := bundlev2.OpenToDirectory(source, *output, passphrase); err != nil {
+			fmt.Fprintf(os.Stderr, "bundle open: %v\n", err)
+			return 1
+		}
+		fmt.Printf("Incident bundle opened into %s\n", *output)
+		return 0
+	default:
+		fmt.Fprintf(os.Stderr, "bundle: unknown operation %q (expected seal or open)\n", args[0])
+		return 1
+	}
+}
+
+func runContract(args []string) int {
+	fs := flag.NewFlagSet("contract", flag.ContinueOnError)
+	specPath := fs.String("spec", "", "OpenAPI 3.x contract path (required)")
+	formats := fs.String("report-formats", "junit,sarif,html", "Comma-separated report formats")
+	reportDir := fs.String("report-dir", "", "Report output directory")
+	positionalIncident := ""
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		positionalIncident = args[0]
+		args = args[1:]
+	}
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(os.Stderr, "contract: %v\n", err)
+		return 2
+	}
+	if positionalIncident == "" && fs.NArg() > 0 {
+		positionalIncident = fs.Arg(0)
+	}
+	if positionalIncident == "" || *specPath == "" {
+		fmt.Fprintln(os.Stderr, "Usage: infernosim contract <incident-dir> --spec openapi.yaml [--report-formats junit,sarif,html]")
+		return 2
+	}
+	bundle, err := replaydriver.OpenBundle(positionalIncident)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "contract: %v\n", err)
+		return 2
+	}
+	events, err := replaydriver.LoadInboundEvents(bundle.InboundLog)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "contract: %v\n", err)
+		return 2
+	}
+	validator, err := contract.Load(*specPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "contract: %v\n", err)
+		return 2
+	}
+	findings := validator.ValidateEvents(events, "baseline")
+	outcome := "PASS_CONTRACT"
+	if len(findings) > 0 {
+		outcome = "FAIL_CONTRACT"
+	}
+	if *reportDir == "" {
+		*reportDir = filepath.Join(positionalIncident, "reports")
+	}
+	written, err := reporting.WriteFormats(*reportDir, splitNonEmpty(*formats), reporting.Result{
+		Tool:      "InfernoSIM",
+		Outcome:   outcome,
+		Summary:   fmt.Sprintf("%d event(s) checked; %d finding(s)", len(events), len(findings)),
+		Generated: time.Now().UTC(),
+		Findings:  findings,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "contract: write reports: %v\n", err)
+		return 2
+	}
+	fmt.Printf("OpenAPI contract result: %s (%d event(s), %d finding(s))\n", outcome, len(events), len(findings))
+	for _, path := range written {
+		fmt.Printf("Report: %s\n", path)
+	}
+	if len(findings) > 0 {
+		return 1
+	}
+	return 0
+}
+
+func runGenerate(args []string) int {
+	fs := flag.NewFlagSet("generate", flag.ContinueOnError)
+	openAPI := fs.String("openapi", "", "OpenAPI 3.x document")
+	output := fs.String("out", "replay.generated.yaml", "Generated replay configuration")
+	force := fs.Bool("force", false, "Replace an existing output file")
+	protoFiles := multiFlag{}
+	descriptorSets := multiFlag{}
+	importPaths := multiFlag{}
+	fs.Var(&protoFiles, "proto", "Protobuf source file (repeatable)")
+	fs.Var(&descriptorSets, "descriptor-set", "Binary FileDescriptorSet (repeatable)")
+	fs.Var(&importPaths, "import-path", "Protobuf import path (repeatable)")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(os.Stderr, "generate: %v\n", err)
+		return 2
+	}
+	protobufMode := len(protoFiles) > 0 || len(descriptorSets) > 0
+	if (*openAPI == "") == !protobufMode {
+		fmt.Fprintln(os.Stderr, "Usage: infernosim generate (--openapi api.yaml | --proto service.proto | --descriptor-set api.binpb) --out replay.yaml")
+		return 2
+	}
+	var (
+		data []byte
+		err  error
+	)
+	if *openAPI != "" {
+		data, err = generator.FromOpenAPI(*openAPI)
+	} else {
+		cfg := grpcsim.Config{
+			ProtoFiles:     absolutePaths(protoFiles),
+			DescriptorSets: absolutePaths(descriptorSets),
+			ImportPaths:    absolutePaths(importPaths),
+		}
+		data, err = generator.FromProtobuf(cfg)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "generate: %v\n", err)
+		return 1
+	}
+	flags := os.O_CREATE | os.O_WRONLY
+	if *force {
+		flags |= os.O_TRUNC
+	} else {
+		flags |= os.O_EXCL
+	}
+	file, err := os.OpenFile(*output, flags, 0o600)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "generate: write %s: %v\n", *output, err)
+		return 1
+	}
+	if _, err := file.Write(data); err != nil {
+		_ = file.Close()
+		fmt.Fprintf(os.Stderr, "generate: write %s: %v\n", *output, err)
+		return 1
+	}
+	if err := file.Close(); err != nil {
+		fmt.Fprintf(os.Stderr, "generate: close %s: %v\n", *output, err)
+		return 1
+	}
+	fmt.Printf("Generated simulation: %s\n", *output)
+	return 0
+}
+
+func absolutePaths(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, path := range paths {
+		absolute, err := filepath.Abs(path)
+		if err != nil {
+			out = append(out, path)
+			continue
+		}
+		out = append(out, absolute)
+	}
+	return out
+}
+
+func runLint(args []string) int {
+	fs := flag.NewFlagSet("lint", flag.ContinueOnError)
+	asJSON := fs.Bool("json", false, "Emit machine-readable JSON")
+	if err := fs.Parse(args); err != nil || fs.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, "Usage: infernosim lint [--json] <replay.yaml>")
+		return 2
+	}
+	result, err := simlint.File(fs.Arg(0))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "lint: %v\n", err)
+		return 2
+	}
+	if *asJSON {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(result); err != nil {
+			fmt.Fprintf(os.Stderr, "lint: %v\n", err)
+			return 2
+		}
+	} else {
+		for _, diagnostic := range result.Diagnostics {
+			fmt.Printf("%s %s %s: %s\n", strings.ToUpper(diagnostic.Level), diagnostic.Code, diagnostic.Location, diagnostic.Message)
+		}
+		fmt.Printf("Lint result: %d error(s), %d warning(s)\n", result.ErrorCount(), result.WarningCount())
+	}
+	if result.ErrorCount() > 0 {
+		return 1
+	}
+	return 0
+}
+
+type explainRequest struct {
+	Method  string              `json:"method"`
+	URL     string              `json:"url"`
+	Headers map[string][]string `json:"headers"`
+	Body    string              `json:"body"`
+	BodyB64 string              `json:"body_base64"`
+}
+
+func runMatch(args []string) int {
+	if len(args) == 0 || args[0] != "explain" {
+		fmt.Fprintln(os.Stderr, "Usage: infernosim match explain <incident-dir> --request request.json [--config replay.yaml] [--json]")
+		return 2
+	}
+	fs := flag.NewFlagSet("match explain", flag.ContinueOnError)
+	requestPath := fs.String("request", "", "JSON request fixture")
+	configPath := fs.String("config", "", "Replay configuration (default: <incident>/replay.yaml)")
+	asJSON := fs.Bool("json", false, "Emit machine-readable JSON")
+	positionalIncident := ""
+	remaining := args[1:]
+	if len(remaining) > 0 && !strings.HasPrefix(remaining[0], "-") {
+		positionalIncident = remaining[0]
+		remaining = remaining[1:]
+	}
+	if err := fs.Parse(remaining); err != nil {
+		fmt.Fprintf(os.Stderr, "match explain: %v\n", err)
+		return 2
+	}
+	if positionalIncident == "" && fs.NArg() > 0 {
+		positionalIncident = fs.Arg(0)
+	}
+	if positionalIncident == "" || *requestPath == "" {
+		fmt.Fprintln(os.Stderr, "Usage: infernosim match explain <incident-dir> --request request.json [--config replay.yaml] [--json]")
+		return 2
+	}
+	requestData, err := os.ReadFile(*requestPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "match explain: %v\n", err)
+		return 2
+	}
+	var fixture explainRequest
+	if err := json.Unmarshal(requestData, &fixture); err != nil {
+		fmt.Fprintf(os.Stderr, "match explain: decode request fixture: %v\n", err)
+		return 2
+	}
+	if fixture.Method == "" || fixture.URL == "" || (fixture.Body != "" && fixture.BodyB64 != "") {
+		fmt.Fprintln(os.Stderr, "match explain: request requires method and url and may set only one body form")
+		return 2
+	}
+	body := []byte(fixture.Body)
+	if fixture.BodyB64 != "" {
+		body, err = base64.StdEncoding.DecodeString(fixture.BodyB64)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "match explain: body_base64: %v\n", err)
+			return 2
+		}
+	}
+	parsed, err := url.Parse(fixture.URL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		fmt.Fprintln(os.Stderr, "match explain: request URL must be absolute")
+		return 2
+	}
+	request := &http.Request{
+		Method: fixture.Method,
+		URL:    parsed,
+		Host:   parsed.Host,
+		Header: http.Header(fixture.Headers),
+		Body:   io.NopCloser(bytes.NewReader(body)),
+	}
+	var matchingConfig matcher.Config
+	if *configPath == "" {
+		candidate := filepath.Join(positionalIncident, "replay.yaml")
+		if _, statErr := os.Stat(candidate); statErr == nil {
+			*configPath = candidate
+		}
+	}
+	if *configPath != "" {
+		config, loadErr := replaydriver.LoadReplayConfig(*configPath)
+		if loadErr != nil {
+			fmt.Fprintf(os.Stderr, "match explain: %v\n", loadErr)
+			return 2
+		}
+		matchingConfig = config.Matching
+	}
+	semanticMatcher, err := matcher.New(matchingConfig)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "match explain: %v\n", err)
+		return 2
+	}
+	events, err := stubproxy.LoadOutboundEvents(filepath.Join(positionalIncident, "outbound.log"))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "match explain: %v\n", err)
+		return 2
+	}
+	explanations := semanticMatcher.Explain(events, request, body)
+	if *asJSON {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		_ = encoder.Encode(explanations)
+	} else {
+		for _, explanation := range explanations {
+			status := "MISS"
+			detail := explanation.Reason
+			if explanation.Matched {
+				status = "MATCH"
+				detail = "all configured predicates satisfied"
+			}
+			fmt.Printf("%s [%d] %s %s — %s\n", status, explanation.Index, explanation.Method, explanation.URL, detail)
+		}
+	}
+	for _, explanation := range explanations {
+		if explanation.Matched {
+			return 0
+		}
+	}
+	return 1
+}
+
+func bundlePassphrase(environmentVariable string) ([]byte, error) {
+	if strings.TrimSpace(environmentVariable) == "" {
+		return nil, fmt.Errorf("passphrase environment variable name is required")
+	}
+	value, exists := os.LookupEnv(environmentVariable)
+	if !exists || value == "" {
+		return nil, fmt.Errorf("environment variable %s is empty or unset", environmentVariable)
+	}
+	return []byte(value), nil
 }

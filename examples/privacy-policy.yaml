@@ -1,0 +1,23 @@
+version: 1
+capture_bodies: true
+token_key_env: INFERNOSIM_TOKEN_KEY
+
+headers:
+  - name: Authorization
+    action: redact
+  - name: X-Customer-ID
+    action: tokenize
+
+query_parameters:
+  - name: api_key
+    action: drop
+  - name: session
+    action: tokenize
+
+json_fields:
+  - path: $.customer.email
+    action: tokenize
+  - path: $.payment.card_number
+    action: redact
+  - path: $.credentials.password
+    action: drop
