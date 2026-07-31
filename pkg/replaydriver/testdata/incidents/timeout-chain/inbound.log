@@ -1,0 +1,2 @@
+{"id":"evt_001","type":"InboundRequest","timestamp":"2026-03-16T00:00:00Z","sequence":1,"method":"GET","url":"http://api.example.com/reports","status":504,"duration":5000000000,"headers":{"Content-Type":["application/json"]},"bodyB64":"eyJlcnJvciI6ImdhdGV3YXkgdGltZW91dCJ9"}
+{"id":"evt_002","type":"InboundRequest","timestamp":"2026-03-16T00:00:06Z","sequence":2,"method":"GET","url":"http://api.example.com/reports","status":200,"duration":95000000,"headers":{"Content-Type":["application/json"]},"bodyB64":"eyJyZXBvcnRzIjpbXX0="}

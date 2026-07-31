@@ -11,6 +11,8 @@ coverage.out
 
 # Runtime incident artifacts
 *.log
+# Replay-driver incident logs below are synthetic, sanitized test fixtures.
+!pkg/replaydriver/testdata/incidents/**/inbound.log
 *.out
 replay_result.txt
 verify_result.txt
