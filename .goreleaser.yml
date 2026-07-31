@@ -47,6 +47,11 @@ changelog:
 
 homebrew_casks:
   - name: infernosim
+    # A repository-scoped GitHub Actions token can publish this project's
+    # release but cannot write to the separate Homebrew tap. Keep the release
+    # pipeline green when a maintainer has not configured the optional GH_PAT;
+    # GoReleaser still generates the cask in dist for manual publication.
+    skip_upload: "{{ if .Env.GH_PAT }}false{{ else }}true{{ end }}"
     repository:
       owner: pranaysparihar
       name: homebrew-infernosim
