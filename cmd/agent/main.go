@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -23,6 +25,8 @@ import (
 	"infernosim/pkg/capture"
 	"infernosim/pkg/contract"
 	"infernosim/pkg/event"
+	"infernosim/pkg/generator"
+	"infernosim/pkg/grpcsim"
 	"infernosim/pkg/inject"
 	"infernosim/pkg/matcher"
 	"infernosim/pkg/privacy"
@@ -30,6 +34,8 @@ import (
 	"infernosim/pkg/replaydriver"
 	"infernosim/pkg/reporting"
 	"infernosim/pkg/scenario"
+	"infernosim/pkg/simlint"
+	"infernosim/pkg/simtemplate"
 	"infernosim/pkg/stubproxy"
 )
 
@@ -72,6 +78,12 @@ func main() {
 		os.Exit(runBundle(os.Args[2:]))
 	case "contract":
 		os.Exit(runContract(os.Args[2:]))
+	case "generate":
+		os.Exit(runGenerate(os.Args[2:]))
+	case "lint":
+		os.Exit(runLint(os.Args[2:]))
+	case "match":
+		os.Exit(runMatch(os.Args[2:]))
 	case "version":
 		fmt.Printf("infernosim version %s, commit %s, built at %s by %s\n", version, commit, date, versionBy)
 		os.Exit(0)
@@ -104,7 +116,10 @@ Commands:
   diff     Replay and show divergences from the captured baseline
   bundle   Seal or open an encrypted incident bundle v2
   contract Validate an incident against an OpenAPI 3.x contract
-	version  Print version information
+  generate Generate a simulation from OpenAPI or Protobuf schemas
+  lint     Validate a replay configuration and report design problems
+  match    Explain semantic matcher decisions for a captured incident
+  version  Print version information
 
 General Flags:
   -v, --version  Print version and exit
@@ -462,6 +477,7 @@ func runReplay(args []string) (code int) {
 	var chaosRequest int
 	var matchingCfg matcher.Config
 	var scenariosCfg []scenario.Config
+	var templatesCfg simtemplate.Config
 	var httpsCfg replaydriver.HTTPSStubConfig
 	if resolvedConfigFile != "" {
 		yamlCfg, err := replaydriver.LoadReplayConfig(resolvedConfigFile)
@@ -486,6 +502,7 @@ func runReplay(args []string) (code int) {
 		chaosRequest = yamlCfg.Chaos.Latency.Request
 		matchingCfg = yamlCfg.Matching
 		scenariosCfg = yamlCfg.Scenarios
+		templatesCfg = yamlCfg.Templates
 		httpsCfg = yamlCfg.Stub.HTTPS
 		if yamlCfg.State.File != "" {
 			statePath := yamlCfg.State.File
@@ -529,6 +546,7 @@ func runReplay(args []string) (code int) {
 		ChaosRequest:  chaosRequest,
 		Matching:      matchingCfg,
 		Scenarios:     scenariosCfg,
+		Templates:     templatesCfg,
 		HTTPSStub:     httpsCfg,
 		OpenAPIFile:   *openAPIFile,
 	}, &summary)
@@ -646,6 +664,7 @@ type replayExecutionInput struct {
 	ChaosRequest  int
 	Matching      matcher.Config
 	Scenarios     []scenario.Config
+	Templates     simtemplate.Config
 	HTTPSStub     replaydriver.HTTPSStubConfig
 	OpenAPIFile   string
 }
@@ -792,6 +811,7 @@ func executeReplay(input replayExecutionInput, summary *ReplaySummary) {
 	stub, err := stubproxy.NewWithOptions(input.OutboundLog, "", rules, stubproxy.Options{
 		Matching:  input.Matching,
 		Scenarios: input.Scenarios,
+		Templates: input.Templates,
 		TLSCA:     stubCA,
 	})
 	if err != nil {
@@ -1829,6 +1849,229 @@ func runContract(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+func runGenerate(args []string) int {
+	fs := flag.NewFlagSet("generate", flag.ContinueOnError)
+	openAPI := fs.String("openapi", "", "OpenAPI 3.x document")
+	output := fs.String("out", "replay.generated.yaml", "Generated replay configuration")
+	force := fs.Bool("force", false, "Replace an existing output file")
+	protoFiles := multiFlag{}
+	descriptorSets := multiFlag{}
+	importPaths := multiFlag{}
+	fs.Var(&protoFiles, "proto", "Protobuf source file (repeatable)")
+	fs.Var(&descriptorSets, "descriptor-set", "Binary FileDescriptorSet (repeatable)")
+	fs.Var(&importPaths, "import-path", "Protobuf import path (repeatable)")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(os.Stderr, "generate: %v\n", err)
+		return 2
+	}
+	protobufMode := len(protoFiles) > 0 || len(descriptorSets) > 0
+	if (*openAPI == "") == !protobufMode {
+		fmt.Fprintln(os.Stderr, "Usage: infernosim generate (--openapi api.yaml | --proto service.proto | --descriptor-set api.binpb) --out replay.yaml")
+		return 2
+	}
+	var (
+		data []byte
+		err  error
+	)
+	if *openAPI != "" {
+		data, err = generator.FromOpenAPI(*openAPI)
+	} else {
+		cfg := grpcsim.Config{
+			ProtoFiles:     absolutePaths(protoFiles),
+			DescriptorSets: absolutePaths(descriptorSets),
+			ImportPaths:    absolutePaths(importPaths),
+		}
+		data, err = generator.FromProtobuf(cfg)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "generate: %v\n", err)
+		return 1
+	}
+	flags := os.O_CREATE | os.O_WRONLY
+	if *force {
+		flags |= os.O_TRUNC
+	} else {
+		flags |= os.O_EXCL
+	}
+	file, err := os.OpenFile(*output, flags, 0o600)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "generate: write %s: %v\n", *output, err)
+		return 1
+	}
+	if _, err := file.Write(data); err != nil {
+		_ = file.Close()
+		fmt.Fprintf(os.Stderr, "generate: write %s: %v\n", *output, err)
+		return 1
+	}
+	if err := file.Close(); err != nil {
+		fmt.Fprintf(os.Stderr, "generate: close %s: %v\n", *output, err)
+		return 1
+	}
+	fmt.Printf("Generated simulation: %s\n", *output)
+	return 0
+}
+
+func absolutePaths(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, path := range paths {
+		absolute, err := filepath.Abs(path)
+		if err != nil {
+			out = append(out, path)
+			continue
+		}
+		out = append(out, absolute)
+	}
+	return out
+}
+
+func runLint(args []string) int {
+	fs := flag.NewFlagSet("lint", flag.ContinueOnError)
+	asJSON := fs.Bool("json", false, "Emit machine-readable JSON")
+	if err := fs.Parse(args); err != nil || fs.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, "Usage: infernosim lint [--json] <replay.yaml>")
+		return 2
+	}
+	result, err := simlint.File(fs.Arg(0))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "lint: %v\n", err)
+		return 2
+	}
+	if *asJSON {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(result); err != nil {
+			fmt.Fprintf(os.Stderr, "lint: %v\n", err)
+			return 2
+		}
+	} else {
+		for _, diagnostic := range result.Diagnostics {
+			fmt.Printf("%s %s %s: %s\n", strings.ToUpper(diagnostic.Level), diagnostic.Code, diagnostic.Location, diagnostic.Message)
+		}
+		fmt.Printf("Lint result: %d error(s), %d warning(s)\n", result.ErrorCount(), result.WarningCount())
+	}
+	if result.ErrorCount() > 0 {
+		return 1
+	}
+	return 0
+}
+
+type explainRequest struct {
+	Method  string              `json:"method"`
+	URL     string              `json:"url"`
+	Headers map[string][]string `json:"headers"`
+	Body    string              `json:"body"`
+	BodyB64 string              `json:"body_base64"`
+}
+
+func runMatch(args []string) int {
+	if len(args) == 0 || args[0] != "explain" {
+		fmt.Fprintln(os.Stderr, "Usage: infernosim match explain <incident-dir> --request request.json [--config replay.yaml] [--json]")
+		return 2
+	}
+	fs := flag.NewFlagSet("match explain", flag.ContinueOnError)
+	requestPath := fs.String("request", "", "JSON request fixture")
+	configPath := fs.String("config", "", "Replay configuration (default: <incident>/replay.yaml)")
+	asJSON := fs.Bool("json", false, "Emit machine-readable JSON")
+	positionalIncident := ""
+	remaining := args[1:]
+	if len(remaining) > 0 && !strings.HasPrefix(remaining[0], "-") {
+		positionalIncident = remaining[0]
+		remaining = remaining[1:]
+	}
+	if err := fs.Parse(remaining); err != nil {
+		fmt.Fprintf(os.Stderr, "match explain: %v\n", err)
+		return 2
+	}
+	if positionalIncident == "" && fs.NArg() > 0 {
+		positionalIncident = fs.Arg(0)
+	}
+	if positionalIncident == "" || *requestPath == "" {
+		fmt.Fprintln(os.Stderr, "Usage: infernosim match explain <incident-dir> --request request.json [--config replay.yaml] [--json]")
+		return 2
+	}
+	requestData, err := os.ReadFile(*requestPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "match explain: %v\n", err)
+		return 2
+	}
+	var fixture explainRequest
+	if err := json.Unmarshal(requestData, &fixture); err != nil {
+		fmt.Fprintf(os.Stderr, "match explain: decode request fixture: %v\n", err)
+		return 2
+	}
+	if fixture.Method == "" || fixture.URL == "" || (fixture.Body != "" && fixture.BodyB64 != "") {
+		fmt.Fprintln(os.Stderr, "match explain: request requires method and url and may set only one body form")
+		return 2
+	}
+	body := []byte(fixture.Body)
+	if fixture.BodyB64 != "" {
+		body, err = base64.StdEncoding.DecodeString(fixture.BodyB64)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "match explain: body_base64: %v\n", err)
+			return 2
+		}
+	}
+	parsed, err := url.Parse(fixture.URL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		fmt.Fprintln(os.Stderr, "match explain: request URL must be absolute")
+		return 2
+	}
+	request := &http.Request{
+		Method: fixture.Method,
+		URL:    parsed,
+		Host:   parsed.Host,
+		Header: http.Header(fixture.Headers),
+		Body:   io.NopCloser(bytes.NewReader(body)),
+	}
+	var matchingConfig matcher.Config
+	if *configPath == "" {
+		candidate := filepath.Join(positionalIncident, "replay.yaml")
+		if _, statErr := os.Stat(candidate); statErr == nil {
+			*configPath = candidate
+		}
+	}
+	if *configPath != "" {
+		config, loadErr := replaydriver.LoadReplayConfig(*configPath)
+		if loadErr != nil {
+			fmt.Fprintf(os.Stderr, "match explain: %v\n", loadErr)
+			return 2
+		}
+		matchingConfig = config.Matching
+	}
+	semanticMatcher, err := matcher.New(matchingConfig)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "match explain: %v\n", err)
+		return 2
+	}
+	events, err := stubproxy.LoadOutboundEvents(filepath.Join(positionalIncident, "outbound.log"))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "match explain: %v\n", err)
+		return 2
+	}
+	explanations := semanticMatcher.Explain(events, request, body)
+	if *asJSON {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		_ = encoder.Encode(explanations)
+	} else {
+		for _, explanation := range explanations {
+			status := "MISS"
+			detail := explanation.Reason
+			if explanation.Matched {
+				status = "MATCH"
+				detail = "all configured predicates satisfied"
+			}
+			fmt.Printf("%s [%d] %s %s — %s\n", status, explanation.Index, explanation.Method, explanation.URL, detail)
+		}
+	}
+	for _, explanation := range explanations {
+		if explanation.Matched {
+			return 0
+		}
+	}
+	return 1
 }
 
 func bundlePassphrase(environmentVariable string) ([]byte, error) {

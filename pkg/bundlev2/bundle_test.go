@@ -62,3 +62,16 @@ func TestOpenRejectsWrongPassphrase(t *testing.T) {
 		t.Fatal("expected authenticated decryption failure")
 	}
 }
+
+func FuzzExtractArchive(f *testing.F) {
+	f.Add([]byte("not-gzip"))
+	f.Fuzz(func(t *testing.T, archive []byte) {
+		_ = extractArchive(archive, filepath.Join(t.TempDir(), "opened"))
+	})
+}
+
+func BenchmarkPBKDF2SHA256(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		pbkdf2SHA256([]byte("benchmark passphrase"), []byte("0123456789abcdef"), 10_000, 32)
+	}
+}

@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"infernosim/pkg/matcher"
 	"infernosim/pkg/scenario"
+	"infernosim/pkg/simtemplate"
 
 	"gopkg.in/yaml.v3"
 )
@@ -28,15 +30,16 @@ import (
 //	state:
 //	  file: ./state.json
 type ReplayYAMLConfig struct {
-	Target    string            `yaml:"target"`
-	TimeScale float64           `yaml:"time_scale"`
-	Runs      int               `yaml:"runs"`
-	SafeMode  bool              `yaml:"safe_mode"`
-	Chaos     ChaosConfig       `yaml:"chaos"`
-	State     StateConfig       `yaml:"state"`
-	Matching  matcher.Config    `yaml:"matching"`
-	Scenarios []scenario.Config `yaml:"scenarios"`
-	Stub      StubConfig        `yaml:"stub"`
+	Target    string             `yaml:"target"`
+	TimeScale float64            `yaml:"time_scale"`
+	Runs      int                `yaml:"runs"`
+	SafeMode  bool               `yaml:"safe_mode"`
+	Chaos     ChaosConfig        `yaml:"chaos"`
+	State     StateConfig        `yaml:"state"`
+	Matching  matcher.Config     `yaml:"matching"`
+	Scenarios []scenario.Config  `yaml:"scenarios"`
+	Templates simtemplate.Config `yaml:"templates"`
+	Stub      StubConfig         `yaml:"stub"`
 }
 
 type StubConfig struct {
@@ -92,10 +95,15 @@ func LoadReplayConfig(path string) (ReplayYAMLConfig, error) {
 	if _, err := cfg.Chaos.ChaosDelay(); err != nil {
 		return ReplayYAMLConfig{}, fmt.Errorf("parse replay config %q: %w", path, err)
 	}
-	if _, err := matcher.New(cfg.Matching); err != nil {
+	cfg.Matching.GRPC.ResolvePaths(filepath.Dir(path))
+	semanticMatcher, err := matcher.New(cfg.Matching)
+	if err != nil {
 		return ReplayYAMLConfig{}, fmt.Errorf("parse replay config %q: %w", path, err)
 	}
-	if _, err := scenario.New(cfg.Scenarios); err != nil {
+	if _, err := scenario.NewWithRegistry(cfg.Scenarios, cfg.Matching, semanticMatcher.GRPCRegistry()); err != nil {
+		return ReplayYAMLConfig{}, fmt.Errorf("parse replay config %q: %w", path, err)
+	}
+	if _, err := simtemplate.New(cfg.Templates); err != nil {
 		return ReplayYAMLConfig{}, fmt.Errorf("parse replay config %q: %w", path, err)
 	}
 	return cfg, nil

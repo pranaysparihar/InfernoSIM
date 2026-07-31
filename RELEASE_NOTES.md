@@ -1,6 +1,72 @@
+# InfernoSIM v3.3.0
+
+Status: GA-ready (publish the signed `v3.3.0` tag to make this public)
+
+v3.3 turns recorded exchanges and API schemas into programmable, typed
+simulations while preserving InfernoSIM's deterministic and fail-closed safety
+model.
+
+## Highlights
+
+- Sandboxed response templates can derive bodies, headers, and trailers from
+  JSON, Protobuf, query, and header values in the runtime request.
+- Seeded `uuid`, `token`, `now`, and `nowUnix` functions produce stable output
+  for the same request without filesystem, environment, command, or network
+  access.
+- `.proto` files and binary `FileDescriptorSet` documents can be compiled at
+  runtime for descriptor-aware gRPC request matching and typed response
+  synthesis.
+- Protobuf field regexes, ignored fields, and semantic message comparison work
+  across unary messages and bounded client streams.
+- Scenarios can synthesize unary or server-streamed gRPC responses with named
+  status codes, trailers, and configurable inter-message delays.
+- `infernosim generate` creates reviewable simulation configurations from
+  OpenAPI 3.x or Protobuf contracts.
+- `infernosim lint` checks strict schema validity, template syntax, duplicate
+  rules, unreachable states, and shadowed scenario steps.
+- `infernosim match explain` reports the match or rejection reason for every
+  captured dependency candidate.
+
+## Compatibility and safety
+
+- Existing incidents, static scenarios, and wire-level gRPC captures remain
+  valid without configuration changes.
+- Schema-aware Protobuf behavior is opt-in under `matching.grpc`.
+- Relative Protobuf paths are resolved from the directory containing
+  `replay.yaml`.
+- Template source, output, stream frame count, and Protobuf message sizes are
+  bounded.
+- Compressed gRPC frames remain replayable as captured bytes but are not
+  accepted for descriptor-aware decoding.
+- Generated files are never overwritten unless `--force` is explicit.
+
+## GA release engineering
+
+- CI now covers formatting, module consistency, vet, reachable-vulnerability
+  analysis, race tests, targeted fuzzing, platform builds, container
+  architecture checks, and Node/Go Compose smoke profiles.
+- Tagged releases generate SHA-256 checksums and per-archive SPDX SBOMs.
+- The checksum manifest is keylessly signed through Sigstore/Cosign using the
+  GitHub Actions OIDC identity.
+- GoReleaser configuration was migrated away from deprecated archive,
+  snapshot, and Homebrew formula properties.
+- Upgrade and maintainer release guides are included under `docs/`.
+
+## Known limitations
+
+- Protobuf schema loading is local-file based; gRPC server reflection and
+  remote Buf Schema Registry resolution are not yet implemented.
+- Protobuf semantic decoding rejects compressed messages.
+- Captured bodies larger than 256 KiB remain fingerprint-only.
+- Streaming simulation models ordered messages and delay but does not yet
+  provide per-message state transitions or client-driven bidirectional
+  branching.
+
+---
+
 # InfernoSIM v3.2.0
 
-Status: release candidate
+Status: generally available
 
 This release turns InfernoSIM's replay engine into a protocol-safe release
 gate. It adds native HTTPS dependency responses, semantic and stateful

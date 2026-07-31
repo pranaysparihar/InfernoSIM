@@ -12,6 +12,7 @@ import (
 	"infernosim/pkg/inject"
 	"infernosim/pkg/matcher"
 	"infernosim/pkg/scenario"
+	"infernosim/pkg/simtemplate"
 
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -56,12 +57,14 @@ type StubProxy struct {
 	semanticMatcher *matcher.Matcher
 	eventUseCounts  map[int]int
 	scenarios       *scenario.Engine
+	templates       *simtemplate.Engine
 	tlsCA           *capture.CAStore
 }
 
 type Options struct {
 	Matching  matcher.Config
 	Scenarios []scenario.Config
+	Templates simtemplate.Config
 	TLSCA     *capture.CAStore
 }
 
@@ -119,7 +122,11 @@ func NewWithOptions(outboundLog string, observedLog string, rules []inject.Rule,
 	if err != nil {
 		return nil, err
 	}
-	scenarioEngine, err := scenario.New(opts.Scenarios)
+	scenarioEngine, err := scenario.NewWithRegistry(opts.Scenarios, opts.Matching, semanticMatcher.GRPCRegistry())
+	if err != nil {
+		return nil, err
+	}
+	templateEngine, err := simtemplate.New(opts.Templates)
 	if err != nil {
 		return nil, err
 	}
@@ -134,6 +141,7 @@ func NewWithOptions(outboundLog string, observedLog string, rules []inject.Rule,
 		semanticMatcher: semanticMatcher,
 		eventUseCounts:  make(map[int]int),
 		scenarios:       scenarioEngine,
+		templates:       templateEngine,
 		tlsCA:           opts.TLSCA,
 	}, nil
 }
@@ -247,21 +255,40 @@ func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if result, matched := s.scenarios.Match(r, body); matched {
-		responseBody, bodyErr := result.Response.Bytes()
-		if bodyErr != nil {
-			http.Error(w, "scenario response body is invalid", http.StatusBadGateway)
+		data := s.templateData(r, body)
+		headers, renderErr := s.templates.RenderHeader("headers", http.Header(result.Response.Headers), data)
+		if renderErr != nil {
+			http.Error(w, "scenario response header template failed: "+renderErr.Error(), http.StatusBadGateway)
 			return
 		}
-		headers := http.Header(result.Response.Headers).Clone()
-		if headers == nil {
-			headers = make(http.Header)
+		trailers, renderErr := s.templates.RenderHeader("trailers", http.Header(result.Response.Trailers), data)
+		if renderErr != nil {
+			http.Error(w, "scenario response trailer template failed: "+renderErr.Error(), http.StatusBadGateway)
+			return
 		}
 		headers.Set("X-Inferno-Scenario", result.Scenario)
 		grpcStatus := result.Response.GRPCStatus
 		if isGRPCRequest(r) && grpcStatus == "" {
 			grpcStatus = "0"
 		}
-		writeStubResponse(w, result.Response.Status, headers, http.Header(result.Response.Trailers), grpcStatus, responseBody)
+		if grpcStatus != "" {
+			grpcStatus = normalizeGRPCStatus(grpcStatus)
+		}
+		chunks, bodyErr := s.renderScenarioBody(result.Response, r, body, data)
+		if bodyErr != nil {
+			http.Error(w, "scenario response body is invalid: "+bodyErr.Error(), http.StatusBadGateway)
+			return
+		}
+		if result.Response.ProtobufJSON != "" || len(result.Response.ProtobufStream) > 0 {
+			if headers.Get("Content-Type") == "" {
+				headers.Set("Content-Type", "application/grpc")
+			}
+		}
+		var delay time.Duration
+		if result.Response.StreamMessageDelay != "" {
+			delay, _ = time.ParseDuration(result.Response.StreamMessageDelay)
+		}
+		writeStubResponseChunks(w, result.Response.Status, headers, trailers, grpcStatus, chunks, delay)
 		return
 	}
 	if len(s.events) == 0 {
@@ -353,6 +380,18 @@ func writeStubResponse(
 	grpcStatus string,
 	body []byte,
 ) {
+	writeStubResponseChunks(w, status, headers, trailers, grpcStatus, [][]byte{body}, 0)
+}
+
+func writeStubResponseChunks(
+	w http.ResponseWriter,
+	status int,
+	headers http.Header,
+	trailers http.Header,
+	grpcStatus string,
+	chunks [][]byte,
+	delay time.Duration,
+) {
 	copyHeaders(w.Header(), headers)
 	trailerValues := trailers.Clone()
 	if trailerValues == nil {
@@ -365,11 +404,115 @@ func writeStubResponse(
 		w.Header().Add("Trailer", name)
 	}
 	w.WriteHeader(status)
-	if len(body) > 0 {
-		_, _ = w.Write(body)
+	for index, body := range chunks {
+		if len(body) > 0 {
+			_, _ = w.Write(body)
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+		}
+		if delay > 0 && index+1 < len(chunks) {
+			time.Sleep(delay)
+		}
 	}
 	for name, values := range trailerValues {
 		w.Header()[name] = append([]string(nil), values...)
+	}
+}
+
+func (s *StubProxy) templateData(r *http.Request, body []byte) simtemplate.Data {
+	requestData := simtemplate.Request{
+		Method:  r.Method,
+		URL:     r.URL.String(),
+		Path:    r.URL.Path,
+		Headers: r.Header.Clone(),
+		Query:   r.URL.Query(),
+		Body:    string(body),
+	}
+	if strings.Contains(strings.ToLower(r.Header.Get("Content-Type")), "json") {
+		_ = json.Unmarshal(body, &requestData.JSON)
+	}
+	if isGRPCRequest(r) && s.semanticMatcher.GRPCRegistry() != nil {
+		requestData.Protobuf, _ = s.semanticMatcher.GRPCRegistry().DecodeRequest(r.URL.Path, body)
+	}
+	return simtemplate.Data{Request: requestData}
+}
+
+func (s *StubProxy) renderScenarioBody(response scenario.Response, r *http.Request, body []byte, data simtemplate.Data) ([][]byte, error) {
+	if response.BodyTemplate != "" {
+		rendered, err := s.templates.Render("body", response.BodyTemplate, data)
+		if err != nil {
+			return nil, err
+		}
+		return [][]byte{[]byte(rendered)}, nil
+	}
+	documents := response.ProtobufStream
+	if response.ProtobufJSON != "" {
+		documents = []string{response.ProtobufJSON}
+	}
+	if len(documents) > 0 {
+		registry := s.semanticMatcher.GRPCRegistry()
+		if registry == nil {
+			return nil, fmt.Errorf("Protobuf response requires matching.grpc descriptors")
+		}
+		rendered := make([]string, 0, len(documents))
+		for index, document := range documents {
+			value, err := s.templates.Render(fmt.Sprintf("protobuf[%d]", index), document, data)
+			if err != nil {
+				return nil, err
+			}
+			rendered = append(rendered, value)
+		}
+		if response.ProtobufType != "" {
+			return registry.EncodeMessage(response.ProtobufType, rendered)
+		}
+		return registry.EncodeResponse(r.URL.Path, rendered)
+	}
+	responseBody, err := response.Bytes()
+	if err != nil {
+		return nil, err
+	}
+	return [][]byte{responseBody}, nil
+}
+
+func normalizeGRPCStatus(value string) string {
+	switch strings.ToUpper(strings.TrimSpace(value)) {
+	case "", "OK":
+		return "0"
+	case "CANCELLED":
+		return "1"
+	case "UNKNOWN":
+		return "2"
+	case "INVALID_ARGUMENT":
+		return "3"
+	case "DEADLINE_EXCEEDED":
+		return "4"
+	case "NOT_FOUND":
+		return "5"
+	case "ALREADY_EXISTS":
+		return "6"
+	case "PERMISSION_DENIED":
+		return "7"
+	case "RESOURCE_EXHAUSTED":
+		return "8"
+	case "FAILED_PRECONDITION":
+		return "9"
+	case "ABORTED":
+		return "10"
+	case "OUT_OF_RANGE":
+		return "11"
+	case "UNIMPLEMENTED":
+		return "12"
+	case "INTERNAL":
+		return "13"
+	case "UNAVAILABLE":
+		return "14"
+	case "DATA_LOSS":
+		return "15"
+	case "UNAUTHENTICATED":
+		return "16"
+	default:
+		return value
 	}
 }
 

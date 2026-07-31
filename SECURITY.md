@@ -45,3 +45,22 @@ After a fix is available, we will coordinate responsible disclosure and publish 
 Encrypted bundle v2 protects confidentiality and integrity at rest. It does not
 replace endpoint security while the incident is being captured, replayed, or
 opened.
+
+## Simulation configuration
+
+- Response templates use a fixed function allowlist. They cannot invoke
+  commands, access the filesystem, read environment variables, or open network
+  connections.
+- Template source and output sizes are bounded. Treat generated output as
+  untrusted data when it is consumed by an application under test.
+- Protobuf source files and descriptor sets are parsed locally and may consume
+  CPU or memory. Only load schemas from trusted repositories, and retain the
+  built-in message and stream bounds.
+- `infernosim generate` refuses to replace existing files unless `--force` is
+  supplied.
+
+## Release verification
+
+Tagged releases include SHA-256 checksums, SPDX SBOMs, and a keyless Sigstore
+bundle for the checksum manifest. Verification instructions are maintained in
+[`docs/RELEASING.md`](docs/RELEASING.md).

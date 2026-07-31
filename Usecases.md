@@ -2,8 +2,9 @@
 
 > These are illustrative scenarios, not formal guarantees. Replay must target an
 > isolated environment. Raw payload replay requires capture with
-> `--capture-sensitive-data`, and native HTTPS CONNECT response stubbing is not
-> currently supported. See `Readme.md` for the current safety model and limits.
+> `--capture-sensitive-data`. HTTPS CONNECT, HTTP/2, and gRPC response
+> virtualization are opt-in and require an explicitly allowlisted replay CA.
+> See `README.md` for the current safety model and limits.
 
 InfernoSIM solves immediate, expensive engineering pain points. Below are simulated real-world scenarios running against live local processes to demonstrate how InfernoSIM evaluates strict API constraints and enforces determinism.
 
@@ -172,7 +173,9 @@ Content-Length: 0
   "bytesReceived": 432
 }
 ```
-*The agent can record an allowlisted TLS exchange. Native CONNECT/TLS response stubbing remains a documented limitation.*
+*The agent can record and virtualize an allowlisted TLS exchange, including
+HTTP/2 and gRPC frames and trailers. Descriptor-aware gRPC rules can synthesize
+new typed responses when Protobuf schemas are configured.*
 ## Use Case J: "The Broken Auth Chain" (Stateful Dependency Replay)
 **The Situation:** You have a flow where `POST /login` returns a dynamic JWT that must be used in a subsequent `GET /profile` request. Standard replay tools fail because the replayed login returns a *new* token, but the replayed profile request tries to use the *old* token from the recording, resulting in a `401 Unauthorized`.
 **The InfernoSIM Solution:** 

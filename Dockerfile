@@ -4,6 +4,7 @@ ARG LDFLAGS
 # toolchain auto-selection reads go.mod and downloads the required 1.25.12
 # toolchain inside this pinned Alpine builder.
 FROM golang:1.25.11-alpine3.22 AS builder
+ARG LDFLAGS
 ARG TARGETOS
 ARG TARGETARCH
 ENV GOTOOLCHAIN=auto

@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -23,11 +24,14 @@ import (
 	pb "infernosim/examples/grpcapp/echo"
 	"infernosim/pkg/capture"
 	"infernosim/pkg/event"
+	"infernosim/pkg/grpcsim"
 	"infernosim/pkg/matcher"
 	"infernosim/pkg/scenario"
+	"infernosim/pkg/simtemplate"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -202,6 +206,206 @@ func TestStubScenarioTakesPriorityAndTransitions(t *testing.T) {
 	stub.ServeHTTP(second, httptest.NewRequest("GET", "http://dependency.test/value", nil))
 	if second.Code != 200 || second.Body.String() != "ready" {
 		t.Fatalf("read status=%d body=%q", second.Code, second.Body.String())
+	}
+}
+
+func TestScenarioRendersDeterministicDynamicResponse(t *testing.T) {
+	stub, err := NewWithOptions(filepath.Join(t.TempDir(), "missing.log"), "", nil, Options{
+		Templates: simtemplate.Config{Seed: "test-seed"},
+		Scenarios: []scenario.Config{{
+			Name: "orders", InitialState: "ready",
+			Steps: []scenario.Step{{
+				Name: "create", State: "ready",
+				Match: matcher.Rule{Methods: []string{http.MethodPost}, PathRegex: `^/orders$`},
+				Response: scenario.Response{
+					Status:       http.StatusCreated,
+					Headers:      map[string][]string{"X-Order": {`{{ jsonPath "$.customer_id" }}`}},
+					BodyTemplate: `{"id":"{{ uuid "order" }}","customer_id":"{{ jsonPath "$.customer_id" }}","created_at":"{{ now }}"}`,
+				},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := func() *http.Request {
+		req := httptest.NewRequest(http.MethodPost, "http://dependency.test/orders", strings.NewReader(`{"customer_id":"cust-7"}`))
+		req.Header.Set("Content-Type", "application/json")
+		return req
+	}
+	first := httptest.NewRecorder()
+	stub.ServeHTTP(first, request())
+	second := httptest.NewRecorder()
+	stub.ServeHTTP(second, request())
+	if first.Code != http.StatusCreated || first.Body.String() != second.Body.String() {
+		t.Fatalf("first=%d %q second=%d %q", first.Code, first.Body.String(), second.Code, second.Body.String())
+	}
+	if first.Header().Get("X-Order") != "cust-7" || !strings.Contains(first.Body.String(), `"customer_id":"cust-7"`) {
+		t.Fatalf("headers=%v body=%s", first.Header(), first.Body.String())
+	}
+}
+
+func TestScenarioSynthesizesDescriptorAwareGRPCResponse(t *testing.T) {
+	grpcConfig := grpcsim.Config{
+		ProtoFiles:  []string{filepath.Join("..", "..", "examples", "grpcapp", "echo", "echo.proto")},
+		ImportPaths: []string{filepath.Join("..", "..", "examples", "grpcapp", "echo")},
+	}
+	stub, err := NewWithOptions(filepath.Join(t.TempDir(), "missing.log"), "", nil, Options{
+		Matching: matcher.Config{GRPC: grpcConfig},
+		Scenarios: []scenario.Config{{
+			Name: "grpc-echo", InitialState: "ready",
+			Steps: []scenario.Step{{
+				Name: "echo", State: "ready",
+				Match: matcher.Rule{
+					Methods:            []string{http.MethodPost},
+					GRPCMethod:         "/echo.EchoService/Echo",
+					ProtobufFieldRegex: map[string]string{"$.message": `^hello`},
+				},
+				Response: scenario.Response{
+					Status:       http.StatusOK,
+					GRPCStatus:   "OK",
+					ProtobufJSON: `{"message":"{{ proto "$.message" }} virtualized"}`,
+				},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(stub.Handler())
+	defer server.Close()
+	connection, err := grpc.NewClient(
+		strings.TrimPrefix(server.URL, "http://"),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	response, err := pb.NewEchoServiceClient(connection).Echo(ctx, &pb.EchoRequest{Message: "hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Message != "hello virtualized" {
+		t.Fatalf("message=%q", response.Message)
+	}
+}
+
+func TestScenarioSynthesizesStreamingGRPCResponses(t *testing.T) {
+	grpcConfig := grpcsim.Config{
+		ProtoFiles:  []string{filepath.Join("..", "..", "examples", "grpcapp", "echo", "echo.proto")},
+		ImportPaths: []string{filepath.Join("..", "..", "examples", "grpcapp", "echo")},
+	}
+	steps := []scenario.Step{
+		{
+			Name: "server-stream", State: "ready",
+			Match: matcher.Rule{Methods: []string{http.MethodPost}, GRPCMethod: "/echo.EchoService/ServerStream"},
+			Response: scenario.Response{
+				Status:         http.StatusOK,
+				GRPCStatus:     "OK",
+				ProtobufStream: []string{`{"message":"one"}`, `{"message":"two"}`},
+			},
+		},
+		{
+			Name: "client-stream", State: "ready",
+			Match: matcher.Rule{
+				Methods:            []string{http.MethodPost},
+				GRPCMethod:         "/echo.EchoService/ClientStream",
+				ProtobufFieldRegex: map[string]string{"$[1].message": `^two$`},
+			},
+			Response: scenario.Response{
+				Status:       http.StatusOK,
+				GRPCStatus:   "OK",
+				ProtobufJSON: `{"message":"client stream accepted"}`,
+			},
+		},
+		{
+			Name: "bidi-stream", State: "ready",
+			Match: matcher.Rule{
+				Methods:            []string{http.MethodPost},
+				GRPCMethod:         "/echo.EchoService/BidiStream",
+				ProtobufFieldRegex: map[string]string{"$[0].message": `^alpha$`},
+			},
+			Response: scenario.Response{
+				Status:         http.StatusOK,
+				GRPCStatus:     "OK",
+				ProtobufStream: []string{`{"message":"{{ proto "$[0].message" }}"}`, `{"message":"{{ proto "$[1].message" }}"}`},
+			},
+		},
+	}
+	stub, err := NewWithOptions(filepath.Join(t.TempDir(), "missing.log"), "", nil, Options{
+		Matching:  matcher.Config{GRPC: grpcConfig},
+		Scenarios: []scenario.Config{{Name: "streams", InitialState: "ready", Steps: steps}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(stub.Handler())
+	defer server.Close()
+	connection, err := grpc.NewClient(
+		strings.TrimPrefix(server.URL, "http://"),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	client := pb.NewEchoServiceClient(connection)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	serverStream, err := client.ServerStream(ctx, &pb.EchoRequest{Message: "start"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, expected := range []string{"one", "two"} {
+		response, recvErr := serverStream.Recv()
+		if recvErr != nil || response.Message != expected {
+			t.Fatalf("server stream[%d]=%#v err=%v", index, response, recvErr)
+		}
+	}
+	if _, err := serverStream.Recv(); err != io.EOF {
+		t.Fatalf("server stream end=%v", err)
+	}
+
+	clientStream, err := client.ClientStream(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := clientStream.Send(&pb.EchoRequest{Message: "one"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := clientStream.Send(&pb.EchoRequest{Message: "two"}); err != nil {
+		t.Fatal(err)
+	}
+	clientResponse, err := clientStream.CloseAndRecv()
+	if err != nil || clientResponse.Message != "client stream accepted" {
+		t.Fatalf("client stream=%#v err=%v", clientResponse, err)
+	}
+
+	bidi, err := client.BidiStream(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := bidi.Send(&pb.EchoRequest{Message: "alpha"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := bidi.Send(&pb.EchoRequest{Message: "beta"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := bidi.CloseSend(); err != nil {
+		t.Fatal(err)
+	}
+	for index, expected := range []string{"alpha", "beta"} {
+		response, recvErr := bidi.Recv()
+		if recvErr != nil || response.Message != expected {
+			t.Fatalf("bidi[%d]=%#v err=%v", index, response, recvErr)
+		}
+	}
+	if _, err := bidi.Recv(); err != io.EOF {
+		t.Fatalf("bidi end=%v", err)
 	}
 }
 

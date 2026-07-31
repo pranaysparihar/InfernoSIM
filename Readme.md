@@ -13,7 +13,7 @@ incident bundles, and policy-driven privacy controls.
 | --- | --- |
 | Capture | Inbound reverse proxy, outbound HTTP/HTTPS MITM proxy, HTTP/2 and gRPC exchanges including trailers, bounded payload capture |
 | Replay | Timing preservation, density, fanout, safe mode, runtime state substitution, dependency fault injection |
-| Virtualization | Captured HTTP/HTTPS and gRPC responses over HTTP/2/h2c, regex/JSONPath/header matching, ignored volatile fields, stateful scenarios |
+| Virtualization | Captured HTTP/HTTPS and gRPC responses over HTTP/2/h2c, deterministic dynamic templates, descriptor-aware Protobuf matching and synthesis, stateful scenarios |
 | Release gates | OpenAPI 3.x request/response validation, status/content-type drift, JUnit, SARIF, and HTML reports |
 | Privacy | Built-in secret redaction, configurable redact/drop/tokenize rules, deterministic HMAC tokens |
 | Portability | Authenticated encrypted v2 bundles using AES-256-GCM and PBKDF2-HMAC-SHA256 |
@@ -31,6 +31,10 @@ go build -trimpath -o infernosim ./cmd/agent
 go test -race ./...
 go vet ./...
 ```
+
+Release CI also runs fuzz smoke tests, cross-platform builds, multi-architecture
+container builds, Compose integration profiles, SBOM generation, and keyless
+Sigstore signing. See [the release process](docs/RELEASING.md).
 
 ## Safety defaults
 
@@ -245,7 +249,123 @@ scenarios:
 ```
 
 Scenario state resets at the beginning of each replay run. See
-[`examples/replay-v2.yaml`](examples/replay-v2.yaml) for the combined schema.
+[`examples/replay-v2.yaml`](examples/replay-v2.yaml) for the v3.2 schema and
+[`examples/replay-v3.yaml`](examples/replay-v3.yaml) for templates and
+descriptor-aware gRPC.
+
+### Deterministic dynamic responses
+
+Scenario bodies, headers, trailers, and Protobuf JSON documents can derive
+values from the runtime request:
+
+```yaml
+templates:
+  seed: checkout-ci
+  max_output_bytes: 1048576
+
+scenarios:
+  - name: orders
+    initial_state: ready
+    steps:
+      - name: create
+        state: ready
+        match:
+          methods: [POST]
+          path_regex: "^/orders$"
+        response:
+          status: 201
+          headers:
+            Content-Type: [application/json]
+            X-Customer: ['{{ jsonPath "$.customer_id" }}']
+          body_template: |
+            {
+              "id": "{{ uuid "order" }}",
+              "customer_id": "{{ jsonPath "$.customer_id" }}",
+              "created_at": "{{ now }}"
+            }
+```
+
+Available functions are `jsonPath`, `proto`, `header`, `query`, `uuid`,
+`token`, `now`, `nowUnix`, `toJSON`, and `default`. Generated values are stable
+for the same seed and request. Templates have bounded source and output sizes
+and cannot execute programs, access files, read environment variables, or open
+network connections.
+
+### Descriptor-aware gRPC
+
+Load `.proto` sources or binary `FileDescriptorSet` files to match Protobuf
+fields and synthesize typed unary or streaming response frames:
+
+```yaml
+matching:
+  grpc:
+    proto_files: [grpcapp/echo/echo.proto]
+    import_paths: [grpcapp/echo]
+  rules:
+    - name: echo
+      methods: [POST]
+      grpc_method: /echo.EchoService/Echo
+      protobuf_field_regex:
+        $.message: "^hello"
+      ignored_protobuf_fields: [$.message]
+      compare_protobuf: true
+
+scenarios:
+  - name: typed-echo
+    initial_state: ready
+    steps:
+      - name: echo
+        state: ready
+        match:
+          methods: [POST]
+          grpc_method: /echo.EchoService/Echo
+          protobuf_field_regex:
+            $.message: "^hello"
+        response:
+          status: 200
+          headers:
+            Content-Type: [application/grpc]
+          grpc_status: OK
+          protobuf_type: echo.EchoResponse
+          protobuf_json: '{"message":"{{ proto "$.message" }} virtualized"}'
+```
+
+Use `protobuf_stream` instead of `protobuf_json` to produce multiple response
+messages. `stream_message_delay` optionally spaces frames, for example `50ms`.
+Request streams are decoded as an array, so predicates can address fields such
+as `$[0].account_id`. Compressed gRPC messages remain available for wire-level
+replay but are rejected by semantic decoding.
+
+### Generate, lint, and explain
+
+Create starting simulations directly from contracts:
+
+```bash
+infernosim generate --openapi ./openapi.yaml --out replay.yaml
+infernosim generate \
+  --proto ./proto/payments.proto \
+  --import-path ./proto \
+  --out replay.grpc.yaml
+```
+
+Generation never overwrites an existing file without `--force`. Generated
+examples are deterministic starting points and should be reviewed before use.
+
+Validate configuration structure, template syntax, state reachability, and
+shadowed matchers:
+
+```bash
+infernosim lint replay.yaml
+infernosim lint --json replay.yaml
+```
+
+Explain matching against every captured outbound call:
+
+```bash
+infernosim match explain ./incident \
+  --request ./request.json \
+  --config ./incident/replay.yaml
+```
 
 ## Standalone capture proxy
 
@@ -320,15 +440,13 @@ endpoint. Older captures that contain `grpcStatus` but no response trailer map
 are upgraded during replay by emitting the corresponding `grpc-status`
 trailer.
 
-Explicit scenarios can also return gRPC data using `body_base64`, `trailers`,
-and `grpc_status`. `body_base64` must contain standard gRPC wire frames, not
-unframed protobuf bytes.
-
-Current gRPC virtualization is wire-level: it faithfully replays captured unary
-responses and bounded streams, but it does not yet use protobuf descriptors for
-field-aware matching or dynamically synthesize new protobuf messages. Payloads
-larger than the 256 KiB capture bound remain fingerprint-only and cannot be
-used as replay bodies.
+Explicit scenarios can return captured gRPC wire data using `body_base64`,
+`trailers`, and `grpc_status`, or synthesize typed messages with
+`protobuf_json` and `protobuf_stream` when descriptors are configured.
+`body_base64` must contain standard gRPC wire frames, not unframed Protobuf
+bytes. Payloads larger than the 256 KiB capture bound remain fingerprint-only
+and cannot be used as captured replay bodies; generated scenario responses use
+a separate 16 MiB per-message safety bound.
 
 ## OpenAPI validation and release reports
 
@@ -410,8 +528,22 @@ capture deployments.
 
 ## Development
 
-See [CONTRIBUTING.md](CONTRIBUTING.md), [SCENARIOS.md](SCENARIOS.md), and
-[SECURITY.md](SECURITY.md).
+To contribute, build and validate a focused change before opening a pull
+request:
+
+```bash
+go build -trimpath -o infernosim ./cmd/agent
+go test -race ./...
+go vet ./...
+go mod tidy -diff
+./infernosim lint examples/replay-v3.yaml
+```
+
+The [contributor guide](CONTRIBUTING.md) covers deterministic fixtures, fuzzing,
+container smoke tests, generated Protobuf changes, and security expectations.
+See [SCENARIOS.md](SCENARIOS.md), [SECURITY.md](SECURITY.md), [upgrade
+guidance](docs/UPGRADING.md), and the [release process](docs/RELEASING.md) for
+the corresponding operational guidance.
 
 ## License
 

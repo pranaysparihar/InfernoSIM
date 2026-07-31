@@ -1,0 +1,8 @@
+{
+  "method": "POST",
+  "url": "https://dependency.test/echo.EchoService/Echo",
+  "headers": {
+    "Content-Type": ["application/grpc"]
+  },
+  "body_base64": "AAAAAAcKBWhlbGxv"
+}

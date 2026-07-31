@@ -98,6 +98,13 @@ func Load(path string) (*Validator, error) {
 	return &Validator{document: document, specPath: path}, nil
 }
 
+func (v *Validator) Document() Document {
+	if v == nil {
+		return Document{}
+	}
+	return v.document
+}
+
 func (v *Validator) ValidateEvents(events []event.Event, phase string) []reporting.Finding {
 	var findings []reporting.Finding
 	for index, captured := range events {

@@ -14,16 +14,18 @@ import (
 	"strings"
 
 	"infernosim/pkg/event"
+	"infernosim/pkg/grpcsim"
 )
 
 // Config controls semantic matching of outbound requests against captured
 // dependency calls. Empty configuration preserves the legacy exact
 // method/host/path/query behavior.
 type Config struct {
-	IgnoredQueryParameters []string `yaml:"ignored_query_parameters" json:"ignored_query_parameters,omitempty"`
-	IgnoredHeaders         []string `yaml:"ignored_headers" json:"ignored_headers,omitempty"`
-	IgnoredJSONPaths       []string `yaml:"ignored_json_paths" json:"ignored_json_paths,omitempty"`
-	Rules                  []Rule   `yaml:"rules" json:"rules,omitempty"`
+	IgnoredQueryParameters []string       `yaml:"ignored_query_parameters" json:"ignored_query_parameters,omitempty"`
+	IgnoredHeaders         []string       `yaml:"ignored_headers" json:"ignored_headers,omitempty"`
+	IgnoredJSONPaths       []string       `yaml:"ignored_json_paths" json:"ignored_json_paths,omitempty"`
+	GRPC                   grpcsim.Config `yaml:"grpc" json:"grpc,omitempty"`
+	Rules                  []Rule         `yaml:"rules" json:"rules,omitempty"`
 }
 
 // Rule applies semantic constraints to requests whose method and path match.
@@ -37,36 +39,56 @@ type Rule struct {
 	HeaderRegex            map[string]string `yaml:"header_regex" json:"header_regex,omitempty"`
 	QueryRegex             map[string]string `yaml:"query_regex" json:"query_regex,omitempty"`
 	JSONPathRegex          map[string]string `yaml:"jsonpath_regex" json:"jsonpath_regex,omitempty"`
+	GRPCMethod             string            `yaml:"grpc_method" json:"grpc_method,omitempty"`
+	ProtobufFieldRegex     map[string]string `yaml:"protobuf_field_regex" json:"protobuf_field_regex,omitempty"`
+	IgnoredProtobufFields  []string          `yaml:"ignored_protobuf_fields" json:"ignored_protobuf_fields,omitempty"`
 	IgnoredQueryParameters []string          `yaml:"ignored_query_parameters" json:"ignored_query_parameters,omitempty"`
 	IgnoredHeaders         []string          `yaml:"ignored_headers" json:"ignored_headers,omitempty"`
 	IgnoredJSONPaths       []string          `yaml:"ignored_json_paths" json:"ignored_json_paths,omitempty"`
 	CompareHeaders         bool              `yaml:"compare_headers" json:"compare_headers,omitempty"`
 	CompareJSON            bool              `yaml:"compare_json" json:"compare_json,omitempty"`
+	CompareProtobuf        bool              `yaml:"compare_protobuf" json:"compare_protobuf,omitempty"`
 }
 
 type compiledRule struct {
-	rule       Rule
-	host       *regexp.Regexp
-	path       *regexp.Regexp
-	headers    map[string]*regexp.Regexp
-	query      map[string]*regexp.Regexp
-	jsonValues map[string]*regexp.Regexp
+	rule           Rule
+	host           *regexp.Regexp
+	path           *regexp.Regexp
+	headers        map[string]*regexp.Regexp
+	query          map[string]*regexp.Regexp
+	jsonValues     map[string]*regexp.Regexp
+	protobufValues map[string]*regexp.Regexp
 }
 
 // Matcher is immutable after construction and safe for concurrent use.
 type Matcher struct {
 	cfg   Config
 	rules []compiledRule
+	grpc  *grpcsim.Registry
 }
 
 func New(cfg Config) (*Matcher, error) {
+	return NewWithRegistry(cfg, nil)
+}
+
+func NewWithRegistry(cfg Config, registry *grpcsim.Registry) (*Matcher, error) {
 	m := &Matcher{cfg: cfg}
+	if registry != nil {
+		m.grpc = registry
+	} else if !cfg.GRPC.Empty() {
+		loaded, err := grpcsim.Load(cfg.GRPC)
+		if err != nil {
+			return nil, fmt.Errorf("matching.grpc: %w", err)
+		}
+		m.grpc = loaded
+	}
 	for i, rule := range cfg.Rules {
 		cr := compiledRule{
-			rule:       rule,
-			headers:    make(map[string]*regexp.Regexp),
-			query:      make(map[string]*regexp.Regexp),
-			jsonValues: make(map[string]*regexp.Regexp),
+			rule:           rule,
+			headers:        make(map[string]*regexp.Regexp),
+			query:          make(map[string]*regexp.Regexp),
+			jsonValues:     make(map[string]*regexp.Regexp),
+			protobufValues: make(map[string]*regexp.Regexp),
 		}
 		var err error
 		if rule.HostRegex != "" {
@@ -102,6 +124,29 @@ func New(cfg Config) (*Matcher, error) {
 				return nil, fmt.Errorf("matching.rules[%d].jsonpath_regex[%s]: %w", i, path, compileErr)
 			}
 			cr.jsonValues[path] = re
+		}
+		if (rule.GRPCMethod != "" || len(rule.ProtobufFieldRegex) > 0 || rule.CompareProtobuf) && m.grpc == nil {
+			return nil, fmt.Errorf("matching.rules[%d] requires matching.grpc Protobuf schemas", i)
+		}
+		if rule.GRPCMethod != "" {
+			if _, ok := m.grpc.Method(rule.GRPCMethod); !ok {
+				return nil, fmt.Errorf("matching.rules[%d].grpc_method %q is not present in loaded descriptors", i, rule.GRPCMethod)
+			}
+		}
+		for path, pattern := range rule.ProtobufFieldRegex {
+			if _, pathErr := parseJSONPath(path); pathErr != nil {
+				return nil, fmt.Errorf("matching.rules[%d].protobuf_field_regex[%s]: %w", i, path, pathErr)
+			}
+			re, compileErr := regexp.Compile(pattern)
+			if compileErr != nil {
+				return nil, fmt.Errorf("matching.rules[%d].protobuf_field_regex[%s]: %w", i, path, compileErr)
+			}
+			cr.protobufValues[path] = re
+		}
+		for _, path := range rule.IgnoredProtobufFields {
+			if _, err := parseJSONPath(path); err != nil {
+				return nil, fmt.Errorf("matching.rules[%d].ignored_protobuf_fields %q: %w", i, path, err)
+			}
 		}
 		for _, path := range append(append([]string{}, cfg.IgnoredJSONPaths...), rule.IgnoredJSONPaths...) {
 			if _, err := parseJSONPath(path); err != nil {
@@ -223,48 +268,138 @@ func (m *Matcher) Match(captured event.Event, req *http.Request, body []byte) (b
 			return false, "JSON body mismatch"
 		}
 	}
+	if len(cr.protobufValues) > 0 || cr.rule.CompareProtobuf {
+		if m.grpc == nil {
+			return false, "Protobuf descriptors unavailable"
+		}
+		methodPath := req.URL.Path
+		if cr.rule.GRPCMethod != "" {
+			methodPath = cr.rule.GRPCMethod
+		}
+		requestProtobuf, err := m.grpc.DecodeRequest(methodPath, body)
+		if err != nil {
+			return false, "request Protobuf unavailable: " + err.Error()
+		}
+		for path, re := range cr.protobufValues {
+			value, ok := JSONPathValue(requestProtobuf, path)
+			if !ok || !re.MatchString(stringValue(value)) {
+				return false, "Protobuf field regex mismatch: " + path
+			}
+		}
+		if cr.rule.CompareProtobuf {
+			capturedBody, err := base64.StdEncoding.DecodeString(captured.BodyB64)
+			if err != nil || len(capturedBody) == 0 {
+				return false, "captured Protobuf body unavailable"
+			}
+			expectedProtobuf, err := m.grpc.DecodeRequest(methodPath, capturedBody)
+			if err != nil {
+				return false, "captured Protobuf unavailable: " + err.Error()
+			}
+			for _, path := range cr.rule.IgnoredProtobufFields {
+				removeJSONPath(requestProtobuf, path)
+				removeJSONPath(expectedProtobuf, path)
+			}
+			for path := range cr.protobufValues {
+				removeJSONPath(requestProtobuf, path)
+				removeJSONPath(expectedProtobuf, path)
+			}
+			actualCanonical, _ := json.Marshal(requestProtobuf)
+			expectedCanonical, _ := json.Marshal(expectedProtobuf)
+			if !bytes.Equal(actualCanonical, expectedCanonical) {
+				return false, "Protobuf message mismatch"
+			}
+		}
+	}
 	return true, ""
 }
 
 // MatchRule evaluates a standalone rule. Stateful scenarios use this without a
 // corresponding captured event.
 func MatchRule(rule Rule, req *http.Request, body []byte) (bool, string, error) {
-	cfg := Config{Rules: []Rule{rule}}
-	m, err := New(cfg)
+	return MatchRuleWithConfig(rule, req, body, Config{})
+}
+
+func MatchRuleWithConfig(rule Rule, req *http.Request, body []byte, cfg Config) (bool, string, error) {
+	compiled, err := CompileRule(rule, cfg)
 	if err != nil {
 		return false, "", err
 	}
+	matched, reason := compiled.Match(req, body)
+	return matched, reason, nil
+}
+
+type RuleMatcher struct {
+	matcher *Matcher
+}
+
+func CompileRule(rule Rule, cfg Config) (*RuleMatcher, error) {
+	return CompileRuleWithRegistry(rule, cfg, nil)
+}
+
+func CompileRuleWithRegistry(rule Rule, cfg Config, registry *grpcsim.Registry) (*RuleMatcher, error) {
+	cfg.Rules = []Rule{rule}
+	m, err := NewWithRegistry(cfg, registry)
+	if err != nil {
+		return nil, err
+	}
+	return &RuleMatcher{matcher: m}, nil
+}
+
+func (compiled *RuleMatcher) Match(req *http.Request, body []byte) (bool, string) {
+	if compiled == nil || compiled.matcher == nil || req == nil || req.URL == nil {
+		return false, "missing request URL"
+	}
+	m := compiled.matcher
 	host := req.Host
 	if req.URL != nil && req.URL.Host != "" {
 		host = req.URL.Host
 	}
 	cr := m.ruleFor(req.Method, host, req.URL.Path)
 	if cr == nil {
-		return false, "rule selector mismatch", nil
+		return false, "rule selector mismatch"
 	}
 	for name, re := range cr.headers {
 		if !re.MatchString(req.Header.Get(name)) {
-			return false, "header regex mismatch: " + name, nil
+			return false, "header regex mismatch: " + name
 		}
 	}
 	for name, re := range cr.query {
 		if !re.MatchString(req.URL.Query().Get(name)) {
-			return false, "query regex mismatch: " + name, nil
+			return false, "query regex mismatch: " + name
 		}
 	}
 	if len(cr.jsonValues) > 0 {
 		var value any
 		if err := json.Unmarshal(body, &value); err != nil {
-			return false, "request body is not valid JSON", nil
+			return false, "request body is not valid JSON"
 		}
 		for path, re := range cr.jsonValues {
 			got, ok := JSONPathValue(value, path)
 			if !ok || !re.MatchString(stringValue(got)) {
-				return false, "JSONPath regex mismatch: " + path, nil
+				return false, "JSONPath regex mismatch: " + path
 			}
 		}
 	}
-	return true, "", nil
+	if len(cr.protobufValues) > 0 || cr.rule.CompareProtobuf {
+		if m.grpc == nil {
+			return false, "Protobuf descriptors unavailable"
+		}
+		methodPath := req.URL.Path
+		if cr.rule.GRPCMethod != "" {
+			methodPath = cr.rule.GRPCMethod
+		}
+		value, err := m.grpc.DecodeRequest(methodPath, body)
+		if err != nil {
+			return false, "request Protobuf unavailable: " + err.Error()
+		}
+		for path, re := range cr.protobufValues {
+			got, ok := JSONPathValue(value, path)
+			if !ok || !re.MatchString(stringValue(got)) {
+				return false, "Protobuf field regex mismatch: " + path
+			}
+		}
+	}
+	return true, ""
 }
 
 func (m *Matcher) ruleFor(method, host, path string) *compiledRule {
@@ -279,9 +414,42 @@ func (m *Matcher) ruleFor(method, host, path string) *compiledRule {
 		if cr.path != nil && !cr.path.MatchString(path) {
 			continue
 		}
+		if cr.rule.GRPCMethod != "" && cr.rule.GRPCMethod != path {
+			continue
+		}
 		return cr
 	}
 	return nil
+}
+
+func (m *Matcher) GRPCRegistry() *grpcsim.Registry {
+	if m == nil {
+		return nil
+	}
+	return m.grpc
+}
+
+type Explanation struct {
+	Index   int    `json:"index"`
+	Method  string `json:"method"`
+	URL     string `json:"url"`
+	Matched bool   `json:"matched"`
+	Reason  string `json:"reason,omitempty"`
+}
+
+func (m *Matcher) Explain(candidates []event.Event, req *http.Request, body []byte) []Explanation {
+	out := make([]Explanation, 0, len(candidates))
+	for index, candidate := range candidates {
+		matched, reason := m.Match(candidate, req, body)
+		out = append(out, Explanation{
+			Index:   index,
+			Method:  candidate.Method,
+			URL:     candidate.URL,
+			Matched: matched,
+			Reason:  reason,
+		})
+	}
+	return out
 }
 
 func methodAllowed(methods []string, method string) bool {
@@ -378,10 +546,15 @@ func parseJSONPath(path string) ([]jsonPathToken, error) {
 	if path == "$" {
 		return nil, nil
 	}
-	if !strings.HasPrefix(path, "$.") {
-		return nil, fmt.Errorf("must begin with $ or $.")
+	var remaining string
+	switch {
+	case strings.HasPrefix(path, "$."):
+		remaining = path[2:]
+	case strings.HasPrefix(path, "$["):
+		remaining = path[1:]
+	default:
+		return nil, fmt.Errorf("must begin with $, $., or $[index]")
 	}
-	remaining := path[2:]
 	var tokens []jsonPathToken
 	for remaining != "" {
 		end := strings.IndexAny(remaining, ".[")

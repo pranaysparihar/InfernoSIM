@@ -10,7 +10,7 @@ import (
 	"infernosim/pkg/event"
 )
 
-func writeSpec(t *testing.T) string {
+func writeSpec(t testing.TB) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "openapi.yaml")
 	spec := `openapi: 3.1.0
@@ -126,5 +126,33 @@ func TestOperationPrefersExactPathAndStatusRange(t *testing.T) {
 	responses := map[string]Response{"2XX": {Description: "success"}}
 	if response, ok := responseForStatus(responses, 204); !ok || response.Description != "success" {
 		t.Fatalf("status range did not match: %#v %t", response, ok)
+	}
+}
+
+func FuzzPathMatches(f *testing.F) {
+	f.Add("/users/{id}", "/users/42")
+	f.Add("/literal", "/other")
+	f.Fuzz(func(t *testing.T, template, actual string) {
+		_ = pathMatches(template, actual)
+	})
+}
+
+func BenchmarkValidateEvents(b *testing.B) {
+	validator, err := Load(writeSpec(b))
+	if err != nil {
+		b.Fatal(err)
+	}
+	events := []event.Event{{
+		Method:          http.MethodPost,
+		URL:             "https://api.test/users/42",
+		Status:          200,
+		Headers:         http.Header{"Content-Type": {"application/json"}},
+		BodyB64:         base64.StdEncoding.EncodeToString([]byte(`{"name":"Ada"}`)),
+		ResponseHeaders: http.Header{"Content-Type": {"application/json"}, "X-Contract": {"v1"}},
+		ResponseBodyB64: base64.StdEncoding.EncodeToString([]byte(`{"id":42,"name":"Ada"}`)),
+	}}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		validator.ValidateEvents(events, "benchmark")
 	}
 }

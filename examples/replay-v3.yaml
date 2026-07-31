@@ -1,0 +1,74 @@
+target: http://127.0.0.1:8081
+runs: 1
+safe_mode: true
+
+templates:
+  seed: local-demo
+  max_output_bytes: 1048576
+
+matching:
+  grpc:
+    proto_files:
+      - grpcapp/echo/echo.proto
+    import_paths:
+      - grpcapp/echo
+  ignored_headers:
+    - X-Request-ID
+  rules:
+    - name: semantic-echo
+      methods: [POST]
+      grpc_method: /echo.EchoService/Echo
+      protobuf_field_regex:
+        $.message: "^hello"
+      ignored_protobuf_fields:
+        - $.message
+      compare_protobuf: true
+
+scenarios:
+  - name: generated-orders
+    initial_state: ready
+    steps:
+      - name: create-order
+        state: ready
+        match:
+          methods: [POST]
+          path_regex: "^/orders$"
+          jsonpath_regex:
+            $.customer_id: "^cust-[0-9]+$"
+        response:
+          status: 201
+          headers:
+            Content-Type: [application/json]
+            X-Customer: ['{{ jsonPath "$.customer_id" }}']
+          body_template: |
+            {
+              "id": "{{ uuid "order" }}",
+              "customer_id": "{{ jsonPath "$.customer_id" }}",
+              "created_at": "{{ now }}"
+            }
+
+  - name: generated-grpc
+    initial_state: ready
+    steps:
+      - name: echo
+        state: ready
+        match:
+          methods: [POST]
+          grpc_method: /echo.EchoService/Echo
+          protobuf_field_regex:
+            $.message: "^hello"
+        response:
+          status: 200
+          headers:
+            Content-Type: [application/grpc]
+          grpc_status: OK
+          protobuf_type: echo.EchoResponse
+          protobuf_json: |
+            {"message":"{{ proto "$.message" }} virtualized"}
+
+stub:
+  https:
+    enabled: true
+    ca_dir: ./.infernosim-ca
+    allow_hosts:
+      - dependency.test

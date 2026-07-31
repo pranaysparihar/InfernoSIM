@@ -1,9 +1,16 @@
 package main
 
 import (
+	"encoding/json"
+	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"infernosim/pkg/event"
+	"infernosim/pkg/replaydriver"
 )
 
 func TestSummaryProducedOnInvalidConfig(t *testing.T) {
@@ -110,5 +117,55 @@ func TestOutcomeSLOMissed(t *testing.T) {
 	summary.Finalize()
 	if summary.Outcome != "FAIL_SLO_MISSED" {
 		t.Fatalf("expected FAIL_SLO_MISSED, got %s", summary.Outcome)
+	}
+}
+
+func TestGenerateLintAndExplainCLI(t *testing.T) {
+	output := filepath.Join(t.TempDir(), "replay.yaml")
+	protoPath, err := filepath.Abs(filepath.Join("..", "..", "examples", "grpcapp", "echo", "echo.proto"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code := runGenerate([]string{
+		"--proto", protoPath,
+		"--import-path", filepath.Dir(protoPath),
+		"--out", output,
+	}); code != 0 {
+		t.Fatalf("generate code=%d", code)
+	}
+	if code := runLint([]string{output}); code != 0 {
+		t.Fatalf("lint code=%d", code)
+	}
+	if _, err := replaydriver.LoadReplayConfig(filepath.Join("..", "..", "examples", "replay-v3.yaml")); err != nil {
+		t.Fatalf("v3 example: %v", err)
+	}
+
+	incident := filepath.Join(t.TempDir(), "incident")
+	if err := os.MkdirAll(incident, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outbound, err := os.OpenFile(filepath.Join(incident, "outbound.log"), os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame := "AAAAAAcKBWhlbGxv"
+	if err := json.NewEncoder(outbound).Encode(event.Event{
+		Type:    "OutboundCall",
+		Method:  http.MethodPost,
+		URL:     "https://dependency.test/echo.EchoService/Echo",
+		BodyB64: frame,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := outbound.Close(); err != nil {
+		t.Fatal(err)
+	}
+	requestPath := filepath.Join(t.TempDir(), "request.json")
+	request := `{"method":"POST","url":"https://dependency.test/echo.EchoService/Echo","headers":{"Content-Type":["application/grpc"]},"body_base64":"` + frame + `"}`
+	if err := os.WriteFile(requestPath, []byte(request), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code := runMatch([]string{"explain", incident, "--request", requestPath, "--config", output}); code != 0 {
+		t.Fatalf("match explain code=%d", code)
 	}
 }

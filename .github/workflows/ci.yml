@@ -2,14 +2,14 @@ name: CI
 
 on:
   push:
-    branches: ["main", "feature/**"]
+    branches: ["main", "feature/**", "codex/**"]
   pull_request:
 
 permissions:
   contents: read
 
 jobs:
-  test:
+  quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,7 +18,9 @@ jobs:
           go-version: "1.25.12"
           cache: true
       - name: Check formatting
-        run: test -z "$(gofmt -l $(find . -name '*.go' -not -path './dist/*'))"
+        run: |
+          unformatted="$(find . -name '*.go' -not -path './dist/*' -print0 | xargs -0 gofmt -l)"
+          test -z "$unformatted"
       - name: Verify module files
         run: go mod tidy -diff
       - name: Vet
@@ -27,9 +29,84 @@ jobs:
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
       - name: Test with race detector
         run: go test -race ./...
-      - name: Build CLI
-        run: go build -trimpath -o /tmp/infernosim ./cmd/agent
       - name: Validate shell scripts
         run: for script in scripts/*.sh; do bash -n "$script"; done
       - name: Validate Compose
         run: docker compose -f docker-compose.yml -f docker-compose.examples.yml config >/dev/null
+
+  platform:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+          - os: ubuntu-latest
+            goos: linux
+            goarch: arm64
+          - os: ubuntu-latest
+            goos: linux
+            goarch: "386"
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+          - os: macos-15-intel
+            goos: darwin
+            goarch: amd64
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.12"
+          cache: true
+      - name: Unit tests
+        run: go test ./...
+      - name: Cross-build CLI
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: go build -trimpath -o "/tmp/infernosim-${GOOS}-${GOARCH}" ./cmd/agent
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.12"
+          cache: true
+      - run: go test ./pkg/matcher -run=^$ -fuzz=FuzzJSONPathValue -fuzztime=10s
+      - run: go test ./pkg/grpcsim -run=^$ -fuzz=FuzzSplitFrames -fuzztime=10s
+      - run: go test ./pkg/simtemplate -run=^$ -fuzz=FuzzTemplateValidation -fuzztime=10s
+      - run: go test ./pkg/contract -run=^$ -fuzz=FuzzPathMatches -fuzztime=10s
+      - run: go test ./pkg/bundlev2 -run=^$ -fuzz=FuzzExtractArchive -fuzztime=10s
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Build amd64 image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          tags: infernosim:ci-amd64
+          load: true
+      - name: Verify unprivileged image
+        run: |
+          docker run --rm infernosim:ci-amd64 version
+          test "$(docker image inspect infernosim:ci-amd64 --format '{{.Config.User}}')" = "infernosim"
+      - name: Node Compose smoke
+        run: scripts/compose-smoke.sh node
+      - name: Go Compose smoke
+        run: scripts/compose-smoke.sh go
