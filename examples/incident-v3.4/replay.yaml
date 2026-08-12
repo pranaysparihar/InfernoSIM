@@ -1,0 +1,19 @@
+workflows:
+  - name: payment-authorized
+    correlation: required
+    steps:
+      - name: accept-payment
+        protocol: http
+        direction: inbound
+        method: POST
+        path_regex: '^/payments$'
+      - name: reserve-funds
+        protocol: grpc
+        direction: outbound
+        grpc_method: /funds.Funds/Reserve
+        within: 2s
+      - name: publish-authorized
+        protocol: kafka
+        direction: outbound
+        topic: payment.authorized
+        within: 2s

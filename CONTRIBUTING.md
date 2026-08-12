@@ -17,6 +17,7 @@ changes reviewable, deterministic, and safe to run on real incident data.
 
    ```bash
    go test ./...
+   (cd integrations/testcontainers-go && go test ./...)
    ./infernosim lint examples/replay-v3.yaml
    ```
 
@@ -45,6 +46,7 @@ gofmt -w $(find . -name '*.go' -not -path './dist/*')
 go mod tidy -diff
 go vet ./...
 go test -race ./...
+(cd integrations/testcontainers-go && go test -race ./...)
 git diff --check
 ```
 
@@ -55,10 +57,16 @@ For changes in the corresponding areas, also run:
 go test ./pkg/matcher -run=^$ -fuzz=FuzzJSONPathValue -fuzztime=10s
 go test ./pkg/grpcsim -run=^$ -fuzz=FuzzSplitFrames -fuzztime=10s
 go test ./pkg/simtemplate -run=^$ -fuzz=FuzzTemplateValidation -fuzztime=10s
+go test ./pkg/heal -run=^$ -fuzz=FuzzFlattenJSON -fuzztime=10s
+go test ./pkg/message -run=^$ -fuzz=FuzzRecordValidate -fuzztime=10s
 
 # Container or example changes
 scripts/compose-smoke.sh node
 scripts/compose-smoke.sh go
+scripts/kafka-smoke.sh
+
+# Determinism and secret-leak baseline
+go run ./cmd/benchmark --runs 100 --out /tmp/infernosim-benchmark.json
 ```
 
 Run `go generate` only when the source schema or generator requires it, and
@@ -75,6 +83,13 @@ change, follow the maintainer checklist in [docs/RELEASING.md](docs/RELEASING.md
   an explicit, documented opt-in.
 - Prefer standard, reviewable YAML configuration and explain any compatibility
   impact in [docs/UPGRADING.md](docs/UPGRADING.md).
+- Healing changes must test held-out values, protected fields, ambiguity
+  rejection, deterministic output, and report redaction.
+- Kafka changes must test message integrity, privacy transforms, fault-plan
+  determinism, AsyncAPI failures, TLS/SASL option validation, and a real
+  Redpanda broker through `scripts/kafka-smoke.sh`.
+- Do not add a competitor claim without a pinned, reproducible adapter and raw
+  benchmark output under `benchmarks/`.
 
 ## Reporting bugs and security issues
 

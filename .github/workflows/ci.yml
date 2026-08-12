@@ -23,14 +23,32 @@ jobs:
           test -z "$unformatted"
       - name: Verify module files
         run: go mod tidy -diff
+      - name: Verify Testcontainers module files
+        working-directory: integrations/testcontainers-go
+        run: go mod tidy -diff
       - name: Vet
+        run: go vet ./...
+      - name: Vet Testcontainers adapter
+        working-directory: integrations/testcontainers-go
         run: go vet ./...
       - name: Vulnerability scan
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
       - name: Test with race detector
-        run: go test -race ./...
+        run: go test -count=1 -race ./...
+      - name: Test Testcontainers adapter with race detector
+        working-directory: integrations/testcontainers-go
+        run: go test -count=1 -race ./...
+      - name: Verify deterministic incident-to-test baseline
+        run: go run ./cmd/benchmark --runs 100 --out /tmp/infernosim-benchmark.json
       - name: Validate shell scripts
         run: for script in scripts/*.sh; do bash -n "$script"; done
+      - name: Validate workflows and generated harnesses
+        run: |
+          go run ./cmd/agent testgen examples/incident-v3.4 --framework github-actions --out dist/ci-generated-actions
+          go run ./cmd/agent testgen examples/incident-v3.4 --framework docker-compose --out dist/ci-generated-compose
+          docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+          docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 dist/ci-generated-actions/infernosim-ci.yaml
+          docker compose -f dist/ci-generated-compose/compose.infernosim.yaml config >/dev/null
       - name: Validate Compose
         run: docker compose -f docker-compose.yml -f docker-compose.examples.yml config >/dev/null
 
@@ -65,7 +83,7 @@ jobs:
           go-version: "1.25.12"
           cache: true
       - name: Unit tests
-        run: go test ./...
+        run: go test -count=1 ./...
       - name: Cross-build CLI
         shell: bash
         env:
@@ -87,6 +105,8 @@ jobs:
       - run: go test ./pkg/simtemplate -run=^$ -fuzz=FuzzTemplateValidation -fuzztime=10s
       - run: go test ./pkg/contract -run=^$ -fuzz=FuzzPathMatches -fuzztime=10s
       - run: go test ./pkg/bundlev2 -run=^$ -fuzz=FuzzExtractArchive -fuzztime=10s
+      - run: go test ./pkg/heal -run=^$ -fuzz=FuzzFlattenJSON -fuzztime=10s
+      - run: go test ./pkg/message -run=^$ -fuzz=FuzzRecordValidate -fuzztime=10s
 
   container:
     runs-on: ubuntu-latest
@@ -106,6 +126,14 @@ jobs:
         run: |
           docker run --rm infernosim:ci-amd64 version
           test "$(docker image inspect infernosim:ci-amd64 --format '{{.Config.User}}')" = "infernosim"
+      - name: Real Testcontainers incident smoke
+        working-directory: integrations/testcontainers-go
+        env:
+          INFERNOSIM_TEST_IMAGE: infernosim:ci-amd64
+          TESTCONTAINERS_RYUK_DISABLED: "true"
+        run: go test -count=1 -run TestContainerIntegration -v ./...
+      - name: Kafka and AsyncAPI Redpanda smoke
+        run: scripts/kafka-smoke.sh
       - name: Node Compose smoke
         run: scripts/compose-smoke.sh node
       - name: Go Compose smoke

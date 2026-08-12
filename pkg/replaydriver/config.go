@@ -10,6 +10,7 @@ import (
 	"infernosim/pkg/matcher"
 	"infernosim/pkg/scenario"
 	"infernosim/pkg/simtemplate"
+	"infernosim/pkg/workflow"
 
 	"gopkg.in/yaml.v3"
 )
@@ -40,6 +41,7 @@ type ReplayYAMLConfig struct {
 	Scenarios []scenario.Config  `yaml:"scenarios"`
 	Templates simtemplate.Config `yaml:"templates"`
 	Stub      StubConfig         `yaml:"stub"`
+	Workflows []workflow.Config  `yaml:"workflows"`
 }
 
 type StubConfig struct {
@@ -104,6 +106,9 @@ func LoadReplayConfig(path string) (ReplayYAMLConfig, error) {
 		return ReplayYAMLConfig{}, fmt.Errorf("parse replay config %q: %w", path, err)
 	}
 	if _, err := simtemplate.New(cfg.Templates); err != nil {
+		return ReplayYAMLConfig{}, fmt.Errorf("parse replay config %q: %w", path, err)
+	}
+	if err := workflow.ValidateConfigs(cfg.Workflows); err != nil {
 		return ReplayYAMLConfig{}, fmt.Errorf("parse replay config %q: %w", path, err)
 	}
 	return cfg, nil

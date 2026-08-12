@@ -40,8 +40,31 @@ func TestWriteJUnitSARIFAndHTML(t *testing.T) {
 	if sarif["version"] != "2.1.0" {
 		t.Fatalf("SARIF version=%v", sarif["version"])
 	}
+	runs := sarif["runs"].([]any)
+	results := runs[0].(map[string]any)["results"].([]any)
+	if len(results) != 2 {
+		t.Fatalf("SARIF must include outcome and finding results: %v", results)
+	}
 	htmlData, _ := os.ReadFile(filepath.Join(dir, "infernosim-report.html"))
 	if strings.Contains(string(htmlData), "<script>alert") || !strings.Contains(string(htmlData), "&lt;script&gt;") {
 		t.Fatal("HTML output was not escaped")
+	}
+	for _, path := range written {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("report %s: %v", path, err)
+		}
+		if info.Mode().Perm() != 0o600 {
+			t.Fatalf("report %s mode=%v", path, info.Mode().Perm())
+		}
+	}
+}
+
+func TestSARIFSemanticVersionNormalization(t *testing.T) {
+	if got := sarifSemanticVersion("v3.4.0"); got != "3.4.0" {
+		t.Fatalf("version=%q", got)
+	}
+	if got := sarifSemanticVersion("dev"); got != "" {
+		t.Fatalf("invalid semantic version was emitted: %q", got)
 	}
 }

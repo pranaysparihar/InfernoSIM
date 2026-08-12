@@ -5,23 +5,30 @@ InfernoSIM releases are produced from annotated `v*` tags by
 
 ## Maintainer checklist
 
-1. Confirm `go test -race ./...`, `go vet ./...`, `go mod tidy -diff`, the fuzz
-   smoke suite, Docker builds, and both Compose smoke profiles pass.
+1. Confirm `go test -race ./...`, nested Testcontainers module tests,
+   `go vet ./...`, `go mod tidy -diff`, the fuzz smoke suite, Docker builds,
+   both Compose smoke profiles, `scripts/kafka-smoke.sh`, and the 100-run
+   category benchmark pass.
 2. Update `RELEASE_NOTES.md` and `docs/UPGRADING.md`.
-3. Run `goreleaser check` and a local snapshot with `goreleaser release
-   --snapshot --clean`.
+3. Run `GH_PAT='' goreleaser check` and a local snapshot with `GH_PAT=''
+   goreleaser release --snapshot --clean`. Snapshot mode generates the cask
+   locally without publishing it.
 4. Create and push an annotated version tag.
-5. Verify the GitHub release contains platform archives, `checksums.txt`,
-   per-archive SPDX SBOMs, and `checksums.txt.sigstore.json`.
-6. Verify the checksum bundle:
+5. Verify GoReleaser uploaded exactly eight platform archives and
+   `checksums.txt`—nine uploaded assets total. GitHub adds two source-code
+   downloads automatically, so the release UI displays the established count
+   of 11. Generated benchmark JSON, incident logs, reports, SBOMs, signature
+   bundles, and GoReleaser's internal JSON/YAML metadata are not release
+   assets.
+6. Verify every archive against the checksum manifest:
 
    ```bash
-   cosign verify-blob \
-     --bundle checksums.txt.sigstore.json \
-     checksums.txt
+   sha256sum --check checksums.txt
    ```
 
-The release workflow uses GitHub OIDC for keyless Sigstore signing. Publishing
-the Homebrew cask to `pranaysparihar/homebrew-infernosim` requires a repository
-secret named `GH_PAT` with content-write access to that tap. Without it, GitHub's
-repository-scoped token cannot update the separate tap repository.
+Publishing the Homebrew cask to `pranaysparihar/homebrew-infernosim` requires a
+repository secret named `GH_PAT` with content-write access to that tap. The
+release workflow fails before publication when this secret is absent so GitHub
+and Homebrew cannot silently advertise different versions. After the first
+cask release, remove the obsolete root-level formula from the tap; existing
+v3.0.1 formula users follow the one-time migration in the README.

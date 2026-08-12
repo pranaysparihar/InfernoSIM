@@ -1,0 +1,31 @@
+asyncapi: 3.0.0
+info:
+  title: InfernoSIM payment events
+  version: 1.0.0
+channels:
+  paymentAuthorized:
+    address: payment.authorized
+    messages:
+      PaymentAuthorized:
+        $ref: '#/components/messages/PaymentAuthorized'
+components:
+  messages:
+    PaymentAuthorized:
+      name: PaymentAuthorized
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/PaymentAuthorized'
+  schemas:
+    PaymentAuthorized:
+      type: object
+      additionalProperties: false
+      required: [payment_id, status]
+      properties:
+        payment_id:
+          type: string
+          pattern: '^pay_[0-9]+$'
+        status:
+          type: string
+          enum: [authorized]
+        correlation_id:
+          type: string
