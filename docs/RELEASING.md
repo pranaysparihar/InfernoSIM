@@ -32,3 +32,11 @@ release workflow fails before publication when this secret is absent so GitHub
 and Homebrew cannot silently advertise different versions. After the first
 cask release, remove the obsolete root-level formula from the tap; existing
 v3.0.1 formula users follow the one-time migration in the README.
+
+`GH_PAT` is required for unattended GitHub Actions publication because the
+repository-scoped `GITHUB_TOKEN` cannot write to a different repository. It is
+not required for a maintainer-driven release: a maintainer with write access to
+both repositories may temporarily disable the tag workflow, push the annotated
+tag, run GoReleaser locally with the authenticated GitHub token supplied as
+both `GITHUB_TOKEN` and `GH_PAT`, verify the release and tap, and re-enable the
+workflow. Do not print, commit, or persist that token.
