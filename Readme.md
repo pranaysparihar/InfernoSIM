@@ -5,7 +5,9 @@ incidents against an isolated service. It supports inbound request capture,
 outbound dependency stubbing, state-aware replay, fault injection, replay diffs,
 concurrency pressure, native HTTPS dependency stubbing, semantic request
 matching, explicit scenarios, OpenAPI release gates, CI reports, encrypted
-incident bundles, and policy-driven privacy controls.
+incident bundles, policy-driven privacy controls, explainable matcher healing,
+generated Testcontainers/Compose/Actions harnesses, Kafka-compatible event
+replay, AsyncAPI validation, and cross-protocol causal workflows.
 
 ## Feature guide
 
@@ -15,8 +17,58 @@ incident bundles, and policy-driven privacy controls.
 | Replay | Timing preservation, density, fanout, safe mode, runtime state substitution, dependency fault injection |
 | Virtualization | Captured HTTP/HTTPS and gRPC responses over HTTP/2/h2c, deterministic dynamic templates, descriptor-aware Protobuf matching and synthesis, stateful scenarios |
 | Release gates | OpenAPI 3.x request/response validation, status/content-type drift, JUnit, SARIF, and HTML reports |
-| Privacy | Built-in secret redaction, configurable redact/drop/tokenize rules, deterministic HMAC tokens |
+| Incident to test | Local simulator service, health/reset/status/proof API, Testcontainers-Go adapter, generated Go/Compose/Actions harnesses |
+| Explainable healing | Held-out rule validation, protected fields, hashed evidence, ambiguity rejection, reviewable YAML proposals |
+| Events and workflows | Kafka-compatible capture/replay, deterministic message faults, AsyncAPI 3 JSON validation, ordered HTTP/gRPC/Kafka workflows |
+| Privacy | Built-in secret redaction, configurable HTTP and Kafka redact/drop/tokenize rules, deterministic HMAC tokens |
 | Portability | Authenticated encrypted v2 bundles using AES-256-GCM and PBKDF2-HMAC-SHA256 |
+
+## Incident to CI in minutes
+
+InfernoSIM already captures and replays incidents. v3.4 productizes the final
+step: produce a reviewable local test harness, stabilize safe volatile fields,
+and emit deterministic proof without requiring a hosted service.
+
+```bash
+# Review a fail-closed matcher proposal learned from repeated observations.
+infernosim heal ./incidents/payment-1 \
+  --sample ./incidents/payment-2 \
+  --sample ./incidents/payment-3
+
+# Generate ordinary, editable Testcontainers-Go source.
+infernosim testgen ./incidents/payment-1 \
+  --framework go-testcontainers \
+  --out ./integration/infernosim
+
+# Or run the dependency simulator directly.
+infernosim serve ./incidents/payment-1 \
+  --listen 127.0.0.1:19000 \
+  --admin-listen 127.0.0.1:19001
+```
+
+See the complete [incident-to-test guide](docs/INCIDENT_TO_TEST.md), including
+Kafka, AsyncAPI, workflow verification, self-healing safety boundaries, and
+the container control API.
+
+## Install
+
+InfernoSIM v3.4 and later are distributed through the project Homebrew cask:
+
+```bash
+brew tap pranaysparihar/infernosim
+brew install --cask pranaysparihar/infernosim/infernosim
+```
+
+If v3.0.1 was installed from the older formula, migrate once before installing
+the cask:
+
+```bash
+brew uninstall pranaysparihar/infernosim/infernosim
+brew install --cask pranaysparihar/infernosim/infernosim
+```
+
+Release archives and `checksums.txt` remain available from GitHub for Linux,
+macOS, and Windows users who do not use Homebrew.
 
 ## Requirements
 
@@ -32,9 +84,12 @@ go test -race ./...
 go vet ./...
 ```
 
-Release CI also runs fuzz smoke tests, cross-platform builds, multi-architecture
-container builds, Compose integration profiles, SBOM generation, and keyless
-Sigstore signing. See [the release process](docs/RELEASING.md).
+Release CI also runs fuzz smoke tests, cross-platform builds,
+multi-architecture container builds, real Testcontainers/Kafka checks,
+Compose integration profiles, and the deterministic benchmark. Published
+assets remain limited to platform archives plus `checksums.txt`; test JSON,
+reports, and incident fixtures are never attached. See
+[the release process](docs/RELEASING.md).
 
 ## Safety defaults
 
@@ -474,6 +529,48 @@ schema references, required properties, primitive types, arrays, enums,
 documented statuses, and required response headers are supported. Unsupported
 external `$ref` values produce explicit findings instead of being silently
 accepted.
+
+## Kafka, AsyncAPI, and cross-protocol workflows
+
+Capture explicitly selected Kafka-compatible topics with the same local
+privacy policy model used by HTTP capture:
+
+```bash
+infernosim kafka capture \
+  --brokers 127.0.0.1:9092 \
+  --topics payment.authorized \
+  --out ./incident/messages.log \
+  --privacy-policy ./examples/privacy-kafka.yaml
+```
+
+Validate and replay them with deterministic failure selection:
+
+```bash
+infernosim kafka validate ./incident \
+  --asyncapi ./examples/asyncapi.yaml
+
+infernosim kafka replay ./incident \
+  --brokers 127.0.0.1:9092 \
+  --asyncapi ./examples/asyncapi.yaml \
+  --topic-prefix ci. \
+  --drop-every 5 --duplicate-every 7 --reorder-window 3
+```
+
+`workflows` in `replay.yaml` declare an ordered causal path across inbound or
+outbound HTTP, gRPC methods, and Kafka topics. Run
+`infernosim workflow verify ./incident` to fail CI on missing, reordered,
+uncorrelated, or late steps. See [`examples/replay-v3.4.yaml`](examples/replay-v3.4.yaml).
+
+Kafka clients support TLS, mTLS, SASL/PLAIN, and SCRAM. Passwords are read only
+from an environment variable. v3.4 deliberately claims Kafka-compatible
+brokers and AsyncAPI 3 JSON payloads—not transparent broker proxying, Avro, or
+unimplemented messaging systems.
+
+Kafka capture requires a privacy policy unless the unsafe
+`--capture-sensitive-data` override is explicit. `--direction publish` and
+`--direction consume` identify how a captured topic relates to the application
+for causal workflow verification. Policy-based Kafka capture requires
+`capture_bodies: true` so the transformed payload remains replayable.
 
 ## Privacy policies
 

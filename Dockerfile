@@ -39,6 +39,6 @@ COPY --from=builder /app/infernosim /usr/local/bin/infernosim
 
 USER infernosim
 
-EXPOSE 18080 19000
+EXPOSE 18080 19000 19001
 
 ENTRYPOINT ["/usr/local/bin/infernosim"]

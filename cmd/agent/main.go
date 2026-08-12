@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -21,22 +22,29 @@ import (
 	"syscall"
 	"time"
 
+	"infernosim/pkg/asyncapi"
 	"infernosim/pkg/bundlev2"
 	"infernosim/pkg/capture"
 	"infernosim/pkg/contract"
 	"infernosim/pkg/event"
 	"infernosim/pkg/generator"
 	"infernosim/pkg/grpcsim"
+	"infernosim/pkg/heal"
 	"infernosim/pkg/inject"
+	"infernosim/pkg/kafkasim"
 	"infernosim/pkg/matcher"
+	"infernosim/pkg/message"
 	"infernosim/pkg/privacy"
 	"infernosim/pkg/replay"
 	"infernosim/pkg/replaydriver"
 	"infernosim/pkg/reporting"
 	"infernosim/pkg/scenario"
 	"infernosim/pkg/simlint"
+	"infernosim/pkg/simserver"
 	"infernosim/pkg/simtemplate"
 	"infernosim/pkg/stubproxy"
+	"infernosim/pkg/testgen"
+	"infernosim/pkg/workflow"
 )
 
 // Version variables set by goreleaser during build
@@ -80,6 +88,16 @@ func main() {
 		os.Exit(runContract(os.Args[2:]))
 	case "generate":
 		os.Exit(runGenerate(os.Args[2:]))
+	case "serve":
+		os.Exit(runServe(os.Args[2:]))
+	case "testgen":
+		os.Exit(runTestgen(os.Args[2:]))
+	case "heal":
+		os.Exit(runHeal(os.Args[2:]))
+	case "kafka":
+		os.Exit(runKafka(os.Args[2:]))
+	case "workflow":
+		os.Exit(runWorkflow(os.Args[2:]))
 	case "lint":
 		os.Exit(runLint(os.Args[2:]))
 	case "match":
@@ -117,6 +135,11 @@ Commands:
   bundle   Seal or open an encrypted incident bundle v2
   contract Validate an incident against an OpenAPI 3.x contract
   generate Generate a simulation from OpenAPI or Protobuf schemas
+  serve    Run an incident dependency simulator for local tests and containers
+  testgen  Generate a readable local/CI test harness from an incident
+  heal     Propose explainable, collision-checked semantic matcher rules
+  kafka    Capture, replay, and contract-test Kafka-compatible messages
+  workflow Verify ordered HTTP, gRPC, and Kafka causal workflows
   lint     Validate a replay configuration and report design problems
   match    Explain semantic matcher decisions for a captured incident
   version  Print version information
@@ -572,6 +595,18 @@ func splitNonEmpty(value string) []string {
 		}
 	}
 	return out
+}
+
+func validatedReportFormats(value string) ([]string, error) {
+	formats := splitNonEmpty(value)
+	for _, format := range formats {
+		switch strings.ToLower(format) {
+		case "junit", "sarif", "html":
+		default:
+			return nil, fmt.Errorf("unsupported report format %q (expected junit, sarif, or html)", format)
+		}
+	}
+	return formats, nil
 }
 
 type ReplayOutcome struct {
@@ -1910,6 +1945,509 @@ func runGenerate(args []string) int {
 		return 1
 	}
 	fmt.Printf("Generated simulation: %s\n", *output)
+	return 0
+}
+
+func runServe(args []string) int {
+	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	listen := fs.String("listen", "127.0.0.1:19000", "HTTP(S)/gRPC stub proxy listen address")
+	adminListen := fs.String("admin-listen", "127.0.0.1:19001", "Local control API listen address")
+	configPath := fs.String("config", "", "Replay configuration (default: <incident>/replay.yaml)")
+	observedLog := fs.String("observed-log", "", "Optional path for observed dependency calls")
+	httpsStub := fs.Bool("https-stub", false, "Enable native HTTPS response stubbing")
+	caDir := fs.String("stub-ca-dir", "", "Directory containing the HTTPS stub CA")
+	allowHosts := fs.String("stub-mitm-allow-hosts", "", "Comma-separated HTTPS dependency hosts allowed for TLS stubbing")
+	positionalIncident := ""
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		positionalIncident = args[0]
+		args = args[1:]
+	}
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if positionalIncident == "" && fs.NArg() > 0 {
+		positionalIncident = fs.Arg(0)
+	}
+	if positionalIncident == "" {
+		fmt.Fprintln(os.Stderr, "Usage: infernosim serve <incident-dir> [--listen 127.0.0.1:19000] [--admin-listen 127.0.0.1:19001]")
+		return 2
+	}
+	server, err := simserver.New(simserver.Options{
+		IncidentDir: positionalIncident,
+		ConfigPath:  *configPath,
+		Listen:      *listen,
+		AdminListen: *adminListen,
+		ObservedLog: *observedLog,
+		HTTPS:       *httpsStub,
+		CADir:       *caDir,
+		AllowHosts:  splitNonEmpty(*allowHosts),
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
+		return 1
+	}
+	if err := server.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
+		return 1
+	}
+	fmt.Printf("InfernoSIM simulator ready | proxy=%s admin=%s\n", server.StubAddress(), server.AdminAddress())
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	select {
+	case <-stop:
+	case err := <-server.Errors():
+		fmt.Fprintf(os.Stderr, "serve: listener failed: %v\n", err)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = server.Close(ctx)
+		return 1
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := server.Close(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "serve: shutdown: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runTestgen(args []string) int {
+	fs := flag.NewFlagSet("testgen", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	framework := fs.String("framework", testgen.FrameworkGoTestcontainers, "Harness: go-testcontainers, docker-compose, or github-actions")
+	out := fs.String("out", "./infernosim-integration", "Output directory")
+	image := fs.String("image", "", "InfernoSIM container image")
+	packageName := fs.String("package", "integration", "Go package for generated Testcontainers harness")
+	force := fs.Bool("force", false, "Overwrite generated harness files")
+	positionalIncident := ""
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		positionalIncident = args[0]
+		args = args[1:]
+	}
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if positionalIncident == "" && fs.NArg() > 0 {
+		positionalIncident = fs.Arg(0)
+	}
+	if positionalIncident == "" {
+		fmt.Fprintln(os.Stderr, "Usage: infernosim testgen <incident-dir> [--framework go-testcontainers] [--out ./integration]")
+		return 2
+	}
+	result, err := testgen.Generate(testgen.Options{
+		IncidentDir: positionalIncident,
+		OutputDir:   *out,
+		Framework:   *framework,
+		Image:       *image,
+		Package:     *packageName,
+		Force:       *force,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "testgen: %v\n", err)
+		return 1
+	}
+	for _, path := range result.Files {
+		fmt.Printf("Generated: %s\n", path)
+	}
+	return 0
+}
+
+func runHeal(args []string) int {
+	fs := flag.NewFlagSet("heal", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	configPath := fs.String("config", "", "Existing replay configuration (default: <incident>/replay.yaml)")
+	out := fs.String("out", "", "Proposed replay configuration (default: <incident>/replay.proposed.yaml)")
+	reportDir := fs.String("report-dir", "", "Healing JSON and HTML report directory")
+	minimumSamples := fs.Int("min-samples", 3, "Minimum observations required before proposing a rule")
+	minimumConfidence := fs.Float64("min-confidence", 0.95, "Minimum proposal confidence between 0 and 1")
+	apply := fs.Bool("apply", false, "Apply the accepted proposal to replay.yaml after writing a .bak backup")
+	force := fs.Bool("force", false, "Overwrite an existing proposed output file")
+	samples := multiFlag{}
+	fs.Var(&samples, "sample", "Additional incident directory used as a healing observation (repeatable)")
+	positionalIncident := ""
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		positionalIncident = args[0]
+		args = args[1:]
+	}
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if positionalIncident == "" && fs.NArg() > 0 {
+		positionalIncident = fs.Arg(0)
+	}
+	if positionalIncident == "" {
+		fmt.Fprintln(os.Stderr, "Usage: infernosim heal <incident-dir> [--sample another-incident] [--out replay.proposed.yaml]")
+		return 2
+	}
+	incidents := append([]string{positionalIncident}, samples...)
+	result, err := heal.Run(heal.Options{
+		IncidentDirs:   incidents,
+		ConfigPath:     *configPath,
+		OutputPath:     *out,
+		ReportDir:      *reportDir,
+		MinimumSamples: *minimumSamples,
+		MinimumScore:   *minimumConfidence,
+		Apply:          *apply,
+		Force:          *force,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "heal: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Healing result: accepted=%d rejected=%d ambiguities=%d\n", result.Accepted, result.Rejected, result.Ambiguities)
+		return 1
+	}
+	fmt.Printf("Healing result: accepted=%d rejected=%d ambiguities=%d\n", result.Accepted, result.Rejected, result.Ambiguities)
+	fmt.Printf("Proposed config: %s\n", result.OutputPath)
+	if result.AppliedPath != "" {
+		fmt.Printf("Applied config: %s (backup: %s)\n", result.AppliedPath, result.BackupPath)
+	}
+	return 0
+}
+
+type kafkaAuthFlags struct {
+	tls           *bool
+	caFile        *string
+	clientCert    *string
+	clientKey     *string
+	saslMechanism *string
+	saslUsername  *string
+	saslPassEnv   *string
+}
+
+func addKafkaAuthFlags(fs *flag.FlagSet) kafkaAuthFlags {
+	return kafkaAuthFlags{
+		tls:           fs.Bool("tls", false, "Use TLS 1.2+ for broker connections"),
+		caFile:        fs.String("ca-file", "", "PEM CA file for broker verification"),
+		clientCert:    fs.String("client-cert", "", "PEM client certificate for mTLS"),
+		clientKey:     fs.String("client-key", "", "PEM client key for mTLS"),
+		saslMechanism: fs.String("sasl-mechanism", "", "SASL mechanism: plain, scram-sha-256, or scram-sha-512"),
+		saslUsername:  fs.String("sasl-username", "", "SASL username"),
+		saslPassEnv:   fs.String("sasl-password-env", "", "Environment variable containing the SASL password"),
+	}
+}
+
+func (flags kafkaAuthFlags) value() (kafkasim.Auth, error) {
+	password := ""
+	if *flags.saslPassEnv != "" {
+		var ok bool
+		password, ok = os.LookupEnv(*flags.saslPassEnv)
+		if !ok {
+			return kafkasim.Auth{}, fmt.Errorf("environment variable %s is not set", *flags.saslPassEnv)
+		}
+	}
+	if *flags.saslMechanism != "" && (*flags.saslUsername == "" || *flags.saslPassEnv == "") {
+		return kafkasim.Auth{}, fmt.Errorf("SASL requires --sasl-username and --sasl-password-env")
+	}
+	return kafkasim.Auth{
+		TLS: *flags.tls, CAFile: *flags.caFile, ClientCert: *flags.clientCert, ClientKey: *flags.clientKey,
+		SASLMechanism: *flags.saslMechanism, Username: *flags.saslUsername, Password: password,
+	}, nil
+}
+
+func runKafka(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "Usage: infernosim kafka <capture|replay|validate> [flags]")
+		return 2
+	}
+	switch args[0] {
+	case "capture":
+		return runKafkaCapture(args[1:])
+	case "replay":
+		return runKafkaReplay(args[1:])
+	case "validate":
+		return runKafkaValidate(args[1:])
+	default:
+		fmt.Fprintf(os.Stderr, "kafka: unknown subcommand %q\n", args[0])
+		return 2
+	}
+}
+
+func runKafkaCapture(args []string) int {
+	fs := flag.NewFlagSet("kafka capture", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	brokers := fs.String("brokers", "127.0.0.1:9092", "Comma-separated Kafka-compatible broker addresses")
+	topics := fs.String("topics", "", "Comma-separated topics to capture")
+	out := fs.String("out", "./incident/messages.log", "Message incident log")
+	maxMessages := fs.Int("max-messages", 0, "Stop after this many messages (0 waits for timeout or signal)")
+	duration := fs.Duration("duration", 0, "Maximum capture duration (0 waits for signal)")
+	fromBeginning := fs.Bool("from-beginning", false, "Start from the earliest retained offsets")
+	privacyPath := fs.String("privacy-policy", "", "Privacy policy for message key, headers, and JSON payload")
+	captureSensitive := fs.Bool("capture-sensitive-data", false, "Store raw message keys, headers, and payloads without a privacy policy (UNSAFE)")
+	direction := fs.String("direction", "publish", "Relationship to the application: publish or consume")
+	authFlags := addKafkaAuthFlags(fs)
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if strings.TrimSpace(*topics) == "" {
+		fmt.Fprintln(os.Stderr, "kafka capture: --topics is required")
+		return 2
+	}
+	auth, err := authFlags.value()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "kafka capture: %v\n", err)
+		return 2
+	}
+	var policy *privacy.Policy
+	if *privacyPath != "" {
+		policy, err = privacy.Load(*privacyPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "kafka capture: %v\n", err)
+			return 2
+		}
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if *duration > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, *duration)
+		defer cancel()
+	}
+	result, err := kafkasim.Capture(ctx, kafkasim.CaptureOptions{
+		Brokers: splitNonEmpty(*brokers), Topics: splitNonEmpty(*topics), OutputPath: *out,
+		MaxMessages: *maxMessages, FromBeginning: *fromBeginning, Privacy: policy, Auth: auth,
+		AllowSensitive: *captureSensitive, Direction: *direction,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "kafka capture: %v\n", err)
+		return 1
+	}
+	fmt.Printf("Kafka capture complete: messages=%d topics=%d output=%s\n", result.Captured, len(result.Topics), *out)
+	return 0
+}
+
+func runKafkaReplay(args []string) int {
+	fs := flag.NewFlagSet("kafka replay", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	brokers := fs.String("brokers", "127.0.0.1:9092", "Comma-separated Kafka-compatible broker addresses")
+	input := fs.String("input", "", "messages.log path or incident directory")
+	asyncAPIPath := fs.String("asyncapi", "", "AsyncAPI 3.x contract validated before producing")
+	timeScale := fs.Float64("time-scale", 0, "Captured timing multiplier (0 emits without captured gaps)")
+	topicPrefix := fs.String("topic-prefix", "", "Prefix applied to replay topics for isolation")
+	delay := fs.Duration("delay", 0, "Deterministic delay before every produced message")
+	dropEvery := fs.Int("drop-every", 0, "Drop every Nth planned message")
+	duplicateEvery := fs.Int("duplicate-every", 0, "Duplicate every Nth planned message")
+	poisonEvery := fs.Int("poison-every", 0, "Replace every Nth planned payload with invalid JSON")
+	reorderWindow := fs.Int("reorder-window", 0, "Reverse messages inside deterministic windows of N")
+	timeout := fs.Duration("timeout", 2*time.Minute, "Maximum replay duration")
+	reportFormats := fs.String("report-formats", "junit,sarif,html", "Comma-separated report formats")
+	reportDir := fs.String("report-dir", "", "Report and proof directory")
+	authFlags := addKafkaAuthFlags(fs)
+	positional := ""
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		positional = args[0]
+		args = args[1:]
+	}
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	formats, err := validatedReportFormats(*reportFormats)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "kafka replay: %v\n", err)
+		return 2
+	}
+	if *timeout <= 0 {
+		fmt.Fprintln(os.Stderr, "kafka replay: --timeout must be positive")
+		return 2
+	}
+	if *input == "" {
+		*input = positional
+	}
+	resolvedInput, err := resolveMessageLog(*input)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "kafka replay: %v\n", err)
+		return 2
+	}
+	if *reportDir == "" {
+		*reportDir = filepath.Join(filepath.Dir(resolvedInput), "reports")
+	}
+	auth, err := authFlags.value()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "kafka replay: %v\n", err)
+		return 2
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+	defer cancel()
+	result, replayErr := kafkasim.Replay(ctx, kafkasim.ReplayOptions{
+		Brokers: splitNonEmpty(*brokers), InputPath: resolvedInput, AsyncAPI: *asyncAPIPath,
+		TimeScale: *timeScale, TopicPrefix: *topicPrefix, Auth: auth,
+		Faults: kafkasim.Faults{Delay: *delay, DropEvery: *dropEvery, DuplicateEvery: *duplicateEvery, PoisonEvery: *poisonEvery, ReorderWindow: *reorderWindow},
+	})
+	outcome := "PASS"
+	summary := fmt.Sprintf("produced %d of %d captured messages", result.Produced, result.Loaded)
+	if replayErr != nil {
+		outcome = "FAIL_KAFKA_REPLAY"
+		summary = replayErr.Error()
+	}
+	if _, err := reporting.WriteFormats(*reportDir, formats, reporting.Result{
+		Tool: "InfernoSIM Kafka", Outcome: outcome, Summary: summary, Generated: time.Now().UTC(), Findings: result.Findings,
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "kafka replay: write reports: %v\n", err)
+		return 1
+	}
+	proofData, _ := json.MarshalIndent(result, "", "  ")
+	if err := reporting.WritePrivateFile(filepath.Join(*reportDir, "infernosim-kafka-proof.json"), append(proofData, '\n')); err != nil {
+		fmt.Fprintf(os.Stderr, "kafka replay: write proof: %v\n", err)
+		return 1
+	}
+	if replayErr != nil {
+		fmt.Fprintf(os.Stderr, "kafka replay: %v\n", replayErr)
+		return 1
+	}
+	fmt.Printf("Kafka replay complete: loaded=%d produced=%d dropped=%d duplicated=%d poisoned=%d fingerprint=%s\n",
+		result.Loaded, result.Produced, result.Dropped, result.Duplicated, result.Poisoned, result.Fingerprint)
+	return 0
+}
+
+func runKafkaValidate(args []string) int {
+	fs := flag.NewFlagSet("kafka validate", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	asyncAPIPath := fs.String("asyncapi", "", "AsyncAPI 3.x contract (required)")
+	reportFormats := fs.String("report-formats", "junit,sarif,html", "Comma-separated report formats")
+	reportDir := fs.String("report-dir", "", "Report directory")
+	positional := ""
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		positional = args[0]
+		args = args[1:]
+	}
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	formats, err := validatedReportFormats(*reportFormats)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "kafka validate: %v\n", err)
+		return 2
+	}
+	if positional == "" || *asyncAPIPath == "" {
+		fmt.Fprintln(os.Stderr, "Usage: infernosim kafka validate <incident-or-messages.log> --asyncapi asyncapi.yaml")
+		return 2
+	}
+	input, err := resolveMessageLog(positional)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "kafka validate: %v\n", err)
+		return 2
+	}
+	records, err := message.Load(input)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "kafka validate: %v\n", err)
+		return 2
+	}
+	validator, err := asyncapi.Load(*asyncAPIPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "kafka validate: %v\n", err)
+		return 2
+	}
+	findings := validator.Validate(records)
+	if *reportDir == "" {
+		*reportDir = filepath.Join(filepath.Dir(input), "reports")
+	}
+	outcome := "PASS"
+	if len(findings) > 0 {
+		outcome = "FAIL_CONTRACT_DRIFT"
+	}
+	written, err := reporting.WriteFormats(*reportDir, formats, reporting.Result{
+		Tool: "InfernoSIM AsyncAPI", Outcome: outcome,
+		Summary: fmt.Sprintf("validated %d messages with %d finding(s)", len(records), len(findings)), Findings: findings,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "kafka validate: %v\n", err)
+		return 2
+	}
+	for _, path := range written {
+		fmt.Printf("Report: %s\n", path)
+	}
+	if len(findings) > 0 {
+		fmt.Printf("AsyncAPI validation failed: %d finding(s)\n", len(findings))
+		return 1
+	}
+	fmt.Printf("AsyncAPI validation passed: %d messages\n", len(records))
+	return 0
+}
+
+func resolveMessageLog(input string) (string, error) {
+	if input == "" {
+		return "", fmt.Errorf("messages.log path or incident directory is required")
+	}
+	info, err := os.Stat(input)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		input = filepath.Join(input, "messages.log")
+	}
+	if info, err = os.Stat(input); err != nil || info.IsDir() {
+		return "", fmt.Errorf("message log %s is unavailable", input)
+	}
+	return input, nil
+}
+
+func runWorkflow(args []string) int {
+	if len(args) == 0 || args[0] != "verify" {
+		fmt.Fprintln(os.Stderr, "Usage: infernosim workflow verify <incident-dir> [--config replay.yaml] [--report-formats junit,sarif,html]")
+		return 2
+	}
+	fs := flag.NewFlagSet("workflow verify", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	configPath := fs.String("config", "", "Replay configuration containing workflows")
+	reportFormats := fs.String("report-formats", "junit,sarif,html", "Comma-separated report formats")
+	reportDir := fs.String("report-dir", "", "Report directory")
+	positional := ""
+	remaining := args[1:]
+	if len(remaining) > 0 && !strings.HasPrefix(remaining[0], "-") {
+		positional = remaining[0]
+		remaining = remaining[1:]
+	}
+	if err := fs.Parse(remaining); err != nil {
+		return 2
+	}
+	formats, err := validatedReportFormats(*reportFormats)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "workflow verify: %v\n", err)
+		return 2
+	}
+	if positional == "" {
+		fmt.Fprintln(os.Stderr, "workflow verify: incident directory is required")
+		return 2
+	}
+	if *configPath == "" {
+		*configPath = filepath.Join(positional, "replay.yaml")
+	}
+	config, err := replaydriver.LoadReplayConfig(*configPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "workflow verify: %v\n", err)
+		return 2
+	}
+	if len(config.Workflows) == 0 {
+		fmt.Fprintln(os.Stderr, "workflow verify: replay configuration contains no workflows")
+		return 2
+	}
+	findings, err := workflow.VerifyIncident(positional, config.Workflows)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "workflow verify: %v\n", err)
+		return 2
+	}
+	if *reportDir == "" {
+		*reportDir = filepath.Join(positional, "reports")
+	}
+	outcome := "PASS"
+	if len(findings) > 0 {
+		outcome = "FAIL_WORKFLOW_DRIFT"
+	}
+	written, err := reporting.WriteFormats(*reportDir, formats, reporting.Result{
+		Tool: "InfernoSIM Workflow", Outcome: outcome,
+		Summary: fmt.Sprintf("verified %d workflow(s) with %d finding(s)", len(config.Workflows), len(findings)), Findings: findings,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "workflow verify: write reports: %v\n", err)
+		return 2
+	}
+	for _, path := range written {
+		fmt.Printf("Report: %s\n", path)
+	}
+	if len(findings) > 0 {
+		fmt.Printf("Workflow verification failed: %d finding(s)\n", len(findings))
+		return 1
+	}
+	fmt.Printf("Workflow verification passed: %d workflow(s)\n", len(config.Workflows))
 	return 0
 }
 

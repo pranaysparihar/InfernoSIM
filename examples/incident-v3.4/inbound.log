@@ -1,0 +1,1 @@
+{"id":"http-1","type":"InboundRequest","timestamp":"2026-01-01T00:00:00Z","sequence":1,"method":"POST","url":"http://service.test/payments","traceId":"corr-1"}

@@ -11,7 +11,7 @@ builds:
       - darwin
     main: ./cmd/agent/main.go
     ldflags:
-      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}} -X main.versionBy=goreleaser
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}} -X main.versionBy=goreleaser -X infernosim/pkg/reporting.SemanticVersion={{.Version}}
 archives:
   - id: infernosim-archive
     ids: [infernosim]
@@ -36,14 +36,11 @@ changelog:
 
 homebrew_casks:
   - name: infernosim
-    # A repository-scoped GitHub Actions token can publish this project's
-    # release but cannot write to the separate Homebrew tap. Keep the release
-    # pipeline green when a maintainer has not configured the optional GH_PAT;
-    # GoReleaser still generates the cask in dist for manual publication.
-    skip_upload: "{{ if .Env.GH_PAT }}false{{ else }}true{{ end }}"
+    directory: Casks
     repository:
       owner: pranaysparihar
       name: homebrew-infernosim
+      token: "{{ .Env.GH_PAT }}"
 
     homepage: "https://github.com/pranaysparihar/InfernoSIM"
     description: "Deterministic incident replay for backend systems"

@@ -1,0 +1,16 @@
+version: 1
+capture_bodies: true
+token_key_env: INFERNOSIM_TOKEN_KEY
+
+message_key: tokenize
+message_headers:
+  - name: Authorization
+    action: drop
+  - name: X-User-Email
+    action: redact
+
+json_fields:
+  - path: $.customer.email
+    action: tokenize
+  - path: $.card.number
+    action: redact

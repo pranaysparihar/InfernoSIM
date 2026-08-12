@@ -1,5 +1,5 @@
 # Compiled binaries and release output
-agent
+/agent
 infernosim
 infernosim-*
 test-*
@@ -13,6 +13,8 @@ coverage.out
 *.log
 # Replay-driver incident logs below are synthetic, sanitized test fixtures.
 !pkg/replaydriver/testdata/incidents/**/inbound.log
+!benchmarks/fixtures/**/*.log
+!examples/incident-v3.4/*.log
 *.out
 replay_result.txt
 verify_result.txt

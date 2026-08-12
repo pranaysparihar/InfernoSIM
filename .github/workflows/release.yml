@@ -19,17 +19,44 @@ jobs:
         with:
           go-version: "1.25.12"
           cache: true
+      - name: Require Homebrew tap publishing token
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: test -n "$GH_PAT"
+      - name: Verify module files
+        run: go mod tidy -diff
+      - name: Verify Testcontainers module files
+        working-directory: integrations/testcontainers-go
+        run: go mod tidy -diff
+      - name: Vet
+        run: go vet ./...
+      - name: Vet Testcontainers adapter
+        working-directory: integrations/testcontainers-go
+        run: go vet ./...
+      - name: Vulnerability scan
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
       - name: Run release tests
-        run: go test -race ./...
-      - name: Install Syft
-        uses: anchore/sbom-action/download-syft@v0
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@v4.1.0
-      - name: Publish signed release
+        run: go test -count=1 -race ./...
+      - name: Run Testcontainers adapter tests
+        working-directory: integrations/testcontainers-go
+        run: go test -count=1 -race ./...
+      - name: Build release candidate container
+        run: docker build --tag infernosim:release-test .
+      - name: Run real Testcontainers incident smoke
+        working-directory: integrations/testcontainers-go
+        env:
+          INFERNOSIM_TEST_IMAGE: infernosim:release-test
+          TESTCONTAINERS_RYUK_DISABLED: "true"
+        run: go test -count=1 -run TestContainerIntegration -v ./...
+      - name: Verify deterministic incident-to-test baseline
+        run: go run ./cmd/benchmark --runs 100 --out /tmp/infernosim-benchmark.json
+      - name: Kafka and AsyncAPI Redpanda smoke
+        run: scripts/kafka-smoke.sh
+      - name: Publish release
         uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
           args: release --clean
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_PAT: ${{ secrets.GH_PAT }}

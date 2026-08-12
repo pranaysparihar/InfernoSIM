@@ -43,7 +43,9 @@ cleanup() {
 trap cleanup EXIT
 
 echo "[1/5] Build infernosim image"
-docker build -t infernosim:local .
+if [ "${INFERNOSIM_SKIP_BUILD:-0}" != "1" ]; then
+  docker build -t infernosim:local .
+fi
 
 echo "[2/5] Reset incident log"
 mkdir -p "$INCIDENT_DIR"

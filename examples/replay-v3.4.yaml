@@ -1,0 +1,64 @@
+templates:
+  seed: payment-incident
+  max_output_bytes: 1048576
+
+matching:
+  rules:
+    - name: payment-request
+      methods: [POST]
+      host_regex: '^payments\.example\.test$'
+      path_regex: '^/payments$'
+      jsonpath_regex:
+        $.request_id: '(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+      compare_json: true
+
+scenarios:
+  - name: payment
+    initial_state: new
+    steps:
+      - name: create
+        state: new
+        next_state: authorized
+        match:
+          methods: [POST]
+          path_regex: '^/payments$'
+        response:
+          status: 201
+          headers:
+            Content-Type: [application/json]
+          body_template: '{"payment_id":"{{ uuid "payment" }}","status":"authorized"}'
+      - name: read
+        state: authorized
+        match:
+          methods: [GET]
+          path_regex: '^/payments/[^/]+$'
+        response:
+          status: 200
+          headers:
+            Content-Type: [application/json]
+          body: '{"status":"authorized"}'
+
+workflows:
+  - name: payment-authorized
+    correlation: required
+    steps:
+      - name: accept-payment
+        protocol: http
+        direction: inbound
+        method: POST
+        path_regex: '^/payments$'
+      - name: reserve-funds
+        protocol: grpc
+        direction: outbound
+        grpc_method: /funds.Funds/Reserve
+        within: 2s
+      - name: publish-authorized
+        protocol: kafka
+        topic: payment.authorized
+        within: 2s
+
+stub:
+  https:
+    enabled: true
+    allow_hosts:
+      - payments.example.test

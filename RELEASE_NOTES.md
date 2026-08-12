@@ -1,3 +1,108 @@
+# InfernoSIM v3.4.0
+
+Status: implementation complete; unreleased
+
+v3.4 is a single GA release train. No alpha, beta, v3.5, or v3.6 aliases are
+used. Publication is allowed only after the mandatory release workflow passes
+on the exact commit being tagged.
+
+v3.4 completes InfernoSIM's local incident-to-test path. A sanitized production
+incident can now become an editable container test, an explainably stabilized
+matcher configuration, a cross-protocol contract gate, and a deterministic
+proof artifact without an InfernoSIM-hosted service.
+
+## Highlights
+
+- `infernosim serve` runs captured HTTP, HTTPS, HTTP/2, and gRPC dependency
+  behavior as a standalone simulator with a separate health/reset/status/proof
+  control API.
+- `infernosim testgen` produces readable Testcontainers-Go, Docker Compose, or
+  GitHub Actions harnesses. A maintained Testcontainers-Go adapter is shipped
+  as an independent module under `integrations/testcontainers-go`.
+- `infernosim heal` infers narrow semantic matchers from repeated observations,
+  validates candidates on a held-out observation, protects security/business
+  fields, hashes evidence, and refuses ambiguous proposals.
+- Kafka-compatible capture and replay preserve topic, partition, offset, key,
+  headers, payload, schema name, correlation ID, timestamp, and payload hash.
+- Kafka connections support TLS, mTLS, SASL/PLAIN, SCRAM-SHA-256, and
+  SCRAM-SHA-512 without accepting passwords on the command line.
+- Deterministic Kafka delay, drop, duplicate, poison, and reorder plans make
+  asynchronous failure tests repeatable.
+- AsyncAPI 3.x validates JSON payload schemas, message/channel references,
+  required fields, types, enums, patterns, and additional-property drift.
+- Explicit workflows verify ordered HTTP, gRPC, and Kafka observations with
+  optional correlation and per-step timing bounds.
+- HTTP and Kafka captures share configurable deterministic tokenization,
+  redaction, and drop rules.
+- Simulator and Kafka proof JSON records semantic fingerprints; workflow,
+  AsyncAPI, and Kafka commands emit JUnit, SARIF, and HTML reports.
+
+## Safety and compatibility
+
+- Existing incidents and replay configuration remain valid. The new
+  `workflows` section is optional and strictly validated.
+- Healing writes `replay.proposed.yaml`; it never silently replaces
+  `replay.yaml`. Explicit `--apply` promotion creates `replay.yaml.bak` first.
+- Authorization, credentials, tenant/account boundaries, permissions, money,
+  status, and personal-data fields cannot be automatically relaxed.
+- UUIDs and timestamps are relaxed only at allowlisted volatile locations such
+  as request, trace, correlation, nonce, or timestamp fields; identity IDs stay
+  exact. Regeneration removes stale InfernoSIM-managed healing rules.
+- A proposal that makes distinct recorded responses match the same request
+  fails without writing configuration.
+- Control APIs do not expose captured bodies, keys, or headers.
+- Generated incident files remain owner-only on the host and are copied
+  read-only into the isolated, unprivileged container.
+- Kafka capture subscribes only to topics explicitly selected by the user.
+- Kafka capture requires a privacy policy unless raw sensitive-data storage is
+  explicitly enabled. Replayable policy-based capture also requires
+  `capture_bodies: true`.
+- Invalid report formats, topics, authentication combinations, non-finite
+  timing/confidence values, duplicate message IDs, duplicate privacy rules,
+  unsupported AsyncAPI schema features, and unsafe generated paths fail before
+  network side effects.
+- Release publication requires the Homebrew tap token and uploads only eight
+  platform archives plus `checksums.txt`; benchmark/report JSON is excluded.
+
+## Validation evidence
+
+- The checked-in category baseline completed 100 independent heal/testgen runs
+  with the expected accept/reject behavior, one configuration hash, one harness
+  hash, zero ambiguities, and zero seeded-secret leaks. On the recorded local
+  run, healing p95 was 0.896 ms and test generation p95 was 0.607 ms. Raw
+  results are in `benchmarks/results/infernosim.json`; timing is environment
+  specific and is not a competitor claim.
+- Root and nested-module race tests, module consistency, vet, and reachable
+  vulnerability analysis pass. The vulnerability scan reports zero reachable
+  vulnerabilities.
+- The Kafka CLI wire test passes capture → AsyncAPI validation → prefixed replay
+  → consume and verifies JUnit, SARIF, HTML, and proof files.
+- The production Dockerfile builds successfully, runs unprivileged, exposes the
+  proxy/control ports, and passes the real Testcontainers lifecycle/proxy/reset
+  test. Node and Go Compose smoke profiles pass against that image.
+- Targeted matcher, gRPC, template, OpenAPI, bundle, healer, and message fuzz
+  smoke tests pass. GoReleaser builds all eight platform archives, a checksum
+  manifest, and the Homebrew cask; the upload-asset assertion reports nine
+  project assets, which GitHub displays as 11 after its two automatic source
+  downloads.
+- The Docker smoke passes capture → validation → replay → consume against
+  Redpanda v25.2.9 using a pinned multi-architecture image digest and separate
+  internal/external listeners. This remains a mandatory release-workflow gate.
+
+## Deliberate boundaries
+
+- v3.4 supports Kafka-compatible brokers, not RabbitMQ, NATS, MQTT, SQS, or SNS.
+- AsyncAPI validation covers JSON payloads. Avro, Schema Registry, and remote
+  schema resolution are not implemented.
+- Kafka capture uses a consumer subscription rather than a transparent Kafka
+  protocol proxy.
+- Healing is deterministic rule inference rather than an LLM and declines
+  values it cannot classify safely.
+- Existing gRPC compression, reflection/remote descriptor, large-body, and
+  bidirectional-stream branching limitations remain.
+
+---
+
 # InfernoSIM v3.3.0
 
 Status: GA-ready (publish the signed `v3.3.0` tag to make this public)
@@ -45,9 +150,9 @@ model.
 - CI now covers formatting, module consistency, vet, reachable-vulnerability
   analysis, race tests, targeted fuzzing, platform builds, container
   architecture checks, and Node/Go Compose smoke profiles.
-- Tagged releases generate SHA-256 checksums and per-archive SPDX SBOMs.
-- The checksum manifest is keylessly signed through Sigstore/Cosign using the
-  GitHub Actions OIDC identity.
+- Tagged releases generate platform archives and a SHA-256 checksum manifest.
+- Generated JSON, reports, SBOMs, signature bundles, and internal fixtures are
+  deliberately excluded from GitHub release assets.
 - GoReleaser configuration was migrated away from deprecated archive,
   snapshot, and Homebrew formula properties.
 - Upgrade and maintainer release guides are included under `docs/`.

@@ -68,6 +68,16 @@ type Options struct {
 	TLSCA     *capture.CAStore
 }
 
+// Snapshot is a point-in-time, race-safe view of a running simulator. It is
+// intentionally small so it can be exposed by local container control APIs
+// without leaking captured request or response data.
+type Snapshot struct {
+	Expected    int      `json:"expected"`
+	Observed    int      `json:"observed"`
+	Divergences []string `json:"divergences,omitempty"`
+	Unexpected  bool     `json:"unexpected"`
+}
+
 func LoadOutboundEvents(path string) ([]event.Event, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -858,6 +868,26 @@ func (s *StubProxy) UnexpectedOutbound() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.unexpectedOutbound
+}
+
+// Snapshot returns simulator counters and diagnostics without exposing any
+// captured payloads. The returned slices are detached from internal state.
+func (s *StubProxy) Snapshot() Snapshot {
+	return Snapshot{
+		Expected:    s.ExpectedCount(),
+		Observed:    s.ObservedCount(),
+		Divergences: s.DivergenceReasons(),
+		Unexpected:  s.UnexpectedOutbound(),
+	}
+}
+
+// Close flushes the optional observed-event log. It is safe to call when no
+// observed log was configured.
+func (s *StubProxy) Close() error {
+	if s == nil || s.observedLogger == nil {
+		return nil
+	}
+	return s.observedLogger.Close()
 }
 
 var hopByHopHeaders = map[string]struct{}{

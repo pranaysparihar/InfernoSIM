@@ -7,10 +7,18 @@ import (
 	"html/template"
 	"os"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
 )
+
+// SemanticVersion is injected by GoReleaser so SARIF identifies the exact
+// InfernoSIM build that produced it.
+var SemanticVersion = "dev"
+
+var sarifSemanticVersionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$`)
 
 type Finding struct {
 	RuleID   string `json:"rule_id"`
@@ -71,12 +79,53 @@ func WriteFormats(directory string, formats []string, result Result) ([]string, 
 			return written, err
 		}
 		path := filepath.Join(directory, name)
-		if err := os.WriteFile(path, data, 0o600); err != nil {
+		if err := WritePrivateFile(path, data); err != nil {
 			return written, err
 		}
 		written = append(written, path)
 	}
 	return written, nil
+}
+
+// WritePrivateFile atomically replaces a generated artifact with owner-only
+// permissions. The temporary file is created in the destination directory so
+// a successful rename cannot cross filesystems.
+func WritePrivateFile(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	temp, err := os.CreateTemp(filepath.Dir(path), ".infernosim-report-*")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+	if err := temp.Chmod(0o600); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if _, err := temp.Write(data); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tempPath, path); err != nil {
+		if runtime.GOOS != "windows" {
+			return err
+		}
+		if info, statErr := os.Lstat(path); statErr == nil && info.IsDir() {
+			return err
+		}
+		if removeErr := os.Remove(path); removeErr != nil && !os.IsNotExist(removeErr) {
+			return err
+		}
+		if err := os.Rename(tempPath, path); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type junitSuite struct {
@@ -152,7 +201,7 @@ type sarifTool struct {
 type sarifDriver struct {
 	Name            string      `json:"name"`
 	InformationURI  string      `json:"informationUri"`
-	SemanticVersion string      `json:"semanticVersion"`
+	SemanticVersion string      `json:"semanticVersion,omitempty"`
 	Rules           []sarifRule `json:"rules,omitempty"`
 }
 
@@ -188,7 +237,21 @@ type sarifArtifactLocation struct {
 
 func marshalSARIF(result Result) ([]byte, error) {
 	rulesByID := make(map[string]sarifRule)
-	var results []sarifResult
+	results := make([]sarifResult, 0, len(result.Findings)+1)
+	if strings.HasPrefix(result.Outcome, "FAIL") {
+		const outcomeRule = "INFERNOSIM_OUTCOME"
+		rulesByID[outcomeRule] = sarifRule{
+			ID:               outcomeRule,
+			ShortDescription: sarifMessage{Text: "InfernoSIM command failed"},
+		}
+		results = append(results, sarifResult{
+			RuleID: outcomeRule,
+			Level:  "error",
+			Message: sarifMessage{
+				Text: result.Outcome + ": " + result.Summary,
+			},
+		})
+	}
 	for _, finding := range result.Findings {
 		level := strings.ToLower(finding.Level)
 		if level != "error" && level != "warning" && level != "note" {
@@ -212,7 +275,7 @@ func marshalSARIF(result Result) ([]byte, error) {
 		}
 		results = append(results, entry)
 	}
-	var rules []sarifRule
+	rules := make([]sarifRule, 0, len(rulesByID))
 	for _, rule := range rulesByID {
 		rules = append(rules, rule)
 	}
@@ -225,14 +288,22 @@ func marshalSARIF(result Result) ([]byte, error) {
 		Runs: []sarifRun{{
 			Tool: sarifTool{Driver: sarifDriver{
 				Name:            result.Tool,
-				InformationURI:  "https://github.com/infernosim/infernosim",
-				SemanticVersion: "3.2.0",
+				InformationURI:  "https://github.com/pranaysparihar/InfernoSIM",
+				SemanticVersion: sarifSemanticVersion(SemanticVersion),
 				Rules:           rules,
 			}},
 			Results: results,
 		}},
 	}
 	return json.MarshalIndent(document, "", "  ")
+}
+
+func sarifSemanticVersion(value string) string {
+	value = strings.TrimPrefix(strings.TrimSpace(value), "v")
+	if !sarifSemanticVersionPattern.MatchString(value) {
+		return ""
+	}
+	return value
 }
 
 var htmlReportTemplate = template.Must(template.New("report").Parse(`<!doctype html>

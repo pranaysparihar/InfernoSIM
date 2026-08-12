@@ -1,0 +1,1 @@
+{"id":"grpc-1","type":"OutboundCall","timestamp":"2026-01-01T00:00:01Z","sequence":1,"method":"POST","url":"http://funds.test/funds.Funds/Reserve","traceId":"corr-1","grpcServiceMethod":"/funds.Funds/Reserve","status":200,"responseCaptured":true}

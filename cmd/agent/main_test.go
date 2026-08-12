@@ -169,3 +169,12 @@ func TestGenerateLintAndExplainCLI(t *testing.T) {
 		t.Fatalf("match explain code=%d", code)
 	}
 }
+
+func TestReportFormatsAreRejectedBeforeKafkaReplay(t *testing.T) {
+	if _, err := validatedReportFormats("junit,unknown"); err == nil {
+		t.Fatal("expected report format validation error")
+	}
+	if code := runKafkaReplay([]string{"--report-formats", "unknown"}); code != 2 {
+		t.Fatalf("invalid report format code=%d", code)
+	}
+}

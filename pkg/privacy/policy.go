@@ -34,6 +34,11 @@ type JSONRule struct {
 	Action Action `yaml:"action" json:"action"`
 }
 
+type MessageHeader struct {
+	Name  string
+	Value []byte
+}
+
 // Policy is the strict schema for privacy.yaml.
 type Policy struct {
 	Version         int         `yaml:"version" json:"version"`
@@ -42,6 +47,8 @@ type Policy struct {
 	Headers         []NamedRule `yaml:"headers" json:"headers,omitempty"`
 	QueryParameters []NamedRule `yaml:"query_parameters" json:"query_parameters,omitempty"`
 	JSONFields      []JSONRule  `yaml:"json_fields" json:"json_fields,omitempty"`
+	MessageKey      Action      `yaml:"message_key" json:"message_key,omitempty"`
+	MessageHeaders  []NamedRule `yaml:"message_headers" json:"message_headers,omitempty"`
 
 	tokenKey []byte
 }
@@ -61,18 +68,30 @@ func Load(path string) (*Policy, error) {
 		return nil, fmt.Errorf("privacy policy version must be 1")
 	}
 	needsKey := false
+	headerNames := make(map[string]bool)
 	for _, rule := range policy.Headers {
 		if err := validateNamedRule("headers", rule); err != nil {
 			return nil, err
 		}
+		canonical := strings.ToLower(rule.Name)
+		if headerNames[canonical] {
+			return nil, fmt.Errorf("headers rule %q is duplicated", rule.Name)
+		}
+		headerNames[canonical] = true
 		needsKey = needsKey || rule.Action == ActionTokenize
 	}
+	queryNames := make(map[string]bool)
 	for _, rule := range policy.QueryParameters {
 		if err := validateNamedRule("query_parameters", rule); err != nil {
 			return nil, err
 		}
+		if queryNames[rule.Name] {
+			return nil, fmt.Errorf("query_parameters rule %q is duplicated", rule.Name)
+		}
+		queryNames[rule.Name] = true
 		needsKey = needsKey || rule.Action == ActionTokenize
 	}
+	jsonPaths := make(map[string]bool)
 	for _, rule := range policy.JSONFields {
 		if strings.TrimSpace(rule.Path) == "" {
 			return nil, fmt.Errorf("json_fields path is required")
@@ -83,6 +102,28 @@ func Load(path string) (*Policy, error) {
 		if err := validateAction(rule.Action); err != nil {
 			return nil, fmt.Errorf("json_fields path %q: %w", rule.Path, err)
 		}
+		if jsonPaths[rule.Path] {
+			return nil, fmt.Errorf("json_fields path %q is duplicated", rule.Path)
+		}
+		jsonPaths[rule.Path] = true
+		needsKey = needsKey || rule.Action == ActionTokenize
+	}
+	if policy.MessageKey != "" {
+		if err := validateAction(policy.MessageKey); err != nil {
+			return nil, fmt.Errorf("message_key: %w", err)
+		}
+		needsKey = needsKey || policy.MessageKey == ActionTokenize
+	}
+	messageHeaderNames := make(map[string]bool)
+	for _, rule := range policy.MessageHeaders {
+		if err := validateNamedRule("message_headers", rule); err != nil {
+			return nil, err
+		}
+		canonical := strings.ToLower(rule.Name)
+		if messageHeaderNames[canonical] {
+			return nil, fmt.Errorf("message_headers rule %q is duplicated", rule.Name)
+		}
+		messageHeaderNames[canonical] = true
 		needsKey = needsKey || rule.Action == ActionTokenize
 	}
 	if needsKey {
@@ -97,9 +138,66 @@ func Load(path string) (*Policy, error) {
 	return &policy, nil
 }
 
+// ApplyMessage sanitizes a Kafka-compatible message key, headers, and JSON
+// payload using the same deterministic local policy as HTTP capture.
+func (p *Policy) ApplyMessage(key []byte, headers []MessageHeader, payload []byte) ([]byte, []MessageHeader, []byte, error) {
+	cleanKey := append([]byte(nil), key...)
+	cleanHeaders := make([]MessageHeader, 0, len(headers))
+	for _, header := range headers {
+		cleanHeaders = append(cleanHeaders, MessageHeader{Name: header.Name, Value: append([]byte(nil), header.Value...)})
+	}
+	cleanPayload := append([]byte(nil), payload...)
+	if p == nil {
+		return cleanKey, cleanHeaders, cleanPayload, nil
+	}
+	if p.MessageKey != "" {
+		cleanKey = p.applyBytes(cleanKey, p.MessageKey)
+	}
+	for _, rule := range p.MessageHeaders {
+		filtered := cleanHeaders[:0]
+		for _, header := range cleanHeaders {
+			if !strings.EqualFold(header.Name, rule.Name) {
+				filtered = append(filtered, header)
+				continue
+			}
+			if rule.Action == ActionDrop {
+				continue
+			} else {
+				header.Value = p.applyBytes(header.Value, rule.Action)
+				filtered = append(filtered, header)
+			}
+		}
+		cleanHeaders = filtered
+	}
+	if len(cleanPayload) > 0 && len(p.JSONFields) > 0 {
+		var err error
+		cleanPayload, err = p.ApplyBody(cleanPayload)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	return cleanKey, cleanHeaders, cleanPayload, nil
+}
+
+func (p *Policy) applyBytes(value []byte, action Action) []byte {
+	switch action {
+	case ActionDrop:
+		return nil
+	case ActionRedact:
+		return []byte("[REDACTED]")
+	case ActionTokenize:
+		return []byte(p.token(string(value)))
+	default:
+		return append([]byte(nil), value...)
+	}
+}
+
 func validateNamedRule(section string, rule NamedRule) error {
 	if strings.TrimSpace(rule.Name) == "" {
 		return fmt.Errorf("%s rule name is required", section)
+	}
+	if rule.Name != strings.TrimSpace(rule.Name) {
+		return fmt.Errorf("%s rule name %q cannot have leading or trailing whitespace", section, rule.Name)
 	}
 	if err := validateAction(rule.Action); err != nil {
 		return fmt.Errorf("%s rule %q: %w", section, rule.Name, err)
