@@ -1,5 +1,42 @@
 # Upgrading InfernoSIM
 
+## v3.3 to v3.4
+
+Existing incident directories and `replay.yaml` files remain valid. All v3.4
+configuration is opt-in.
+
+### Incident-to-test workflow
+
+`infernosim serve` runs an incident as a standalone dependency simulator with
+separate proxy and control ports. `infernosim testgen` can generate a Go
+Testcontainers test, Docker Compose configuration, or GitHub Actions workflow.
+Generated files are private by default and are never overwritten unless
+`--force` is supplied.
+
+### Guarded matcher healing
+
+`infernosim heal` writes proposals to `replay.proposed.yaml`. It does not modify
+`replay.yaml` unless `--apply` is explicit, and an applied change first creates
+`replay.yaml.bak`. Authentication, tenant, identity, permission, money, status,
+and personal-data fields remain protected from automatic relaxation.
+
+### Kafka and cross-protocol workflows
+
+Kafka capture requires an explicit topic list and either a privacy policy or
+the explicit unsafe raw-capture override. Policy-based replayable capture must
+set `capture_bodies: true`. Broker passwords are read from environment
+variables rather than command-line flags.
+
+AsyncAPI validation currently targets AsyncAPI 3.x JSON messages and local
+references. Cross-protocol workflow verification can order HTTP, gRPC, and
+Kafka observations with optional correlation and timing constraints.
+
+### CI reports
+
+Workflow, AsyncAPI, and Kafka commands can emit JUnit, SARIF, and HTML reports.
+Treat those outputs as build artifacts; they are intentionally not attached to
+the GitHub release.
+
 ## v3.2 to v3.3
 
 Existing incident directories and `replay.yaml` files remain valid. The v3.3

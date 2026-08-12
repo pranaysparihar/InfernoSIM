@@ -1,6 +1,6 @@
 # InfernoSIM v3.4.0
 
-Status: implementation complete; unreleased
+Status: generally available
 
 v3.4 is a single GA release train. No alpha, beta, v3.5, or v3.6 aliases are
 used. Publication is allowed only after the mandatory release workflow passes
@@ -61,8 +61,11 @@ proof artifact without an InfernoSIM-hosted service.
   timing/confidence values, duplicate message IDs, duplicate privacy rules,
   unsupported AsyncAPI schema features, and unsafe generated paths fail before
   network side effects.
-- Release publication requires the Homebrew tap token and uploads only eight
-  platform archives plus `checksums.txt`; benchmark/report JSON is excluded.
+- Automated Homebrew publication requires a credential with write access to
+  the separate tap repository. A maintainer may instead publish from an
+  authenticated local session without storing that credential in InfernoSIM.
+  Releases upload only eight platform archives plus `checksums.txt`;
+  benchmark/report JSON is excluded.
 
 ## Validation evidence
 
