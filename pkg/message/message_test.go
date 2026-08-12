@@ -3,6 +3,7 @@ package message
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -33,7 +34,7 @@ func TestRecordRoundTripAndIntegrity(t *testing.T) {
 		t.Fatalf("payload=%s err=%v", payload, err)
 	}
 	info, _ := os.Stat(path)
-	if info.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("mode=%o", info.Mode().Perm())
 	}
 }

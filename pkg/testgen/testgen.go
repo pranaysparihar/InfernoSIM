@@ -70,20 +70,22 @@ func Generate(opts Options) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	relativeIncident, err := filepath.Rel(absOutput, absIncident)
-	if err != nil {
-		return Result{}, err
-	}
-	workingDirectory, err := os.Getwd()
-	if err != nil {
-		return Result{}, err
-	}
-	repositoryIncident, err := filepath.Rel(workingDirectory, absIncident)
-	if err != nil {
-		return Result{}, err
-	}
-	if strings.HasPrefix(repositoryIncident, ".."+string(filepath.Separator)) && opts.Framework == FrameworkGitHubActions {
-		return Result{}, fmt.Errorf("GitHub Actions generation requires the incident to be inside the current repository")
+	relativeIncident := absIncident
+	repositoryIncident := ""
+	if opts.Framework == FrameworkGitHubActions {
+		workingDirectory, err := os.Getwd()
+		if err != nil {
+			return Result{}, err
+		}
+		repositoryIncident, err = filepath.Rel(workingDirectory, absIncident)
+		if err != nil || repositoryIncident == ".." || strings.HasPrefix(repositoryIncident, ".."+string(filepath.Separator)) || filepath.IsAbs(repositoryIncident) {
+			return Result{}, fmt.Errorf("GitHub Actions generation requires the incident to be inside the current repository")
+		}
+	} else if candidate, relErr := filepath.Rel(absOutput, absIncident); relErr == nil {
+		// A portable relative path is preferable, but Windows cannot construct one
+		// when the output and incident are on different volumes. An absolute host
+		// path remains valid for the local Testcontainers and Compose harnesses.
+		relativeIncident = candidate
 	}
 	if strings.ContainsAny(relativeIncident, "\r\n") || strings.ContainsAny(repositoryIncident, "\r\n") {
 		return Result{}, fmt.Errorf("incident path cannot contain a newline")

@@ -50,8 +50,8 @@ jobs:
         run: |
           go run ./cmd/agent testgen examples/incident-v3.4 --framework github-actions --out dist/ci-generated-actions
           go run ./cmd/agent testgen examples/incident-v3.4 --framework docker-compose --out dist/ci-generated-compose
-          docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
-          docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 dist/ci-generated-actions/infernosim-ci.yaml
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo" -w /repo rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo" -w /repo rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 dist/ci-generated-actions/infernosim-ci.yaml
           docker compose -f dist/ci-generated-compose/compose.infernosim.yaml config >/dev/null
       - name: Validate Compose
         run: docker compose -f docker-compose.yml -f docker-compose.examples.yml config >/dev/null

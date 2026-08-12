@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -54,7 +55,7 @@ func TestWriteJUnitSARIFAndHTML(t *testing.T) {
 		if err != nil {
 			t.Fatalf("report %s: %v", path, err)
 		}
-		if info.Mode().Perm() != 0o600 {
+		if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 			t.Fatalf("report %s mode=%v", path, info.Mode().Perm())
 		}
 	}
