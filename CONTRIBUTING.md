@@ -21,7 +21,7 @@ changes reviewable, deterministic, and safe to run on real incident data.
    ./infernosim lint examples/replay-v3.yaml
    ```
 
-The [README](README.md) documents the user-facing capture, replay, scenario,
+The [README](Readme.md) documents the user-facing capture, replay, scenario,
 template, gRPC, OpenAPI, and report workflows.
 
 ## How to contribute

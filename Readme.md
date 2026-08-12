@@ -52,19 +52,19 @@ the container control API.
 
 ## Install
 
-InfernoSIM v3.4 and later are distributed through the project Homebrew cask:
+InfernoSIM v3.4 and later are available from the project Homebrew formula. It
+builds the tagged source locally so macOS does not require a Gatekeeper bypass:
 
 ```bash
-brew tap pranaysparihar/infernosim
-brew install --cask pranaysparihar/infernosim/infernosim
+brew install pranaysparihar/infernosim/infernosim
 ```
 
-If v3.0.1 was installed from the older formula, migrate once before installing
-the cask:
+If you installed the short-lived v3.4 cask before the formula was corrected,
+migrate once:
 
 ```bash
-brew uninstall pranaysparihar/infernosim/infernosim
-brew install --cask pranaysparihar/infernosim/infernosim
+brew uninstall --cask infernosim
+brew install pranaysparihar/infernosim/infernosim
 ```
 
 Release archives and `checksums.txt` remain available from GitHub for Linux,

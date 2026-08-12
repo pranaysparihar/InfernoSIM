@@ -46,6 +46,14 @@ jobs:
         run: go run ./cmd/benchmark --runs 100 --out /tmp/infernosim-benchmark.json
       - name: Validate shell scripts
         run: for script in scripts/*.sh; do bash -n "$script"; done
+      - name: Validate Homebrew formula generation
+        env:
+          INFERNOSIM_SOURCE_SHA256: "0000000000000000000000000000000000000000000000000000000000000000"
+        run: |
+          scripts/update-homebrew-formula.sh v0.0.0 /tmp/infernosim.rb
+          ruby -c /tmp/infernosim.rb
+          grep -F 'archive/refs/tags/v0.0.0.tar.gz' /tmp/infernosim.rb
+          grep -F 'main.version=#{version}' /tmp/infernosim.rb
       - name: Validate workflows and generated harnesses
         run: |
           go run ./cmd/agent testgen examples/incident-v3.4 --framework github-actions --out dist/ci-generated-actions
