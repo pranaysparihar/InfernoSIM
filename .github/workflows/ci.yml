@@ -48,7 +48,7 @@ jobs:
         run: for script in scripts/*.sh; do bash -n "$script"; done
       - name: Validate Homebrew formula generation
         env:
-          INFERNOSIM_SOURCE_SHA256: 0000000000000000000000000000000000000000000000000000000000000000
+          INFERNOSIM_SOURCE_SHA256: "0000000000000000000000000000000000000000000000000000000000000000"
         run: |
           scripts/update-homebrew-formula.sh v0.0.0 /tmp/infernosim.rb
           ruby -c /tmp/infernosim.rb
