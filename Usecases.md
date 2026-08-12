@@ -4,7 +4,7 @@
 > isolated environment. Raw payload replay requires capture with
 > `--capture-sensitive-data`. HTTPS CONNECT, HTTP/2, and gRPC response
 > virtualization are opt-in and require an explicitly allowlisted replay CA.
-> See `README.md` for the current safety model and limits.
+> See `Readme.md` for the current safety model and limits.
 
 InfernoSIM solves immediate, expensive engineering pain points. Below are simulated real-world scenarios running against live local processes to demonstrate how InfernoSIM evaluates strict API constraints and enforces determinism.
 

@@ -61,9 +61,11 @@ proof artifact without an InfernoSIM-hosted service.
   timing/confidence values, duplicate message IDs, duplicate privacy rules,
   unsupported AsyncAPI schema features, and unsafe generated paths fail before
   network side effects.
-- Automated Homebrew publication requires a credential with write access to
-  the separate tap repository. A maintainer may instead publish from an
-  authenticated local session without storing that credential in InfernoSIM.
+- Homebrew publication does not require a cross-repository personal access
+  token. The tap's own scheduled/manual workflow reads the latest public
+  release and publishes the source-built formula with its repository-scoped
+  `GITHUB_TOKEN`; a maintainer can also update it from an authenticated local
+  session.
   Releases upload only eight platform archives plus `checksums.txt`;
   benchmark/report JSON is excluded.
 
@@ -84,10 +86,10 @@ proof artifact without an InfernoSIM-hosted service.
   proxy/control ports, and passes the real Testcontainers lifecycle/proxy/reset
   test. Node and Go Compose smoke profiles pass against that image.
 - Targeted matcher, gRPC, template, OpenAPI, bundle, healer, and message fuzz
-  smoke tests pass. GoReleaser builds all eight platform archives, a checksum
-  manifest, and the Homebrew cask; the upload-asset assertion reports nine
-  project assets, which GitHub displays as 11 after its two automatic source
-  downloads.
+  smoke tests pass. GoReleaser builds all eight platform archives and a
+  checksum manifest; the source-built Homebrew formula passes `brew test`.
+  The upload-asset assertion reports nine project assets, which GitHub displays
+  as 11 after its two automatic source downloads.
 - The Docker smoke passes capture → validation → replay → consume against
   Redpanda v25.2.9 using a pinned multi-architecture image digest and separate
   internal/external listeners. This remains a mandatory release-workflow gate.
