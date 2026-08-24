@@ -1,6 +1,6 @@
 # InfernoSIM v4.0.0
 
-Status: release candidate; publish only from a passing annotated `v4.0.0` tag
+Status: generally available
 
 v4 adds a local, incident-derived reliability gate for tool-using agents. It
 replays recorded LLM and tool protocols, injects deterministic semantic and
@@ -88,8 +88,8 @@ is compatibility evidence, not the deterministic release oracle.
 - Generated agent GitHub Actions and Compose harnesses pass `actionlint` and
   `docker compose config`. All repository workflows pass `actionlint`.
 - A local GoReleaser snapshot builds eight platform archives plus
-  `checksums.txt`; every archive checksum verifies. Snapshot artifacts remain
-  local and are not a published release.
+  `checksums.txt`; every archive checksum verifies. The tagged release workflow
+  repeats the mandatory release gates before publishing that same artifact set.
 
 ## Safety and compatibility
 
