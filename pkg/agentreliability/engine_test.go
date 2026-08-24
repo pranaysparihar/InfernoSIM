@@ -93,6 +93,18 @@ func TestVerificationPredicateMustBeSatisfied(t *testing.T) {
 	}
 }
 
+func TestNoUnexpectedCallsMessagesAreTruthful(t *testing.T) {
+	config := Config{Assertions: []Assertion{{ID: "recorded-only", Type: "no_unexpected_calls"}}}
+	passed := Evaluate(config, Snapshot{}, false, time.Second)
+	if len(passed) != 1 || !passed[0].Passed || passed[0].Message != "all agent outbound calls stayed within the recorded universe" {
+		t.Fatalf("passing result = %#v", passed)
+	}
+	failed := Evaluate(config, Snapshot{}, true, time.Second)
+	if len(failed) != 1 || failed[0].Passed || failed[0].Message != "agent made an outbound call outside the recorded universe" {
+		t.Fatalf("failing result = %#v", failed)
+	}
+}
+
 func TestSemanticMutation(t *testing.T) {
 	config := testConfig()
 	engine, _ := NewEngine(config, []string{"missing"})

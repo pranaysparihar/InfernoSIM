@@ -685,7 +685,11 @@ func Evaluate(config Config, snapshot Snapshot, unexpectedCalls bool, elapsed ti
 			result.Message = fmt.Sprintf("tool %s called %d time(s); maximum %d", assertion.Tool, count, assertion.Max)
 		case "no_unexpected_calls":
 			result.Passed = !unexpectedCalls
-			result.Message = "agent made an outbound call outside the recorded universe"
+			if unexpectedCalls {
+				result.Message = "agent made an outbound call outside the recorded universe"
+			} else {
+				result.Message = "all agent outbound calls stayed within the recorded universe"
+			}
 		case "deadline":
 			deadline, _ := time.ParseDuration(assertion.Duration)
 			result.Passed = elapsed <= deadline
