@@ -69,3 +69,15 @@ func TestSARIFSemanticVersionNormalization(t *testing.T) {
 		t.Fatalf("invalid semantic version was emitted: %q", got)
 	}
 }
+
+func TestJUnitCaseDurationsUseSeconds(t *testing.T) {
+	data, err := marshalJUnit(Result{Tool: "InfernoSIM", Category: "agent-reliability", Cases: []Case{{
+		ID: "fc_1", Name: "baseline", Passed: true, Duration: "1500ms",
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `time="1.500000"`) {
+		t.Fatalf("JUnit duration is not expressed in seconds: %s", data)
+	}
+}

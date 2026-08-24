@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-08-24T00:00:00Z",
+  "env": "sanitized-fixture",
+  "host": "mcp-stdio",
+  "inbound_count": 0,
+  "outbound_count": 0,
+  "schema_version": 1,
+  "capabilities": ["agent-reliability", "mcp-stdio"]
+}

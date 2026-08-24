@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.25.12"
+          go-version: "1.26.6"
           cache: true
       - name: Check formatting
         run: |
@@ -44,6 +44,13 @@ jobs:
         run: go test -count=1 -race ./...
       - name: Verify deterministic incident-to-test baseline
         run: go run ./cmd/benchmark --runs 100 --out /tmp/infernosim-benchmark.json
+      - name: Verify deterministic agent reliability controls
+        run: scripts/agent-smoke.sh
+      - name: Verify agent reliability benchmark contract
+        run: |
+          work_dir="$(mktemp -d)"
+          go build -trimpath -o "$work_dir/agentlab" ./examples/agentlab
+          go run ./cmd/agentbenchmark --runs 5 --agent-command "$work_dir/agentlab" --out /tmp/infernosim-agent-benchmark.json
       - name: Validate shell scripts
         run: for script in scripts/*.sh; do bash -n "$script"; done
       - name: Validate Homebrew formula generation
@@ -58,9 +65,13 @@ jobs:
         run: |
           go run ./cmd/agent testgen examples/incident-v3.4 --framework github-actions --out dist/ci-generated-actions
           go run ./cmd/agent testgen examples/incident-v3.4 --framework docker-compose --out dist/ci-generated-compose
+          go run ./cmd/agent testgen examples/agent-reliability --profile agent --framework github-actions --out dist/ci-generated-agent-actions
+          go run ./cmd/agent testgen examples/agent-reliability --profile agent --framework docker-compose --out dist/ci-generated-agent-compose
           docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo" -w /repo rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
           docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo" -w /repo rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 dist/ci-generated-actions/infernosim-ci.yaml
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo" -w /repo rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 dist/ci-generated-agent-actions/infernosim-ci.yaml
           docker compose -f dist/ci-generated-compose/compose.infernosim.yaml config >/dev/null
+          docker compose -f dist/ci-generated-agent-compose/compose.infernosim.yaml config >/dev/null
       - name: Validate Compose
         run: docker compose -f docker-compose.yml -f docker-compose.examples.yml config >/dev/null
 
@@ -92,7 +103,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.25.12"
+          go-version: "1.26.6"
           cache: true
       - name: Unit tests
         run: go test -count=1 ./...
@@ -110,7 +121,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.25.12"
+          go-version: "1.26.6"
           cache: true
       - run: go test ./pkg/matcher -run=^$ -fuzz=FuzzJSONPathValue -fuzztime=10s
       - run: go test ./pkg/grpcsim -run=^$ -fuzz=FuzzSplitFrames -fuzztime=10s
@@ -119,6 +130,9 @@ jobs:
       - run: go test ./pkg/bundlev2 -run=^$ -fuzz=FuzzExtractArchive -fuzztime=10s
       - run: go test ./pkg/heal -run=^$ -fuzz=FuzzFlattenJSON -fuzztime=10s
       - run: go test ./pkg/message -run=^$ -fuzz=FuzzRecordValidate -fuzztime=10s
+      - run: go test ./pkg/jsonpath -run=^$ -fuzz=FuzzOperations -fuzztime=10s
+      - run: go test ./pkg/agentreliability -run=^$ -fuzz=FuzzEngineProcess -fuzztime=10s
+      - run: go test ./pkg/mcpproxy -run=^$ -fuzz=FuzzEquivalentRequest -fuzztime=10s
 
   container:
     runs-on: ubuntu-latest

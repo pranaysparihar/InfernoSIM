@@ -8,7 +8,9 @@ InfernoSIM releases are produced from annotated `v*` tags by
 1. Confirm `go test -race ./...`, nested Testcontainers module tests,
    `go vet ./...`, `go mod tidy -diff`, the fuzz smoke suite, Docker builds,
    both Compose smoke profiles, `scripts/kafka-smoke.sh`, and the 100-run
-   category benchmark pass.
+   category benchmark pass. For v4, also require `scripts/agent-smoke.sh`, the
+   20-iteration agent benchmark, generated agent-harness validation, and an
+   Ollama compatibility smoke when a local tool-capable model is available.
 2. Update `RELEASE_NOTES.md` and `docs/UPGRADING.md`.
 3. Run `goreleaser check` and a local snapshot with
    `goreleaser release --snapshot --clean`.
@@ -39,7 +41,7 @@ annotated tag, run GoReleaser locally with the authenticated GitHub token
 supplied as `GITHUB_TOKEN`, clone the tap, and generate the formula with:
 
 ```bash
-scripts/update-homebrew-formula.sh v3.4.0 /path/to/homebrew-infernosim/Formula/infernosim.rb
+scripts/update-homebrew-formula.sh v4.0.0 /path/to/homebrew-infernosim/Formula/infernosim.rb
 ```
 
 Commit and push the formula using the maintainer's existing Git credentials,

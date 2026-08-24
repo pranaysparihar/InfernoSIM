@@ -83,9 +83,14 @@ Content-Length: 0
 
 ## Use Case E: Preventing PII Leaks (Security Auditing)
 **The Situation:** Your company relies on multiple external SaaS APIs. A developer accidentally pushes code that includes user Social Security Numbers in a JSON payload sent to a third-party analytics provider via HTTPS.
-**The InfernoSIM Solution:** Since InfernoSIM executes transparent MITM decryption and tracks precise metrics, the exact payload is decoded, base64 cached, and uniquely hashed for compliance review.
+**The InfernoSIM Solution:** Route the explicitly allowlisted staging host
+through HTTPS MITM capture and apply a privacy policy that drops, redacts, or
+deterministically tokenizes sensitive JSON fields before anything is written to
+the incident.
 
-* **The Magic:** Security teams can easily monitor or grep the `events.log` for PII signatures *before* the traffic leaves the secure staging environment, thanks to portable JSON formatting.
+* **The behavior:** Security teams can validate the transformed incident and
+  compare stable hashes without committing the original PII. Forwarded traffic
+  is unchanged; the policy operates on the captured copy.
 
 **Live Data Output (Tracing Decoded Payloads with internal Telemetry Tracking):**
 ```json
@@ -95,12 +100,14 @@ Content-Length: 0
   "url":"http://localhost:8081/secure/profile",
   "duration":3623000,
   "bodySize":72,
-  "bodyB64":"eyJ1c2VyIjoiam9obiIsICJzc24iOiIxMjMtNDU2LTc4OTAiLCAidHJhY2tpbmdfZGF0YSI6IltodWdlIGFycmF5Li4uXSJ9",
+  "bodyB64":"eyJ1c2VyIjoidG9rX2YwMWQyIiwic3NuIjoiW1JFREFDVEVEXSJ9",
   "bodySha256":"80de193c6e644b2c092cd4325df1a86c31ed8ce9c8dfd8f1c6b4528c70ebe82d",
   "bytesSent":72
 }
 ```
-*The `bodyB64` cleanly exposes the nested `"ssn":"123-456-7890"` while `duration` and `bytesSent` track the SLA.*
+*The stored copy contains only the configured token and redaction. Raw body
+capture remains an explicit unsafe override and should not be used for this
+workflow.*
 
 ## Use Case F: Eliminating "Flaky" Integration Tests (The Offline Mode)
 **The Situation:** Your CI/CD pipeline fails 20% of the time because a legacy external test database or staging API randomly times out during the test run.
@@ -209,3 +216,54 @@ Event #3: GET /api/v1/user/profile
 ============================
 ```
 *Subtle regressions that would be "green" in a standard CI pass are instantly flagged.*
+
+## Use Case L: Preventing a Double Refund After an Ambiguous Tool Response
+
+**The situation:** An agent calls `payment.refund`. The payment system commits
+the refund, but the response is lost. A naive retry can refund the customer
+twice even though the final chat answer looks reasonable.
+
+**The InfernoSIM solution:** Declare `payment.refund` as an effect keyed by
+`payment_id`, inject `committed_response_lost` on the first call, and require a
+successful `payment.refund_status` result before any retry. The ledger checks
+the consequence rather than grading the agent's prose.
+
+```bash
+infernosim agent run ./incidents/refund-agent \
+  --case refund-response-lost \
+  -- ./run-agent-tests
+```
+
+A safe loop verifies the committed state and passes. An unsafe loop retries,
+commits twice, and produces a failing JUnit/SARIF/HTML finding.
+
+## Use Case M: Stopping an Agent When Its Policy Evidence Degrades
+
+**The situation:** A policy tool still returns HTTP 200, but a deployment omits
+the `refundable` field. Code that treats missing as truthy or falls back to an
+LLM guess can perform a forbidden refund.
+
+**The InfernoSIM solution:** Delete the exact semantic field from the recorded
+tool result and assert `forbidden_effect: payment.refund` for that case. The
+same pattern tests missing approval scopes, changed types, empty-success
+responses, reordered candidates, and truncated JSON or streaming frames.
+
+This differs from a static schema check: the real agent command runs and the
+test observes whether it actually performs the side effect under degraded
+evidence.
+
+## Use Case N: Testing Agent Framework or Model Migrations Offline
+
+**The situation:** A team changes its agent framework, prompt, or model and
+wants to know whether tool-use safeguards regressed without spending tokens or
+calling real SaaS dependencies in every pull request.
+
+**The InfernoSIM solution:** Capture and sanitize one representative protocol
+trajectory, keep the LLM/tool envelopes as the deterministic fixture, then run
+both the old and new control loops against identical stable fault cases.
+OpenAI Responses, OpenAI Chat Completions, Anthropic Messages, Ollama chat, MCP
+HTTP, and MCP stdio envelopes are recognized.
+
+The result is a reproducible control-loop comparison. It does not claim that a
+recorded fixture measures general model intelligence; new trajectories should
+be added as production evidence and risks expand.

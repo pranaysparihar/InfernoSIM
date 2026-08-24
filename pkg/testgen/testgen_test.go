@@ -130,3 +130,41 @@ func TestGeneratedGoHarnessRejectsSymlinks(t *testing.T) {
 		t.Fatal("generated harness is missing filesystem boundary checks")
 	}
 }
+
+func TestGenerateAgentProfile(t *testing.T) {
+	source := filepath.Join("..", "..", "examples", "agent-reliability")
+	incident, err := os.MkdirTemp(".", ".testgen-agent-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(incident) })
+	for _, name := range []string{"inbound.log", "outbound.log", "incident.json", "replay.yaml"} {
+		data, readErr := os.ReadFile(filepath.Join(source, name))
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if writeErr := os.WriteFile(filepath.Join(incident, name), data, 0o600); writeErr != nil {
+			t.Fatal(writeErr)
+		}
+	}
+	for _, framework := range []string{FrameworkGoTestcontainers, FrameworkDockerCompose, FrameworkGitHubActions} {
+		out := t.TempDir()
+		result, generateErr := Generate(Options{IncidentDir: incident, OutputDir: out, Framework: framework, Profile: ProfileAgent, Image: "infernosim:test"})
+		if generateErr != nil {
+			t.Fatalf("%s: %v", framework, generateErr)
+		}
+		if len(result.Files) < 2 {
+			t.Fatalf("%s files = %v", framework, result.Files)
+		}
+		manifest, readErr := os.ReadFile(filepath.Join(out, "agent-cases.json"))
+		if readErr != nil || !strings.Contains(string(manifest), "refund-response-lost") {
+			t.Fatalf("%s manifest = %s, %v", framework, manifest, readErr)
+		}
+		if framework == FrameworkGitHubActions {
+			workflow, readErr := os.ReadFile(filepath.Join(out, "infernosim-ci.yaml"))
+			if readErr != nil || !strings.Contains(string(workflow), "agent stress") || strings.Contains(string(workflow), "go test ./...\n            curl") {
+				t.Fatalf("generated agent workflow is not using the assertion runner: %v\n%s", readErr, workflow)
+			}
+		}
+	}
+}

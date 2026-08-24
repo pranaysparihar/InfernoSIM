@@ -28,12 +28,24 @@ type Finding struct {
 	Location string `json:"location,omitempty"`
 }
 
+type Case struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Category string `json:"category,omitempty"`
+	Severity string `json:"severity,omitempty"`
+	Passed   bool   `json:"passed"`
+	Duration string `json:"duration,omitempty"`
+	Message  string `json:"message,omitempty"`
+}
+
 type Result struct {
 	Tool      string    `json:"tool"`
+	Category  string    `json:"category"`
 	Outcome   string    `json:"outcome"`
 	Summary   string    `json:"summary"`
 	Generated time.Time `json:"generated"`
 	Findings  []Finding `json:"findings"`
+	Cases     []Case    `json:"cases,omitempty"`
 }
 
 func WriteFormats(directory string, formats []string, result Result) ([]string, error) {
@@ -42,6 +54,9 @@ func WriteFormats(directory string, formats []string, result Result) ([]string, 
 	}
 	if result.Generated.IsZero() {
 		result.Generated = time.Now().UTC()
+	}
+	if result.Category == "" {
+		result.Category = "replay"
 	}
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return nil, err
@@ -133,13 +148,14 @@ type junitSuite struct {
 	Name     string      `xml:"name,attr"`
 	Tests    int         `xml:"tests,attr"`
 	Failures int         `xml:"failures,attr"`
-	Time     string      `xml:"time,attr"`
+	Time     string      `xml:"time,attr,omitempty"`
 	Cases    []junitCase `xml:"testcase"`
 }
 
 type junitCase struct {
 	Name      string        `xml:"name,attr"`
 	Classname string        `xml:"classname,attr"`
+	Time      string        `xml:"time,attr,omitempty"`
 	Failure   *junitFailure `xml:"failure,omitempty"`
 }
 
@@ -150,10 +166,39 @@ type junitFailure struct {
 }
 
 func marshalJUnit(result Result) ([]byte, error) {
+	category := strings.ToLower(strings.TrimSpace(result.Category))
+	if category == "" {
+		category = "replay"
+	}
+	category = regexp.MustCompile(`[^a-z0-9_.-]+`).ReplaceAllString(category, "-")
+	if len(result.Cases) > 0 {
+		suite := junitSuite{Name: result.Tool, Tests: len(result.Cases)}
+		var totalDuration time.Duration
+		for _, resultCase := range result.Cases {
+			testCase := junitCase{Name: resultCase.ID + "-" + resultCase.Name, Classname: "infernosim." + category}
+			if duration, err := time.ParseDuration(resultCase.Duration); err == nil {
+				totalDuration += duration
+				testCase.Time = fmt.Sprintf("%.6f", duration.Seconds())
+			}
+			if !resultCase.Passed {
+				testCase.Failure = &junitFailure{Message: resultCase.Message, Type: "INFERNOSIM_CASE_FAILED", Body: resultCase.Message}
+				suite.Failures++
+			}
+			suite.Cases = append(suite.Cases, testCase)
+		}
+		if totalDuration > 0 {
+			suite.Time = fmt.Sprintf("%.6f", totalDuration.Seconds())
+		}
+		data, err := xml.MarshalIndent(suite, "", "  ")
+		if err != nil {
+			return nil, err
+		}
+		return append([]byte(xml.Header), data...), nil
+	}
 	suite := junitSuite{Name: result.Tool, Tests: len(result.Findings) + 1}
 	suite.Cases = append(suite.Cases, junitCase{
-		Name:      "replay-outcome",
-		Classname: "infernosim.replay",
+		Name:      category + "-outcome",
+		Classname: "infernosim." + category,
 	})
 	if strings.HasPrefix(result.Outcome, "FAIL") {
 		suite.Failures++
@@ -166,7 +211,7 @@ func marshalJUnit(result Result) ([]byte, error) {
 	for index, finding := range result.Findings {
 		testCase := junitCase{
 			Name:      fmt.Sprintf("%s-%d", finding.RuleID, index+1),
-			Classname: "infernosim.contract",
+			Classname: "infernosim." + category,
 			Failure: &junitFailure{
 				Message: finding.Title,
 				Type:    finding.RuleID,
@@ -311,7 +356,7 @@ var htmlReportTemplate = template.Must(template.New("report").Parse(`<!doctype h
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>InfernoSIM replay report</title>
+  <title>InfernoSIM {{.Category}} report</title>
   <style>
     :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }
     body { max-width: 1000px; margin: 3rem auto; padding: 0 1.25rem; line-height: 1.5; }
@@ -323,9 +368,11 @@ var htmlReportTemplate = template.Must(template.New("report").Parse(`<!doctype h
   </style>
 </head>
 <body>
-<header><h1>InfernoSIM replay report</h1><p>Generated {{.Generated.Format "2006-01-02 15:04:05Z07:00"}}</p></header>
+<header><h1>InfernoSIM {{.Category}} report</h1><p>Generated {{.Generated.Format "2006-01-02 15:04:05Z07:00"}}</p></header>
 <p class="outcome">{{.Outcome}}</p><p>{{.Summary}}</p>
-<h2>Contract and drift findings ({{len .Findings}})</h2>
+{{if .Cases}}<h2>Cases ({{len .Cases}})</h2><table><thead><tr><th>Case</th><th>Category</th><th>Severity</th><th>Result</th><th>Duration</th><th>Detail</th></tr></thead>
+<tbody>{{range .Cases}}<tr><td><code>{{.ID}}</code><br>{{.Name}}</td><td>{{.Category}}</td><td>{{.Severity}}</td><td>{{if .Passed}}PASS{{else}}FAIL{{end}}</td><td>{{.Duration}}</td><td>{{.Message}}</td></tr>{{end}}</tbody></table>{{end}}
+<h2>Findings ({{len .Findings}})</h2>
 {{if .Findings}}<table><thead><tr><th>Rule</th><th>Level</th><th>Finding</th><th>Location</th></tr></thead>
 <tbody>{{range .Findings}}<tr><td><code>{{.RuleID}}</code></td><td>{{.Level}}</td><td><strong>{{.Title}}</strong><br>{{.Message}}</td><td>{{.Location}}</td></tr>{{end}}</tbody></table>
 {{else}}<p>No findings.</p>{{end}}

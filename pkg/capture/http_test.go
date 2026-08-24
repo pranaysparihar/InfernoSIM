@@ -486,6 +486,42 @@ func TestMITMCapturesHTTPSGRPCResponseAndTrailers(t *testing.T) {
 	}
 }
 
+func TestStreamingResponseCapturePreservesBoundedFrames(t *testing.T) {
+	response := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": {"text/event-stream"}},
+		Trailer:    make(http.Header),
+		Body: io.NopCloser(&chunkReader{chunks: [][]byte{
+			[]byte("data: {\"step\":1}\n\n"),
+			[]byte("data: {\"step\":2}\n\n"),
+		}}),
+	}
+	recorder := httptest.NewRecorder()
+	body, truncated, frames := copyStreamingResponse(recorder, response)
+	if truncated || len(frames) != 2 || string(body) != "data: {\"step\":1}\n\ndata: {\"step\":2}\n\n" {
+		t.Fatalf("body=%q truncated=%t frames=%#v", body, truncated, frames)
+	}
+	for index, frame := range frames {
+		decoded, err := base64.StdEncoding.DecodeString(frame.BodyB64)
+		if err != nil || string(decoded) != string([][]byte{[]byte("data: {\"step\":1}\n\n"), []byte("data: {\"step\":2}\n\n")}[index]) {
+			t.Fatalf("frame %d = %q, %v", index, decoded, err)
+		}
+	}
+}
+
+type chunkReader struct {
+	chunks [][]byte
+}
+
+func (r *chunkReader) Read(destination []byte) (int, error) {
+	if len(r.chunks) == 0 {
+		return 0, io.EOF
+	}
+	chunk := r.chunks[0]
+	r.chunks = r.chunks[1:]
+	return copy(destination, chunk), nil
+}
+
 type captureTestEchoServer struct {
 	pb.UnimplementedEchoServiceServer
 }

@@ -22,6 +22,9 @@ import (
 	"syscall"
 	"time"
 
+	"infernosim/pkg/agentotel"
+	"infernosim/pkg/agentreliability"
+	"infernosim/pkg/agentrunner"
 	"infernosim/pkg/asyncapi"
 	"infernosim/pkg/bundlev2"
 	"infernosim/pkg/capture"
@@ -33,6 +36,7 @@ import (
 	"infernosim/pkg/inject"
 	"infernosim/pkg/kafkasim"
 	"infernosim/pkg/matcher"
+	"infernosim/pkg/mcpproxy"
 	"infernosim/pkg/message"
 	"infernosim/pkg/privacy"
 	"infernosim/pkg/replay"
@@ -102,6 +106,8 @@ func main() {
 		os.Exit(runLint(os.Args[2:]))
 	case "match":
 		os.Exit(runMatch(os.Args[2:]))
+	case "agent":
+		os.Exit(runAgentReliability(os.Args[2:]))
 	case "version":
 		fmt.Printf("infernosim version %s, commit %s, built at %s by %s\n", version, commit, date, versionBy)
 		os.Exit(0)
@@ -142,6 +148,7 @@ Commands:
   workflow Verify ordered HTTP, gRPC, and Kafka causal workflows
   lint     Validate a replay configuration and report design problems
   match    Explain semantic matcher decisions for a captured incident
+  agent    Run deterministic agent reliability cases and stress exploration
   version  Print version information
 
 General Flags:
@@ -1958,6 +1965,8 @@ func runServe(args []string) int {
 	httpsStub := fs.Bool("https-stub", false, "Enable native HTTPS response stubbing")
 	caDir := fs.String("stub-ca-dir", "", "Directory containing the HTTPS stub CA")
 	allowHosts := fs.String("stub-mitm-allow-hosts", "", "Comma-separated HTTPS dependency hosts allowed for TLS stubbing")
+	agentFault := fs.String("agent-fault", "", "Agent reliability fault ID to activate")
+	agentCase := fs.String("agent-case", "", "Agent reliability case ID included in the deterministic proof")
 	positionalIncident := ""
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		positionalIncident = args[0]
@@ -1974,14 +1983,16 @@ func runServe(args []string) int {
 		return 2
 	}
 	server, err := simserver.New(simserver.Options{
-		IncidentDir: positionalIncident,
-		ConfigPath:  *configPath,
-		Listen:      *listen,
-		AdminListen: *adminListen,
-		ObservedLog: *observedLog,
-		HTTPS:       *httpsStub,
-		CADir:       *caDir,
-		AllowHosts:  splitNonEmpty(*allowHosts),
+		IncidentDir:   positionalIncident,
+		ConfigPath:    *configPath,
+		Listen:        *listen,
+		AdminListen:   *adminListen,
+		ObservedLog:   *observedLog,
+		HTTPS:         *httpsStub,
+		CADir:         *caDir,
+		AllowHosts:    splitNonEmpty(*allowHosts),
+		AgentFaultIDs: splitNonEmpty(*agentFault),
+		AgentCaseID:   *agentCase,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
@@ -2019,6 +2030,7 @@ func runTestgen(args []string) int {
 	out := fs.String("out", "./infernosim-integration", "Output directory")
 	image := fs.String("image", "", "InfernoSIM container image")
 	packageName := fs.String("package", "integration", "Go package for generated Testcontainers harness")
+	profile := fs.String("profile", testgen.ProfileReplay, "Generation profile: replay or agent")
 	force := fs.Bool("force", false, "Overwrite generated harness files")
 	positionalIncident := ""
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
@@ -2042,6 +2054,7 @@ func runTestgen(args []string) int {
 		Image:       *image,
 		Package:     *packageName,
 		Force:       *force,
+		Profile:     *profile,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "testgen: %v\n", err)
@@ -2051,6 +2064,372 @@ func runTestgen(args []string) int {
 		fmt.Printf("Generated: %s\n", path)
 	}
 	return 0
+}
+
+func runAgentReliability(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "Usage: infernosim agent <cases|run|stress|mcp|otel> ...")
+		return 2
+	}
+	switch args[0] {
+	case "cases":
+		return runAgentCases(args[1:])
+	case "run":
+		return runAgentExecution(args[1:], false)
+	case "stress":
+		return runAgentExecution(args[1:], true)
+	case "mcp":
+		return runAgentMCP(args[1:])
+	case "otel":
+		return runAgentOTel(args[1:])
+	default:
+		fmt.Fprintf(os.Stderr, "agent: unknown subcommand %q (expected cases, run, stress, mcp, or otel)\n", args[0])
+		return 2
+	}
+}
+
+func runAgentOTel(args []string) int {
+	if len(args) == 0 || args[0] != "import" {
+		fmt.Fprintln(os.Stderr, "Usage: infernosim agent otel import <incident-dir> --input otlp.json [--hash-content]")
+		return 2
+	}
+	fs := flag.NewFlagSet("agent otel import", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	input := fs.String("input", "", "OpenTelemetry JSON or JSONL export")
+	output := fs.String("output", "", "Normalized output (default: <incident>/agent-spans.jsonl)")
+	hashContent := fs.Bool("hash-content", false, "Store SHA-256 hashes of prompt/tool content without storing raw values")
+	incident, remaining := positionalBeforeFlags(args[1:])
+	if err := fs.Parse(remaining); err != nil {
+		return 2
+	}
+	if incident == "" && fs.NArg() > 0 {
+		incident = fs.Arg(0)
+	}
+	if incident == "" || *input == "" {
+		fmt.Fprintln(os.Stderr, "Usage: infernosim agent otel import <incident-dir> --input otlp.json [--hash-content]")
+		return 2
+	}
+	if _, err := replaydriver.OpenBundle(incident); err != nil {
+		fmt.Fprintf(os.Stderr, "agent otel import: %v\n", err)
+		return 1
+	}
+	if *output == "" {
+		*output = filepath.Join(incident, "agent-spans.jsonl")
+	}
+	spans, err := agentotel.Import(agentotel.ImportOptions{InputPath: *input, OutputPath: *output, HashContent: *hashContent})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "agent otel import: %v\n", err)
+		return 1
+	}
+	fmt.Printf("Imported %d redacted agent span(s): %s\n", len(spans), *output)
+	return 0
+}
+
+func runAgentMCP(args []string) int {
+	if len(args) == 0 || (args[0] != "record" && args[0] != "replay") {
+		fmt.Fprintln(os.Stderr, "Usage: infernosim agent mcp <record|replay> ...")
+		return 2
+	}
+	mode := args[0]
+	flagArgs, command := splitCommand(args[1:])
+	fs := flag.NewFlagSet("agent mcp "+mode, flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	configPath := fs.String("config", "", "Replay configuration (default: <incident>/replay.yaml)")
+	transcriptPath := fs.String("transcript", "", "MCP transcript path (default: <incident>/mcp.log)")
+	fault := fs.String("fault", "", "Agent reliability fault ID to activate during replay")
+	proofPath := fs.String("proof", "", "Optional private JSON path for the final agent ledger snapshot")
+	reportDir := fs.String("report-dir", "", "Optional directory for MCP assertion JSON, JUnit, SARIF, and HTML")
+	formats := fs.String("formats", "junit,sarif,html", "Comma-separated MCP assertion report formats")
+	force := fs.Bool("force", false, "Overwrite an existing MCP transcript during record")
+	incident, remaining := positionalBeforeFlags(flagArgs)
+	if err := fs.Parse(remaining); err != nil {
+		return 2
+	}
+	if incident == "" && fs.NArg() > 0 {
+		incident = fs.Arg(0)
+	}
+	if incident == "" {
+		fmt.Fprintf(os.Stderr, "Usage: infernosim agent mcp %s <incident-dir> [flags]", mode)
+		if mode == "record" {
+			fmt.Fprint(os.Stderr, " -- <mcp-server-command>")
+		}
+		fmt.Fprintln(os.Stderr)
+		return 2
+	}
+	if *transcriptPath == "" {
+		*transcriptPath = filepath.Join(incident, "mcp.log")
+	}
+	if mode == "record" {
+		if len(command) == 0 {
+			fmt.Fprintln(os.Stderr, "agent mcp record: an explicit MCP server command is required after --")
+			return 2
+		}
+		if err := mcpproxy.RecordCommand(context.Background(), mcpproxy.RecordOptions{
+			OutputPath: *transcriptPath, Command: command, Force: *force,
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "agent mcp record: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if len(command) != 0 {
+		fmt.Fprintln(os.Stderr, "agent mcp replay: no child command is accepted; replay is the MCP server")
+		return 2
+	}
+	if *configPath == "" {
+		*configPath = filepath.Join(incident, "replay.yaml")
+	}
+	config, err := replaydriver.LoadReplayConfig(*configPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "agent mcp replay: %v\n", err)
+		return 1
+	}
+	if !config.Agent.Enabled || !config.Agent.Adapters.MCP {
+		fmt.Fprintln(os.Stderr, "agent mcp replay: replay.yaml must enable agent.enabled and agent.adapters.mcp")
+		return 1
+	}
+	activeFaults := splitNonEmpty(*fault)
+	engine, err := agentreliability.NewEngine(config.Agent, activeFaults)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "agent mcp replay: %v\n", err)
+		return 1
+	}
+	replayContext, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	started := time.Now()
+	replayErr := mcpproxy.Replay(mcpproxy.ReplayOptions{Context: replayContext, TranscriptPath: *transcriptPath, Engine: engine})
+	duration := time.Since(started)
+	snapshot := engine.Snapshot()
+	if *proofPath != "" {
+		if err := agentrunner.WriteJSON(*proofPath, snapshot); err != nil {
+			fmt.Fprintf(os.Stderr, "agent mcp replay: write proof: %v\n", err)
+			return 1
+		}
+	}
+	assertions := agentreliability.Evaluate(config.Agent, snapshot, false, duration)
+	var failures []string
+	if replayErr != nil {
+		failures = append(failures, replayErr.Error())
+	}
+	for _, assertion := range assertions {
+		if !assertion.Passed {
+			failures = append(failures, assertion.ID+": "+assertion.Message)
+		}
+	}
+	applied := make(map[string]bool)
+	for _, faultID := range snapshot.AppliedFaults {
+		applied[faultID] = true
+	}
+	for _, faultID := range activeFaults {
+		if !applied[faultID] {
+			failures = append(failures, "selected fault was not triggered: "+faultID)
+		}
+	}
+	caseHash := agentreliability.StableHash(struct {
+		Transcript string
+		Faults     []string
+	}{filepath.Base(*transcriptPath), activeFaults})
+	plannedCase := agentreliability.Case{ID: "mcp_" + caseHash[:16], Description: "MCP stdio baseline"}
+	if len(activeFaults) > 0 {
+		plannedCase.FaultID = strings.Join(activeFaults, ",")
+		plannedCase.Description = "MCP stdio faults: " + plannedCase.FaultID
+		plannedCase.Category = "custom"
+		plannedCase.Severity = "medium"
+		if len(activeFaults) == 1 {
+			for _, configuredFault := range config.Agent.Faults {
+				if configuredFault.ID == activeFaults[0] {
+					plannedCase.Description = configuredFault.Description
+					plannedCase.Category = configuredFault.Category
+					plannedCase.Severity = configuredFault.Severity
+					break
+				}
+			}
+		}
+	}
+	runResult := agentrunner.Result{
+		Version: 1, Case: plannedCase, Passed: len(failures) == 0, Duration: duration,
+		Simulator: snapshot, Assertions: assertions, Failure: strings.Join(failures, "; "),
+	}
+	if *reportDir != "" {
+		results := []agentrunner.Result{runResult}
+		if err := agentrunner.WriteJSON(filepath.Join(*reportDir, "infernosim-mcp-results.json"), results); err != nil {
+			fmt.Fprintf(os.Stderr, "agent mcp replay: write results: %v\n", err)
+			return 1
+		}
+		if err := agentrunner.WriteJSON(filepath.Join(*reportDir, "infernosim-agent-surface.json"), agentrunner.ReliabilitySurface(results)); err != nil {
+			fmt.Fprintf(os.Stderr, "agent mcp replay: write surface: %v\n", err)
+			return 1
+		}
+		if _, err := reporting.WriteFormats(*reportDir, splitNonEmpty(*formats), agentrunner.ReportingResult(results)); err != nil {
+			fmt.Fprintf(os.Stderr, "agent mcp replay: write reports: %v\n", err)
+			return 1
+		}
+	}
+	if !runResult.Passed {
+		fmt.Fprintf(os.Stderr, "agent mcp replay: %s\n", runResult.Failure)
+		return 1
+	}
+	return 0
+}
+
+func runAgentCases(args []string) int {
+	fs := flag.NewFlagSet("agent cases", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	configPath := fs.String("config", "", "Replay configuration (default: <incident>/replay.yaml)")
+	seed := fs.Int64("seed", 0, "Deterministic case-planning seed")
+	budget := fs.Int("budget", 100, "Maximum number of cases including the baseline")
+	asJSON := fs.Bool("json", false, "Emit machine-readable JSON")
+	incident, remaining := positionalBeforeFlags(args)
+	if err := fs.Parse(remaining); err != nil {
+		return 2
+	}
+	if incident == "" && fs.NArg() > 0 {
+		incident = fs.Arg(0)
+	}
+	if incident == "" {
+		fmt.Fprintln(os.Stderr, "Usage: infernosim agent cases <incident-dir> [--seed 42] [--budget 100]")
+		return 2
+	}
+	prepared, err := agentrunner.Prepare(incident, *configPath, *seed, *budget, true)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "agent cases: %v\n", err)
+		return 1
+	}
+	if *asJSON {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(prepared.Cases); err != nil {
+			fmt.Fprintf(os.Stderr, "agent cases: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	for _, plannedCase := range prepared.Cases {
+		fault := plannedCase.FaultID
+		category := plannedCase.Category
+		severity := plannedCase.Severity
+		if fault == "" {
+			fault = "baseline"
+			category = "baseline"
+			severity = "-"
+		}
+		fmt.Printf("%s  %-24s  %-24s  %-8s  %s\n", plannedCase.ID, fault, category, severity, plannedCase.Description)
+	}
+	return 0
+}
+
+func runAgentExecution(args []string, stress bool) int {
+	flagArgs, command := splitCommand(args)
+	fsName := "agent run"
+	if stress {
+		fsName = "agent stress"
+	}
+	fs := flag.NewFlagSet(fsName, flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	configPath := fs.String("config", "", "Replay configuration (default: <incident>/replay.yaml)")
+	caseValue := fs.String("case", "baseline", "Case ID or fault ID (agent run only)")
+	seed := fs.Int64("seed", 0, "Deterministic case-planning seed")
+	budget := fs.Int("budget", 100, "Maximum number of stress cases including the baseline")
+	timeoutValue := fs.String("timeout", agentrunner.DefaultTimeout.String(), "Maximum time for each agent command")
+	reportDir := fs.String("report-dir", "./infernosim-agent-report", "Directory for JSON, JUnit, SARIF, and HTML results")
+	formats := fs.String("formats", "junit,sarif,html", "Comma-separated report formats")
+	outputLimit := fs.Int("output-limit", agentrunner.DefaultOutputLimit, "Maximum captured stdout and stderr bytes per stream")
+	incident, remaining := positionalBeforeFlags(flagArgs)
+	if err := fs.Parse(remaining); err != nil {
+		return 2
+	}
+	if incident == "" && fs.NArg() > 0 {
+		incident = fs.Arg(0)
+	}
+	if incident == "" || len(command) == 0 {
+		fmt.Fprintf(os.Stderr, "Usage: infernosim %s <incident-dir> [flags] -- <agent-command> [args...]\n", map[bool]string{true: "agent stress", false: "agent run"}[stress])
+		return 2
+	}
+	timeout, err := time.ParseDuration(*timeoutValue)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s: invalid timeout: %v\n", fsName, err)
+		return 2
+	}
+	prepared, err := agentrunner.Prepare(incident, *configPath, *seed, *budget, true)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s: %v\n", fsName, err)
+		return 1
+	}
+	cases := prepared.Cases
+	if !stress {
+		selected, resolveErr := agentrunner.ResolveCase(cases, *caseValue)
+		if resolveErr != nil {
+			fmt.Fprintf(os.Stderr, "%s: %v\n", fsName, resolveErr)
+			return 2
+		}
+		cases = []agentreliability.Case{selected}
+	}
+	results := make([]agentrunner.Result, 0, len(cases))
+	for _, plannedCase := range cases {
+		fmt.Printf("Running %s (%s)...\n", plannedCase.ID, plannedCase.Description)
+		result, runErr := agentrunner.Run(context.Background(), agentrunner.Options{
+			IncidentDir: incident, ConfigPath: prepared.ConfigPath, Case: plannedCase,
+			Command: command, Timeout: timeout, OutputLimit: *outputLimit,
+		})
+		if runErr != nil {
+			fmt.Fprintf(os.Stderr, "%s: %s: %v\n", fsName, plannedCase.ID, runErr)
+			return 1
+		}
+		results = append(results, result)
+		if result.Passed {
+			fmt.Printf("PASS %s %s\n", plannedCase.ID, result.Duration.Round(time.Millisecond))
+		} else {
+			fmt.Printf("FAIL %s %s: %s\n", plannedCase.ID, result.Duration.Round(time.Millisecond), result.Failure)
+			if result.Process.Stderr != "" {
+				fmt.Fprintf(os.Stderr, "%s", result.Process.Stderr)
+			}
+		}
+	}
+	if err := os.MkdirAll(*reportDir, 0o700); err != nil {
+		fmt.Fprintf(os.Stderr, "%s: create report directory: %v\n", fsName, err)
+		return 1
+	}
+	jsonPath := filepath.Join(*reportDir, "infernosim-agent-results.json")
+	if err := agentrunner.WriteJSON(jsonPath, results); err != nil {
+		fmt.Fprintf(os.Stderr, "%s: write results: %v\n", fsName, err)
+		return 1
+	}
+	surfacePath := filepath.Join(*reportDir, "infernosim-agent-surface.json")
+	if err := agentrunner.WriteJSON(surfacePath, agentrunner.ReliabilitySurface(results)); err != nil {
+		fmt.Fprintf(os.Stderr, "%s: write reliability surface: %v\n", fsName, err)
+		return 1
+	}
+	report := agentrunner.ReportingResult(results)
+	written, err := reporting.WriteFormats(*reportDir, splitNonEmpty(*formats), report)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s: write reports: %v\n", fsName, err)
+		return 1
+	}
+	fmt.Printf("Results: %s\n", jsonPath)
+	fmt.Printf("Surface: %s\n", surfacePath)
+	for _, path := range written {
+		fmt.Printf("Report: %s\n", path)
+	}
+	if strings.HasPrefix(report.Outcome, "FAIL") {
+		return 1
+	}
+	return 0
+}
+
+func positionalBeforeFlags(args []string) (string, []string) {
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		return args[0], args[1:]
+	}
+	return "", args
+}
+
+func splitCommand(args []string) ([]string, []string) {
+	for index, value := range args {
+		if value == "--" {
+			return args[:index], args[index+1:]
+		}
+	}
+	return args, nil
 }
 
 func runHeal(args []string) int {

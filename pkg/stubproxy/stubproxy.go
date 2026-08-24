@@ -3,10 +3,13 @@ package stubproxy
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"infernosim/pkg/agentreliability"
 	"infernosim/pkg/capture"
 	"infernosim/pkg/event"
 	"infernosim/pkg/inject"
@@ -59,23 +62,27 @@ type StubProxy struct {
 	scenarios       *scenario.Engine
 	templates       *simtemplate.Engine
 	tlsCA           *capture.CAStore
+	agentEngine     *agentreliability.Engine
 }
 
 type Options struct {
-	Matching  matcher.Config
-	Scenarios []scenario.Config
-	Templates simtemplate.Config
-	TLSCA     *capture.CAStore
+	Matching      matcher.Config
+	Scenarios     []scenario.Config
+	Templates     simtemplate.Config
+	TLSCA         *capture.CAStore
+	Agent         *agentreliability.Engine
+	AgentMaxCalls int
 }
 
 // Snapshot is a point-in-time, race-safe view of a running simulator. It is
 // intentionally small so it can be exposed by local container control APIs
 // without leaking captured request or response data.
 type Snapshot struct {
-	Expected    int      `json:"expected"`
-	Observed    int      `json:"observed"`
-	Divergences []string `json:"divergences,omitempty"`
-	Unexpected  bool     `json:"unexpected"`
+	Expected    int                        `json:"expected"`
+	Observed    int                        `json:"observed"`
+	Divergences []string                   `json:"divergences,omitempty"`
+	Unexpected  bool                       `json:"unexpected"`
+	Agent       *agentreliability.Snapshot `json:"agent,omitempty"`
 }
 
 func LoadOutboundEvents(path string) ([]event.Event, error) {
@@ -140,7 +147,7 @@ func NewWithOptions(outboundLog string, observedLog string, rules []inject.Rule,
 	if err != nil {
 		return nil, err
 	}
-	return &StubProxy{
+	proxy := &StubProxy{
 		events:          evs,
 		rules:           rules,
 		attempts:        map[string]int{},
@@ -153,7 +160,12 @@ func NewWithOptions(outboundLog string, observedLog string, rules []inject.Rule,
 		scenarios:       scenarioEngine,
 		templates:       templateEngine,
 		tlsCA:           opts.TLSCA,
-	}, nil
+		agentEngine:     opts.Agent,
+	}
+	if opts.Agent != nil && opts.AgentMaxCalls > 1 {
+		proxy.matchMultiplier = opts.AgentMaxCalls
+	}
+	return proxy, nil
 }
 
 // Reset resets per-run state so the same captured outbound
@@ -174,6 +186,9 @@ func (s *StubProxy) Reset() {
 	s.eventUseCounts = make(map[int]int)
 	s.matchMu.Unlock()
 	s.scenarios.Reset()
+	if s.agentEngine != nil {
+		s.agentEngine.Reset()
+	}
 }
 
 // ConfigureReplayCardinality controls how many outbound events this run may observe.
@@ -298,6 +313,16 @@ func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if result.Response.StreamMessageDelay != "" {
 			delay, _ = time.ParseDuration(result.Response.StreamMessageDelay)
 		}
+		if s.agentEngine != nil && !isGRPCRequest(r) {
+			decision, processErr := s.processAgent(r, body, result.Response.Status, headers, bytes.Join(chunks, nil))
+			if processErr != nil {
+				s.agentFailure(w, processErr)
+				return
+			}
+			if s.writeAgentDecision(w, decision, trailers, "") {
+				return
+			}
+		}
 		writeStubResponseChunks(w, result.Response.Status, headers, trailers, grpcStatus, chunks, delay)
 		return
 	}
@@ -359,7 +384,7 @@ func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, bodyErr := base64.StdEncoding.DecodeString(expected.ResponseBodyB64)
+	responseBody, bodyErr := base64.StdEncoding.DecodeString(expected.ResponseBodyB64)
 	if bodyErr != nil {
 		http.Error(w, "captured dependency body is invalid", http.StatusBadGateway)
 		return
@@ -368,14 +393,133 @@ func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if isGRPCRequest(r) && grpcStatus == "" {
 		grpcStatus = "0"
 	}
+	if s.agentEngine != nil && !isGRPCRequest(r) {
+		decision, processErr := s.processAgent(r, body, status, http.Header(expected.ResponseHeaders), responseBody)
+		if processErr != nil {
+			s.agentFailure(w, processErr)
+			return
+		}
+		if s.writeAgentDecision(w, decision, http.Header(expected.ResponseTrailers), "") {
+			return
+		}
+	}
+	if len(expected.ResponseFrames) > 0 {
+		if frameErr := writeCapturedResponseFrames(
+			w, status, http.Header(expected.ResponseHeaders), http.Header(expected.ResponseTrailers), expected.ResponseFrames,
+		); frameErr != nil {
+			s.agentFailure(w, frameErr)
+		}
+		return
+	}
 	writeStubResponse(
 		w,
 		status,
 		http.Header(expected.ResponseHeaders),
 		http.Header(expected.ResponseTrailers),
 		grpcStatus,
-		body,
+		responseBody,
 	)
+}
+
+func writeCapturedResponseFrames(w http.ResponseWriter, status int, headers, trailers http.Header, frames []event.StreamFrame) error {
+	chunks := make([][]byte, 0, len(frames))
+	for index, frame := range frames {
+		if frame.Delay < 0 || frame.Delay > time.Minute {
+			return fmt.Errorf("captured response frame %d has invalid delay", index)
+		}
+		body, err := base64.StdEncoding.DecodeString(frame.BodyB64)
+		if err != nil {
+			return fmt.Errorf("captured response frame %d is invalid: %w", index, err)
+		}
+		hash := sha256.Sum256(body)
+		if frame.BodySha256 != "" && !strings.EqualFold(frame.BodySha256, hex.EncodeToString(hash[:])) {
+			return fmt.Errorf("captured response frame %d failed its checksum", index)
+		}
+		chunks = append(chunks, body)
+	}
+	copyHeaders(w.Header(), headers)
+	for name := range trailers {
+		w.Header().Add("Trailer", name)
+	}
+	w.WriteHeader(status)
+	for index, chunk := range chunks {
+		if frames[index].Delay > 0 {
+			time.Sleep(frames[index].Delay)
+		}
+		if _, err := w.Write(chunk); err != nil {
+			return err
+		}
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+	}
+	for name, values := range trailers {
+		w.Header()[name] = append([]string(nil), values...)
+	}
+	return nil
+}
+
+func (s *StubProxy) processAgent(r *http.Request, requestBody []byte, status int, headers http.Header, responseBody []byte) (agentreliability.Decision, error) {
+	host := ""
+	if r.URL != nil {
+		host = r.URL.Hostname()
+	}
+	if host == "" {
+		host = r.Host
+		if parsedHost, _, err := net.SplitHostPort(r.Host); err == nil {
+			host = parsedHost
+		}
+	}
+	path := ""
+	if r.URL != nil {
+		path = r.URL.Path
+	}
+	return s.agentEngine.Process(agentreliability.Request{
+		Method: r.Method, Host: host, Path: path, Headers: r.Header.Clone(), Body: append([]byte(nil), requestBody...),
+	}, agentreliability.Response{
+		Status: status, Headers: headers.Clone(), Body: append([]byte(nil), responseBody...),
+	})
+}
+
+func (s *StubProxy) agentFailure(w http.ResponseWriter, err error) {
+	msg := "DIVERGENCE why=agent_fault_failed detail=" + err.Error()
+	fmt.Fprintln(os.Stderr, msg)
+	s.mu.Lock()
+	s.divergenceReasons = append(s.divergenceReasons, msg)
+	s.mu.Unlock()
+	http.Error(w, "agent reliability fault failed closed", http.StatusBadGateway)
+}
+
+// writeAgentDecision returns true when the agent engine handled the response.
+func (s *StubProxy) writeAgentDecision(w http.ResponseWriter, decision agentreliability.Decision, trailers http.Header, grpcStatus string) bool {
+	if decision.Delay > 0 {
+		time.Sleep(decision.Delay)
+	}
+	if decision.Timeout > 0 {
+		time.Sleep(decision.Timeout)
+		http.Error(w, "injected agent dependency timeout", http.StatusGatewayTimeout)
+		return true
+	}
+	if decision.Reset || decision.ResponseLost {
+		if hijacker, ok := w.(http.Hijacker); ok {
+			connection, _, err := hijacker.Hijack()
+			if err == nil {
+				if tcpConnection, ok := connection.(*net.TCPConn); ok && decision.Reset {
+					_ = tcpConnection.SetLinger(0)
+				}
+				_ = connection.Close()
+				return true
+			}
+		}
+		http.Error(w, "injected ambiguous dependency completion", http.StatusBadGateway)
+		return true
+	}
+	if len(decision.AppliedFaults) == 0 {
+		return false
+	}
+	decision.Response.Headers.Set("X-Inferno-Agent-Fault", strings.Join(decision.AppliedFaults, ","))
+	writeStubResponse(w, decision.Response.Status, decision.Response.Headers, trailers, grpcStatus, decision.Response.Body)
+	return true
 }
 
 func isGRPCRequest(r *http.Request) bool {
@@ -873,12 +1017,17 @@ func (s *StubProxy) UnexpectedOutbound() bool {
 // Snapshot returns simulator counters and diagnostics without exposing any
 // captured payloads. The returned slices are detached from internal state.
 func (s *StubProxy) Snapshot() Snapshot {
-	return Snapshot{
+	snapshot := Snapshot{
 		Expected:    s.ExpectedCount(),
 		Observed:    s.ObservedCount(),
 		Divergences: s.DivergenceReasons(),
 		Unexpected:  s.UnexpectedOutbound(),
 	}
+	if s.agentEngine != nil {
+		agentSnapshot := s.agentEngine.Snapshot()
+		snapshot.Agent = &agentSnapshot
+	}
+	return snapshot
 }
 
 // Close flushes the optional observed-event log. It is safe to call when no

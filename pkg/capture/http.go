@@ -25,7 +25,10 @@ import (
 	"golang.org/x/net/http2/h2c"
 )
 
-const maxBodySize = 256 * 1024 // 256KB
+const (
+	maxBodySize     = 256 * 1024 // 256KB
+	maxStreamFrames = 2048
+)
 
 // ProxyContext holds the dependencies for starting proxies
 type ProxyContext struct {
@@ -520,6 +523,8 @@ func handleHTTP(w http.ResponseWriter, req *http.Request, ctx *ProxyContext) {
 	var statusCode int
 	var respBodyBytes []byte
 	var respBodyTruncated bool
+	var respFrames []event.StreamFrame
+	var respStream string
 	var grpcStatus string
 
 	if err != nil {
@@ -528,8 +533,13 @@ func handleHTTP(w http.ResponseWriter, req *http.Request, ctx *ProxyContext) {
 		http.Error(w, "Bad Gateway", http.StatusBadGateway)
 	} else {
 		statusCode = resp.StatusCode
-		respBodyBytes, respBodyTruncated, resp.Body, _ = peekBody(resp.Body)
-		copyResponse(w, resp)
+		respStream = responseStreamFormat(resp.Header.Get("Content-Type"))
+		if respStream != "" {
+			respBodyBytes, respBodyTruncated, respFrames = copyStreamingResponse(w, resp)
+		} else {
+			respBodyBytes, respBodyTruncated, resp.Body, _ = peekBody(resp.Body)
+			copyResponse(w, resp)
+		}
 		if IsGRPCRequest(req) {
 			grpcStatus = extractGRPCStatus(resp)
 		}
@@ -581,6 +591,10 @@ func handleHTTP(w http.ResponseWriter, req *http.Request, ctx *ProxyContext) {
 		evt.ResponseBodyRedacted = !storeResponseBody || responseTransformed
 		if storeResponseBody && !respBodyTruncated {
 			evt.ResponseBodyB64 = base64.StdEncoding.EncodeToString(logResponseBody)
+			if !responseTransformed && respStream != "" {
+				evt.ResponseStream = respStream
+				evt.ResponseFrames = respFrames
+			}
 		}
 	}
 	if resp != nil {
@@ -795,6 +809,72 @@ func copyResponse(w http.ResponseWriter, resp *http.Response) {
 	for name, values := range resp.Trailer {
 		w.Header()[name] = append([]string(nil), values...)
 	}
+}
+
+func responseStreamFormat(contentType string) string {
+	contentType = strings.ToLower(strings.TrimSpace(strings.SplitN(contentType, ";", 2)[0]))
+	switch contentType {
+	case "text/event-stream":
+		return "sse"
+	case "application/x-ndjson", "application/ndjson", "application/json-seq":
+		return "ndjson"
+	default:
+		return ""
+	}
+}
+
+func copyStreamingResponse(w http.ResponseWriter, resp *http.Response) ([]byte, bool, []event.StreamFrame) {
+	for key, values := range resp.Header {
+		if strings.EqualFold(key, "connection") {
+			continue
+		}
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
+	}
+	for name := range resp.Trailer {
+		w.Header().Add("Trailer", name)
+	}
+	w.WriteHeader(resp.StatusCode)
+	buffer := make([]byte, 32*1024)
+	var captured bytes.Buffer
+	var frames []event.StreamFrame
+	truncated := false
+	lastFrame := time.Now()
+	for {
+		count, readErr := resp.Body.Read(buffer)
+		if count > 0 {
+			chunk := buffer[:count]
+			if captured.Len()+count <= maxBodySize && len(frames) < maxStreamFrames {
+				_, _ = captured.Write(chunk)
+				hash := sha256.Sum256(chunk)
+				frames = append(frames, event.StreamFrame{
+					Delay: time.Since(lastFrame), BodyB64: base64.StdEncoding.EncodeToString(chunk),
+					BodySha256: hex.EncodeToString(hash[:]),
+				})
+				lastFrame = time.Now()
+			} else {
+				truncated = true
+			}
+			_, _ = w.Write(chunk)
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+		}
+		if readErr != nil {
+			if readErr != io.EOF {
+				truncated = true
+			}
+			break
+		}
+	}
+	for name, values := range resp.Trailer {
+		w.Header()[name] = append([]string(nil), values...)
+	}
+	if truncated {
+		frames = nil
+	}
+	return captured.Bytes(), truncated, frames
 }
 
 func cloneHeaders(h http.Header) http.Header {

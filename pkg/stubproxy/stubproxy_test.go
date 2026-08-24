@@ -83,6 +83,29 @@ func TestStubReplaysCapturedResponse(t *testing.T) {
 	}
 }
 
+func TestStubReplaysCapturedStreamingFrames(t *testing.T) {
+	first := []byte("data: {\"step\":1}\n\n")
+	second := []byte("data: {\"step\":2}\n\n")
+	path := writeOutboundFixture(t, event.Event{
+		Type: "OutboundCall", Method: http.MethodPost, URL: "http://llm.test/v1/responses", Status: http.StatusOK,
+		ResponseCaptured: true, ResponseHeaders: http.Header{"Content-Type": {"text/event-stream"}},
+		ResponseBodyB64: base64.StdEncoding.EncodeToString(append(append([]byte(nil), first...), second...)),
+		ResponseStream:  "sse", ResponseFrames: []event.StreamFrame{
+			{BodyB64: base64.StdEncoding.EncodeToString(first)},
+			{BodyB64: base64.StdEncoding.EncodeToString(second)},
+		},
+	})
+	stub, err := New(path, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	stub.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "http://llm.test/v1/responses", strings.NewReader(`{}`)))
+	if recorder.Code != http.StatusOK || recorder.Body.String() != string(first)+string(second) {
+		t.Fatalf("status=%d body=%q", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestStubFanoutMatchesUnorderedCalls(t *testing.T) {
 	path := writeOutboundFixture(t,
 		event.Event{Type: "OutboundCall", Method: http.MethodGet, URL: "http://dependency.test/a", Status: 200},

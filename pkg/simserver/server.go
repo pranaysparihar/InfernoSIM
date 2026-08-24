@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"infernosim/pkg/agentreliability"
 	"infernosim/pkg/capture"
 	"infernosim/pkg/replaydriver"
 	"infernosim/pkg/stubproxy"
@@ -23,14 +24,16 @@ import (
 const controlPrefix = "/__infernosim"
 
 type Options struct {
-	IncidentDir string
-	ConfigPath  string
-	Listen      string
-	AdminListen string
-	ObservedLog string
-	HTTPS       bool
-	CADir       string
-	AllowHosts  []string
+	IncidentDir   string
+	ConfigPath    string
+	Listen        string
+	AdminListen   string
+	ObservedLog   string
+	HTTPS         bool
+	CADir         string
+	AllowHosts    []string
+	AgentFaultIDs []string
+	AgentCaseID   string
 }
 
 type Server struct {
@@ -53,6 +56,8 @@ type Proof struct {
 	SemanticHash string             `json:"semantic_hash"`
 	StartedAt    time.Time          `json:"started_at"`
 	Snapshot     stubproxy.Snapshot `json:"snapshot"`
+	AgentCaseID  string             `json:"agent_case_id,omitempty"`
+	AgentFaults  []string           `json:"agent_faults,omitempty"`
 }
 
 func New(opts Options) (*Server, error) {
@@ -89,6 +94,26 @@ func New(opts Options) (*Server, error) {
 	if len(opts.AllowHosts) == 0 {
 		opts.AllowHosts = append([]string(nil), config.Stub.HTTPS.AllowHosts...)
 	}
+	incidentHash, err := hashFiles(bundle.MetadataPath, bundle.InboundLog, bundle.OutboundLog, filepath.Join(bundle.Dir, "messages.log"), bundle.MCPLog, bundle.AgentSpans)
+	if err != nil {
+		return nil, err
+	}
+	configHash := ""
+	if configPath != "" {
+		configHash, err = hashFiles(configPath)
+		if err != nil {
+			return nil, err
+		}
+	}
+	var agentEngine *agentreliability.Engine
+	if config.Agent.Enabled {
+		agentEngine, err = agentreliability.NewEngine(config.Agent, opts.AgentFaultIDs)
+		if err != nil {
+			return nil, fmt.Errorf("initialize agent reliability engine: %w", err)
+		}
+	} else if len(opts.AgentFaultIDs) > 0 {
+		return nil, fmt.Errorf("agent faults require agent.enabled: true in replay configuration")
+	}
 	var ca *capture.CAStore
 	if opts.HTTPS {
 		if opts.CADir == "" {
@@ -104,36 +129,27 @@ func New(opts Options) (*Server, error) {
 		}
 	}
 	stub, err := stubproxy.NewWithOptions(bundle.OutboundLog, opts.ObservedLog, nil, stubproxy.Options{
-		Matching:  config.Matching,
-		Scenarios: config.Scenarios,
-		Templates: config.Templates,
-		TLSCA:     ca,
+		Matching:      config.Matching,
+		Scenarios:     config.Scenarios,
+		Templates:     config.Templates,
+		TLSCA:         ca,
+		Agent:         agentEngine,
+		AgentMaxCalls: config.Agent.Limits.MaxCalls,
 	})
 	if err != nil {
 		return nil, err
-	}
-	incidentHash, err := hashFiles(bundle.MetadataPath, bundle.InboundLog, bundle.OutboundLog, filepath.Join(bundle.Dir, "messages.log"))
-	if err != nil {
-		_ = stub.Close()
-		return nil, err
-	}
-	configHash := ""
-	if configPath != "" {
-		configHash, err = hashFiles(configPath)
-		if err != nil {
-			_ = stub.Close()
-			return nil, err
-		}
 	}
 	s := &Server{
 		options: opts,
 		stub:    stub,
 		errors:  make(chan error, 2),
 		proof: Proof{
-			Version:      1,
+			Version:      2,
 			IncidentHash: incidentHash,
 			ConfigHash:   configHash,
 			StartedAt:    time.Now().UTC(),
+			AgentCaseID:  opts.AgentCaseID,
+			AgentFaults:  agentreliability.UniqueFaults(opts.AgentFaultIDs),
 		},
 	}
 	s.stubServer = &http.Server{Handler: stub.Handler(), ReadHeaderTimeout: 10 * time.Second}
@@ -181,6 +197,12 @@ func (s *Server) AdminAddress() string {
 		return ""
 	}
 	return s.adminListener.Addr().String()
+}
+
+// Snapshot returns the current simulator state without exposing captured
+// payloads. It is safe to call while the server is running.
+func (s *Server) Snapshot() stubproxy.Snapshot {
+	return s.stub.Snapshot()
 }
 
 func (s *Server) Close(ctx context.Context) error {
@@ -235,7 +257,9 @@ func (s *Server) handleProof(w http.ResponseWriter, _ *http.Request) {
 		IncidentHash string
 		ConfigHash   string
 		Snapshot     stubproxy.Snapshot
-	}{proof.Version, proof.IncidentHash, proof.ConfigHash, proof.Snapshot})
+		AgentCaseID  string
+		AgentFaults  []string
+	}{proof.Version, proof.IncidentHash, proof.ConfigHash, proof.Snapshot, proof.AgentCaseID, proof.AgentFaults})
 	proof.SemanticHash = hashBytes(semantic)
 	writeJSON(w, http.StatusOK, proof)
 }

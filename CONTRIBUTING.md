@@ -5,7 +5,7 @@ changes reviewable, deterministic, and safe to run on real incident data.
 
 ## Development setup
 
-1. Install Go 1.25.12 or a newer Go 1.25 patch release.
+1. Install Go 1.26.6 or a newer patched Go release.
 2. Install Docker with Compose if you will run the container smoke profiles.
 3. Clone the repository and build the CLI:
 
@@ -22,7 +22,8 @@ changes reviewable, deterministic, and safe to run on real incident data.
    ```
 
 The [README](Readme.md) documents the user-facing capture, replay, scenario,
-template, gRPC, OpenAPI, and report workflows.
+template, gRPC, OpenAPI, report, and agent-reliability workflows. Agent changes
+must also update the focused [agent guide](docs/AGENT_RELIABILITY.md).
 
 ## How to contribute
 
@@ -59,14 +60,24 @@ go test ./pkg/grpcsim -run=^$ -fuzz=FuzzSplitFrames -fuzztime=10s
 go test ./pkg/simtemplate -run=^$ -fuzz=FuzzTemplateValidation -fuzztime=10s
 go test ./pkg/heal -run=^$ -fuzz=FuzzFlattenJSON -fuzztime=10s
 go test ./pkg/message -run=^$ -fuzz=FuzzRecordValidate -fuzztime=10s
+go test ./pkg/jsonpath -run=^$ -fuzz=FuzzOperations -fuzztime=10s
+go test ./pkg/agentreliability -run=^$ -fuzz=FuzzEngineProcess -fuzztime=10s
+go test ./pkg/mcpproxy -run=^$ -fuzz=FuzzEquivalentRequest -fuzztime=10s
 
 # Container or example changes
 scripts/compose-smoke.sh node
 scripts/compose-smoke.sh go
 scripts/kafka-smoke.sh
+scripts/agent-smoke.sh
+scripts/ollama-smoke.sh  # optional; skips when Ollama is absent
 
 # Determinism and secret-leak baseline
 go run ./cmd/benchmark --runs 100 --out /tmp/infernosim-benchmark.json
+work_dir=$(mktemp -d)
+go build -trimpath -o "$work_dir/agentlab" ./examples/agentlab
+go run ./cmd/agentbenchmark --runs 20 \
+  --agent-command "$work_dir/agentlab" \
+  --out /tmp/infernosim-agent-benchmark.json
 ```
 
 Run `go generate` only when the source schema or generator requires it, and
@@ -88,6 +99,16 @@ change, follow the maintainer checklist in [docs/RELEASING.md](docs/RELEASING.md
 - Kafka changes must test message integrity, privacy transforms, fault-plan
   determinism, AsyncAPI failures, TLS/SASL option validation, and a real
   Redpanda broker through `scripts/kafka-smoke.sh`.
+- Agent changes must preserve stable case planning, prove that selected faults
+  are reached, test both defensive and intentionally unsafe controls, keep raw
+  tool arguments/results out of proofs, and cover every untrusted parser with
+  size/depth bounds and rejection tests.
+- Provider-model sampling is not a deterministic release oracle. Record a
+  sanitized envelope fixture and make it the gate; keep live Ollama/provider
+  checks as explicit compatibility smokes.
+- Never execute a command taken from an incident, transcript, telemetry file,
+  or YAML configuration. Agent commands must remain explicit arguments after
+  `--`.
 - Do not add a competitor claim without a pinned, reproducible adapter and raw
   benchmark output under `benchmarks/`.
 

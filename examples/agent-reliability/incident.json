@@ -1,0 +1,9 @@
+{
+  "captured_at": "2026-08-24T00:00:00Z",
+  "env": "sanitized-fixture",
+  "host": "agentlab",
+  "inbound_count": 0,
+  "outbound_count": 6,
+  "schema_version": 1,
+  "capabilities": ["agent-reliability", "mcp-streamable-http", "openai-envelope"]
+}

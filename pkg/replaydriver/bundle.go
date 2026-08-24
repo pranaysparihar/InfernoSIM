@@ -14,6 +14,8 @@ import (
 //	 ├─ incident.json   ← metadata
 //	 ├─ inbound.log     ← JSONL of InboundRequest events (required)
 //	 ├─ outbound.log    ← JSONL of outbound dependency events (optional)
+//	 ├─ mcp.log         ← JSONL of MCP stdio messages (optional)
+//	 ├─ agent-spans.jsonl ← redacted OpenTelemetry correlation metadata (optional)
 //	 └─ replay.yaml     ← config-driven replay settings (optional)
 type IncidentBundle struct {
 	Dir          string
@@ -21,6 +23,8 @@ type IncidentBundle struct {
 	InboundLog   string // inbound.log (required)
 	OutboundLog  string // outbound.log (optional, may not exist)
 	ConfigPath   string // replay.yaml (optional, may not exist)
+	MCPLog       string // mcp.log (optional, may not exist)
+	AgentSpans   string // agent-spans.jsonl (optional, may not exist)
 }
 
 // IncidentMetadata is written to incident.json by infernosim record.
@@ -32,6 +36,8 @@ type IncidentMetadata struct {
 	Forward       string    `json:"forward,omitempty"`
 	InboundCount  int       `json:"inbound_count"`
 	OutboundCount int       `json:"outbound_count"`
+	SchemaVersion int       `json:"schema_version,omitempty"`
+	Capabilities  []string  `json:"capabilities,omitempty"`
 }
 
 // OpenBundle resolves the standard file paths within dir.
@@ -48,8 +54,20 @@ func OpenBundle(dir string) (IncidentBundle, error) {
 		InboundLog:   inbound,
 		OutboundLog:  filepath.Join(dir, "outbound.log"),
 		ConfigPath:   filepath.Join(dir, "replay.yaml"),
+		MCPLog:       filepath.Join(dir, "mcp.log"),
+		AgentSpans:   filepath.Join(dir, "agent-spans.jsonl"),
 	}
 	return b, nil
+}
+
+func (b IncidentBundle) HasMCP() bool {
+	_, err := os.Stat(b.MCPLog)
+	return err == nil
+}
+
+func (b IncidentBundle) HasAgentSpans() bool {
+	_, err := os.Stat(b.AgentSpans)
+	return err == nil
 }
 
 // HasOutbound reports whether outbound.log exists in the bundle.

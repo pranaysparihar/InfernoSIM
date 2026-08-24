@@ -58,9 +58,19 @@ opened.
   built-in message and stream bounds.
 - `infernosim generate` refuses to replace existing files unless `--force` is
   supplied.
+- Agent reliability commands execute only the explicit command supplied after
+  `--`; incident, MCP, telemetry, and YAML content is never executable.
+- Agent proofs exclude raw tool arguments and results. Imported OpenTelemetry
+  data is allowlisted to correlation metadata, with optional one-way content
+  hashes. Treat bounded child stdout/stderr in private result JSON as sensitive
+  application output.
+- Keep the built-in body, call, case, transcript, JSONPath, regex, delay, and
+  command-timeout limits in place when processing untrusted fixtures.
 
 ## Release verification
 
-Tagged releases include SHA-256 checksums, SPDX SBOMs, and a keyless Sigstore
-bundle for the checksum manifest. Verification instructions are maintained in
+Tagged releases include eight platform archives and one SHA-256 checksum
+manifest. InfernoSIM does not currently publish an SBOM or Sigstore bundle;
+release metadata and test JSON are deliberately not uploaded as extra assets.
+Verification instructions are maintained in
 [`docs/RELEASING.md`](docs/RELEASING.md).

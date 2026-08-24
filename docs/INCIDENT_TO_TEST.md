@@ -1,6 +1,6 @@
 # Incident to deterministic CI test
 
-InfernoSIM v3.4 turns a sanitized incident directory into a local dependency
+InfernoSIM v4 turns a sanitized incident directory into a local dependency
 simulator, an editable test harness, and a proof artifact. The workflow remains
 local; no InfernoSIM account or hosted control plane is required.
 
@@ -125,6 +125,30 @@ The maintained Go adapter lives in `integrations/testcontainers-go`. Generated
 harnesses are intentionally regular source code so teams can audit and edit
 their test lifecycle.
 
+### Agent control loops
+
+For an incident containing recorded model/tool exchanges and an `agent` safety
+contract, generate or run the consequence-level matrix:
+
+```bash
+infernosim agent cases ./incidents/refund-agent
+
+infernosim agent stress ./incidents/refund-agent \
+  --report-dir ./artifacts/infernosim-agent \
+  -- ./run-agent-tests
+
+infernosim testgen ./incidents/refund-agent \
+  --profile agent \
+  --framework github-actions \
+  --out ./.github/workflows/infernosim-agent
+```
+
+Each run gets a new loopback simulator. CI fails if the command exits non-zero,
+an outbound call leaves the recording, an assertion fails, replay diverges, or
+the selected fault is not reached. No live model is needed. See
+[the agent reliability guide](AGENT_RELIABILITY.md) for effects, faults,
+assertions, MCP stdio, OpenTelemetry import, and Ollama compatibility.
+
 ## 5. Run manually and collect proof
 
 ```bash
@@ -164,7 +188,7 @@ contract, production, or report generation failed.
 ## Current boundaries
 
 - Kafka-compatible brokers are supported; RabbitMQ, NATS, MQTT, SQS, and SNS
-  are not claimed by v3.4.
+  are not claimed by v4.
 - AsyncAPI 3.x JSON payload validation is supported. Avro and Schema Registry
   compatibility are not yet implemented.
 - Kafka capture uses topic subscriptions, not a protocol-transparent proxy.
@@ -172,3 +196,5 @@ contract, production, or report generation failed.
   declines values it cannot classify safely.
 - Bidirectional gRPC streaming still has the limitations documented in the
   release notes.
+- Agent stress uses baseline plus single-fault cases. Parallel tool calls within
+  one provider response and combinatorial fault search are not yet claimed.

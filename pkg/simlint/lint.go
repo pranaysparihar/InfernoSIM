@@ -101,8 +101,30 @@ func File(path string) (Result, error) {
 			}
 		}
 	}
-	if len(config.Scenarios) == 0 {
+	if len(config.Scenarios) == 0 && !config.Agent.Enabled {
 		result.Diagnostics = append(result.Diagnostics, warning("NO_SCENARIOS", "scenarios", "configuration defines no explicit scenarios"))
+	}
+	if config.Agent.Enabled {
+		if len(config.Agent.Effects) == 0 {
+			result.Diagnostics = append(result.Diagnostics, warning("AGENT_NO_EFFECTS", "agent.effects", "no irreversible or externally visible effects are declared"))
+		}
+		if len(config.Agent.Faults) == 0 {
+			result.Diagnostics = append(result.Diagnostics, warning("AGENT_NO_FAULTS", "agent.faults", "agent reliability is enabled but defines no fault cases"))
+		}
+		if len(config.Agent.Assertions) == 0 {
+			result.Diagnostics = append(result.Diagnostics, warning("AGENT_NO_ASSERTIONS", "agent.assertions", "fault cases have no consequence assertions"))
+		}
+		covered := make(map[string]bool)
+		for _, assertion := range config.Agent.Assertions {
+			for _, faultID := range assertion.Faults {
+				covered[faultID] = true
+			}
+		}
+		for index, fault := range config.Agent.Faults {
+			if !covered[fault.ID] {
+				result.Diagnostics = append(result.Diagnostics, warning("AGENT_FAULT_UNSCOPED", fmt.Sprintf("agent.faults[%d]", index), fmt.Sprintf("fault %q has no fault-scoped consequence assertion", fault.ID)))
+			}
+		}
 	}
 	sort.SliceStable(result.Diagnostics, func(i, j int) bool {
 		if result.Diagnostics[i].Level != result.Diagnostics[j].Level {

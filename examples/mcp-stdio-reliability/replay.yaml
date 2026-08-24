@@ -1,0 +1,28 @@
+agent:
+  version: 1
+  enabled: true
+  adapters:
+    mcp: true
+  effects:
+    - name: payment.refund
+      select:
+        tool: payment.refund
+      identity: [$.arguments.payment_id]
+      commit_on: request_received
+  faults:
+    - id: refund-response-lost
+      description: refund commits but its stdio response is lost
+      category: ambiguous_side_effect
+      severity: critical
+      select:
+        kind: mcp_tool_result
+        tool: payment.refund
+        occurrence: 1
+      committed_response_lost: true
+  assertions:
+    - id: refund-exactly-once
+      type: exactly_once_effect
+      effect: payment.refund
+      faults: [refund-response-lost]
+    - id: recorded-universe-only
+      type: no_unexpected_calls

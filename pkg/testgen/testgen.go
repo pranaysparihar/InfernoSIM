@@ -2,6 +2,7 @@ package testgen
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"go/format"
 	"os"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"text/template"
 
+	"infernosim/pkg/agentreliability"
+	"infernosim/pkg/agentrunner"
 	"infernosim/pkg/replaydriver"
 )
 
@@ -18,6 +21,8 @@ const (
 	FrameworkGoTestcontainers = "go-testcontainers"
 	FrameworkDockerCompose    = "docker-compose"
 	FrameworkGitHubActions    = "github-actions"
+	ProfileReplay             = "replay"
+	ProfileAgent              = "agent"
 )
 
 type Options struct {
@@ -27,6 +32,7 @@ type Options struct {
 	Image       string
 	Package     string
 	Force       bool
+	Profile     string
 }
 
 type Result struct {
@@ -38,6 +44,8 @@ type templateData struct {
 	RepositoryIncidentPath string
 	Image                  string
 	Package                string
+	Profile                string
+	AgentCases             []agentreliability.Case
 }
 
 func Generate(opts Options) (Result, error) {
@@ -50,8 +58,22 @@ func Generate(opts Options) (Result, error) {
 	if opts.Framework == "" {
 		opts.Framework = FrameworkGoTestcontainers
 	}
+	if opts.Profile == "" {
+		opts.Profile = ProfileReplay
+	}
+	if opts.Profile != ProfileReplay && opts.Profile != ProfileAgent {
+		return Result{}, fmt.Errorf("unsupported profile %q (expected replay or agent)", opts.Profile)
+	}
+	var agentCases []agentreliability.Case
+	if opts.Profile == ProfileAgent {
+		prepared, err := agentrunner.Prepare(opts.IncidentDir, "", 0, agentreliability.DefaultMaxCases, true)
+		if err != nil {
+			return Result{}, fmt.Errorf("prepare agent profile: %w", err)
+		}
+		agentCases = prepared.Cases
+	}
 	if opts.Image == "" {
-		opts.Image = "ghcr.io/pranaysparihar/infernosim:3.4.0"
+		opts.Image = "ghcr.io/pranaysparihar/infernosim:4.0.0"
 	}
 	if strings.ContainsAny(opts.Image, "\r\n") || strings.TrimSpace(opts.Image) == "" {
 		return Result{}, fmt.Errorf("image must be a non-empty single-line reference")
@@ -92,7 +114,7 @@ func Generate(opts Options) (Result, error) {
 	}
 	data := templateData{
 		IncidentPath: filepath.ToSlash(relativeIncident), RepositoryIncidentPath: filepath.ToSlash(repositoryIncident),
-		Image: opts.Image, Package: opts.Package,
+		Image: opts.Image, Package: opts.Package, Profile: opts.Profile, AgentCases: agentCases,
 	}
 	var files map[string]string
 	switch opts.Framework {
@@ -107,6 +129,13 @@ func Generate(opts Options) (Result, error) {
 		files = map[string]string{"infernosim-ci.yaml": githubActionsTemplate}
 	default:
 		return Result{}, fmt.Errorf("unsupported framework %q (expected %s, %s, or %s)", opts.Framework, FrameworkGoTestcontainers, FrameworkDockerCompose, FrameworkGitHubActions)
+	}
+	if opts.Profile == ProfileAgent {
+		manifest, err := json.MarshalIndent(agentCases, "", "  ")
+		if err != nil {
+			return Result{}, err
+		}
+		files["agent-cases.json"] = string(append(manifest, '\n'))
 	}
 	names := make([]string, 0, len(files))
 	for name := range files {
@@ -212,7 +241,7 @@ type infernoSIMContainer struct {
 	AdminURL string
 }
 
-func startInfernoSIM(t testing.TB) *infernoSIMContainer {
+func startInfernoSIM(t testing.TB, agentCase ...string) *infernoSIMContainer {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
@@ -246,12 +275,19 @@ func startInfernoSIM(t testing.TB) *infernoSIMContainer {
 		t.Fatal("InfernoSIM incident contains no files")
 	}
 
+	command := []string{"serve", "/incident", "--listen", "0.0.0.0:19000", "--admin-listen", "0.0.0.0:19001"}
+	if len(agentCase) >= 1 && agentCase[0] != "" {
+		command = append(command, "--agent-fault", agentCase[0])
+	}
+	if len(agentCase) >= 2 && agentCase[1] != "" {
+		command = append(command, "--agent-case", agentCase[1])
+	}
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image: infernoSIMImage,
 			ExposedPorts: []string{"19000/tcp", "19001/tcp"},
 			Files: files,
-			Cmd: []string{"serve", "/incident", "--listen", "0.0.0.0:19000", "--admin-listen", "0.0.0.0:19001"},
+			Cmd: command,
 			WaitingFor: wait.ForHTTP("/healthz").WithPort("19001/tcp").WithStartupTimeout(60 * time.Second),
 		},
 		Started: true,
@@ -306,6 +342,21 @@ func TestInfernoSIMIncidentLoads(t *testing.T) {
 	// Configure your application under test with HTTP_PROXY and HTTPS_PROXY set
 	// to simulator.ProxyURL, exercise the incident, and assert its response.
 }
+{{if eq .Profile "agent"}}
+func TestInfernoSIMAgentCasesLoad(t *testing.T) {
+	cases := []struct{ id, fault string }{
+		{{range .AgentCases}}{id: {{printf "%q" .ID}}, fault: {{printf "%q" .FaultID}}},
+		{{end}}
+	}
+	for _, agentCase := range cases {
+		agentCase := agentCase
+		t.Run(agentCase.id, func(t *testing.T) {
+			simulator := startInfernoSIM(t, agentCase.fault, agentCase.id)
+			simulator.reset(t)
+		})
+	}
+}
+{{end}}
 `
 
 const goReadmeTemplate = `# Generated InfernoSIM integration
@@ -322,12 +373,18 @@ Add the dependency and run the generated smoke test:
 Set your application under test's HTTP_PROXY and HTTPS_PROXY to the returned
 ProxyURL. Call reset before each scenario. The control API is deliberately
 bound to a separate port and never exposes captured payloads.
+{{if eq .Profile "agent"}}
+
+This is an Agent Reliability harness. ` + "`agent-cases.json`" + ` lists the stable
+baseline and fault cases. Pass the fault ID and case ID to startInfernoSIM,
+run your agent with ProxyURL, then assert the control API proof in CI.
+{{end}}
 `
 
 const composeTemplate = `services:
   infernosim:
     image: {{yamlQuote .Image}}
-    command: ["serve", "/incident", "--listen", "0.0.0.0:19000", "--admin-listen", "0.0.0.0:19001"]
+    command: ["serve", "/incident", "--listen", "0.0.0.0:19000", "--admin-listen", "0.0.0.0:19001"{{if eq .Profile "agent"}}, "--agent-fault", "${INFERNOSIM_AGENT_FAULT:-}", "--agent-case", "${INFERNOSIM_AGENT_CASE:-baseline}"{{end}}]
     volumes:
       - type: bind
         source: {{yamlQuote .IncidentPath}}
@@ -360,6 +417,24 @@ jobs:
       INFERNOSIM_IMAGE: {{yamlQuote .Image}}
     steps:
       - uses: actions/checkout@v4
+{{if eq .Profile "agent"}}
+      - name: Extract the pinned InfernoSIM CLI
+        run: |
+          container_id="$(docker create "$INFERNOSIM_IMAGE")"
+          trap 'docker rm -f "$container_id" >/dev/null 2>&1 || true' EXIT
+          docker cp "$container_id:/usr/local/bin/infernosim" ./infernosim
+          chmod 0700 ./infernosim
+      - name: Run the complete deterministic agent reliability matrix
+        run: |
+          ./infernosim agent stress "$INFERNOSIM_INCIDENT_DIR" \
+            --report-dir infernosim-agent-report \
+            -- go test ./...
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: infernosim-agent-report
+          path: infernosim-agent-report
+{{else}}
       - name: Start InfernoSIM
         run: |
           docker run --detach --rm --name infernosim \
@@ -385,4 +460,5 @@ jobs:
         with:
           name: infernosim-proof
           path: infernosim-proof.json
+{{end}}
 `

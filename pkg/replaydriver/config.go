@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"infernosim/pkg/agentreliability"
 	"infernosim/pkg/matcher"
 	"infernosim/pkg/scenario"
 	"infernosim/pkg/simtemplate"
@@ -31,17 +32,18 @@ import (
 //	state:
 //	  file: ./state.json
 type ReplayYAMLConfig struct {
-	Target    string             `yaml:"target"`
-	TimeScale float64            `yaml:"time_scale"`
-	Runs      int                `yaml:"runs"`
-	SafeMode  bool               `yaml:"safe_mode"`
-	Chaos     ChaosConfig        `yaml:"chaos"`
-	State     StateConfig        `yaml:"state"`
-	Matching  matcher.Config     `yaml:"matching"`
-	Scenarios []scenario.Config  `yaml:"scenarios"`
-	Templates simtemplate.Config `yaml:"templates"`
-	Stub      StubConfig         `yaml:"stub"`
-	Workflows []workflow.Config  `yaml:"workflows"`
+	Target    string                  `yaml:"target"`
+	TimeScale float64                 `yaml:"time_scale"`
+	Runs      int                     `yaml:"runs"`
+	SafeMode  bool                    `yaml:"safe_mode"`
+	Chaos     ChaosConfig             `yaml:"chaos"`
+	State     StateConfig             `yaml:"state"`
+	Matching  matcher.Config          `yaml:"matching"`
+	Scenarios []scenario.Config       `yaml:"scenarios"`
+	Templates simtemplate.Config      `yaml:"templates"`
+	Stub      StubConfig              `yaml:"stub"`
+	Workflows []workflow.Config       `yaml:"workflows"`
+	Agent     agentreliability.Config `yaml:"agent"`
 }
 
 type StubConfig struct {
@@ -109,6 +111,10 @@ func LoadReplayConfig(path string) (ReplayYAMLConfig, error) {
 		return ReplayYAMLConfig{}, fmt.Errorf("parse replay config %q: %w", path, err)
 	}
 	if err := workflow.ValidateConfigs(cfg.Workflows); err != nil {
+		return ReplayYAMLConfig{}, fmt.Errorf("parse replay config %q: %w", path, err)
+	}
+	cfg.Agent.ApplyDefaults()
+	if err := cfg.Agent.Validate(); err != nil {
 		return ReplayYAMLConfig{}, fmt.Errorf("parse replay config %q: %w", path, err)
 	}
 	return cfg, nil

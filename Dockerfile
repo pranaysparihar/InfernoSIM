@@ -1,8 +1,7 @@
 # Build stage
 ARG LDFLAGS
-# The official image can lag the newest Go patch by one release. Go's
-# toolchain auto-selection reads go.mod and downloads the required 1.25.12
-# toolchain inside this pinned Alpine builder.
+# The official image can lag a Go patch. Toolchain auto-selection reads go.mod
+# and downloads the required patched Go 1.26.6 toolchain inside this builder.
 FROM golang:1.25.11-alpine3.22 AS builder
 ARG LDFLAGS
 ARG TARGETOS

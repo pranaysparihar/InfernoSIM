@@ -9,6 +9,12 @@ incident bundles, policy-driven privacy controls, explainable matcher healing,
 generated Testcontainers/Compose/Actions harnesses, Kafka-compatible event
 replay, AsyncAPI validation, and cross-protocol causal workflows.
 
+v4 adds deterministic reliability testing for tool-using agents: recorded LLM
+and MCP protocol replay, semantic response faults, an explicit side-effect
+ledger, consequence assertions, stable stress cases, redacted OpenTelemetry
+correlation, and CI-native evidence. It remains local-first and needs neither a
+hosted InfernoSIM service nor a live model during the release gate.
+
 ## Feature guide
 
 | Area | Features |
@@ -20,6 +26,8 @@ replay, AsyncAPI validation, and cross-protocol causal workflows.
 | Incident to test | Local simulator service, health/reset/status/proof API, Testcontainers-Go adapter, generated Go/Compose/Actions harnesses |
 | Explainable healing | Held-out rule validation, protected fields, hashed evidence, ambiguity rejection, reviewable YAML proposals |
 | Events and workflows | Kafka-compatible capture/replay, deterministic message faults, AsyncAPI 3 JSON validation, ordered HTTP/gRPC/Kafka workflows |
+| Agent reliability | MCP HTTP/stdio replay, OpenAI/Anthropic/Ollama envelope adapters, semantic and ambiguous-commit faults, side-effect assertions, stable case matrix |
+| Agent evidence | Redacted OTLP JSON import, private JSON proof, one-test-per-case JUnit, SARIF, and HTML reports |
 | Privacy | Built-in secret redaction, configurable HTTP and Kafka redact/drop/tokenize rules, deterministic HMAC tokens |
 | Portability | Authenticated encrypted v2 bundles using AES-256-GCM and PBKDF2-HMAC-SHA256 |
 
@@ -50,6 +58,36 @@ See the complete [incident-to-test guide](docs/INCIDENT_TO_TEST.md), including
 Kafka, AsyncAPI, workflow verification, self-healing safety boundaries, and
 the container control API.
 
+## Agent incident to reliability gate
+
+v4 can prove how an agent behaves when a tool or model response becomes
+ambiguous, incomplete, delayed, reset, or semantically malformed. The model is
+recorded once; CI replays its protocol deterministically and evaluates actual
+tool-side consequences.
+
+```bash
+# Inspect the stable baseline and single-fault matrix.
+infernosim agent cases ./incidents/refund-agent
+
+# Run your explicit agent test command once per case.
+infernosim agent stress ./incidents/refund-agent \
+  --report-dir ./artifacts/infernosim-agent \
+  -- ./run-agent-tests
+
+# Generate a CI workflow that runs the same assertion engine.
+infernosim testgen ./incidents/refund-agent \
+  --profile agent --framework github-actions \
+  --out ./.github/workflows/infernosim-agent
+```
+
+The release fixture demonstrates tool discovery loss, missing policy fields,
+malformed LLM arguments, and “effect committed but response lost.” Its safe
+loop passes all five cases; the unsafe control is rejected in all four fault
+cases. Reports include an unweighted observed pass-rate surface by fault
+category and severity—not a generalized model score. See the complete
+[agent reliability guide](docs/AGENT_RELIABILITY.md)
+and [raw benchmark evidence](benchmarks/results/agent-reliability.json).
+
 ## Install
 
 InfernoSIM v3.4 and later are available from the project Homebrew formula. It
@@ -72,9 +110,11 @@ macOS, and Windows users who do not use Homebrew.
 
 ## Requirements
 
-- Go 1.25.12 or newer in the 1.25 line
+- Go 1.26.6 or newer
 - Docker with Compose for the container examples
 - Linux with `NET_ADMIN` only for optional transparent replay
+- Ollama only for the optional local model-envelope compatibility smoke; it is
+  not required for deterministic agent tests
 
 ## Build and test
 
@@ -82,11 +122,14 @@ macOS, and Windows users who do not use Homebrew.
 go build -trimpath -o infernosim ./cmd/agent
 go test -race ./...
 go vet ./...
+scripts/agent-smoke.sh
+scripts/ollama-smoke.sh  # passes or skips cleanly when Ollama is absent
 ```
 
 Release CI also runs fuzz smoke tests, cross-platform builds,
 multi-architecture container builds, real Testcontainers/Kafka checks,
-Compose integration profiles, and the deterministic benchmark. Published
+Compose integration profiles, the deterministic incident benchmark, and the
+safe/unsafe agent reliability oracle. Published
 assets remain limited to platform archives plus `checksums.txt`; test JSON,
 reports, and incident fixtures are never attached. See
 [the release process](docs/RELEASING.md).

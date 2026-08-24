@@ -18,6 +18,14 @@ func TestSealAndOpenRoundTrip(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(source, "incident.json"), []byte("{\"captured_at\":\"2026-01-01T00:00:00Z\"}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	for name, content := range map[string]string{
+		"mcp.log":           `{"direction":"client_to_server","message":{"method":"tools/list"}}` + "\n",
+		"agent-spans.jsonl": `{"trace_id":"trace-1","tool_name":"payment.refund"}` + "\n",
+	} {
+		if err := os.WriteFile(filepath.Join(source, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	bundle := filepath.Join(t.TempDir(), "incident.inferno")
 	passphrase := []byte("correct horse battery staple")
 	if err := SealDirectory(source, bundle, passphrase); err != nil {
@@ -40,6 +48,13 @@ func TestSealAndOpenRoundTrip(t *testing.T) {
 	}
 	if string(got) != "{\"type\":\"InboundRequest\"}\n" {
 		t.Fatalf("roundtrip content=%q", got)
+	}
+	for _, name := range []string{"mcp.log", "agent-spans.jsonl"} {
+		want, _ := os.ReadFile(filepath.Join(source, name))
+		got, readErr := os.ReadFile(filepath.Join(destination, name))
+		if readErr != nil || string(got) != string(want) {
+			t.Fatalf("agent bundle member %s = %q, %v", name, got, readErr)
+		}
 	}
 	info, _ := os.Stat(filepath.Join(destination, "inbound.log"))
 	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {

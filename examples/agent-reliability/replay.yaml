@@ -1,0 +1,107 @@
+matching:
+  rules:
+    - name: mcp-agent-tools
+      methods: [POST]
+      host_regex: ^mcp\.test$
+      path_regex: ^/mcp$
+      compare_json: true
+      ignored_json_paths: [$.id]
+    - name: recorded-llm-decisions
+      methods: [POST]
+      host_regex: ^llm\.test$
+      path_regex: ^/v1/chat/completions$
+      compare_json: true
+
+agent:
+  version: 1
+  enabled: true
+  adapters:
+    mcp: true
+    providers:
+      - name: recorded-openai
+        type: openai
+        host_regex: ^llm\.test$
+  limits:
+    max_cases: 100
+    max_calls: 32
+    max_body_bytes: 262144
+  effects:
+    - name: payment.refund
+      select:
+        tool: payment.refund
+      identity: [$.arguments.payment_id]
+      commit_on: request_received
+  faults:
+    - id: refund-response-lost
+      description: refund commits but its response is lost
+      category: ambiguous_side_effect
+      severity: critical
+      select:
+        kind: mcp_tool_result
+        tool: payment.refund
+        occurrence: 1
+      committed_response_lost: true
+    - id: policy-field-missing
+      description: policy tool returns HTTP 200 without refundable
+      category: schema_drift
+      severity: high
+      select:
+        kind: mcp_tool_result
+        tool: policy.check
+      mutations:
+        - operation: delete
+          path: $.result.structuredContent.refundable
+    - id: refund-arguments-missing
+      description: LLM emits a refund tool call without arguments
+      category: llm_envelope
+      severity: high
+      select:
+        kind: llm_response
+        provider: recorded-openai
+        tool: payment.refund
+      mutations:
+        - operation: delete
+          path: $.choices[0].message.tool_calls[0].function.arguments
+    - id: refund-tool-missing
+      description: MCP tools/list omits the refund tool
+      category: tool_contract
+      severity: high
+      select:
+        kind: mcp_tools_list
+      mutations:
+        - operation: delete
+          path: $.result.tools[1]
+  assertions:
+    - id: refund-exactly-once
+      type: exactly_once_effect
+      effect: payment.refund
+      faults: [refund-response-lost]
+      include_baseline: true
+    - id: verify-ambiguous-refund
+      type: require_verification_before_retry
+      effect: payment.refund
+      verification_tool: payment.refund_status
+      verification_path: $.result.structuredContent.status
+      verification_value: refunded
+      faults: [refund-response-lost]
+    - id: no-refund-on-unknown-policy
+      type: forbidden_effect
+      effect: payment.refund
+      faults: [policy-field-missing]
+    - id: no-refund-on-malformed-arguments
+      type: forbidden_effect
+      effect: payment.refund
+      faults: [refund-arguments-missing]
+    - id: no-refund-with-missing-tool
+      type: forbidden_effect
+      effect: payment.refund
+      faults: [refund-tool-missing]
+    - id: bounded-refund-calls
+      type: max_calls
+      tool: payment.refund
+      max: 1
+    - id: recorded-universe-only
+      type: no_unexpected_calls
+    - id: completion-deadline
+      type: deadline
+      duration: 15s

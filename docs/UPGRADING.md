@@ -1,5 +1,65 @@
 # Upgrading InfernoSIM
 
+## v3.4 to v4.0
+
+Existing incident directories and `replay.yaml` files remain valid. Agent
+reliability is disabled unless the optional `agent` section sets
+`enabled: true`.
+
+### Agent reliability configuration
+
+v4 adds strict `agent.adapters`, `agent.effects`, `agent.faults`,
+`agent.assertions`, and `agent.limits` fields. Use
+`infernosim lint <replay.yaml>` before running cases. Unknown fields and invalid
+selectors fail before a simulator or child process starts.
+
+The default case plan is the recorded baseline followed by one case per fault.
+Case IDs incorporate the incident and configuration hashes, so IDs change when
+the test evidence or safety contract changes. Reference a fault ID in scripts
+when a stable human-readable selector is more useful than a stable ID for one
+exact fixture revision.
+
+### Incident additions
+
+`mcp.log` and `agent-spans.jsonl` are optional. Existing bundle-v2 commands
+already encrypt every regular file within the incident directory, so there is
+no bundle format migration. v4 proof and case-scope hashes include these files
+when present.
+
+`agent-spans.jsonl` stores only normalized correlation metadata. Re-import the
+source OTLP JSON with `infernosim agent otel import`; do not copy raw prompt,
+argument, or result attributes into the incident.
+
+### Streaming capture
+
+New captures can preserve bounded response frames and delays for SSE, NDJSON,
+and JSON-sequence responses when transformed body capture is authorized. Old
+captures without frame metadata continue to replay as a single response body.
+
+### Test generation and image version
+
+`infernosim testgen --profile agent` writes `agent-cases.json` and agent-aware
+harness wiring. The generated GitHub Actions workflow extracts the pinned v4
+CLI from the container and runs the assertion-aware `agent stress` command;
+regenerate older agent workflow experiments before using them as a release
+gate.
+
+The default generated container reference is now
+`ghcr.io/pranaysparihar/infernosim:4.0.0`. Pass `--image` to pin a different
+digest or internal registry.
+
+### Verification assertions
+
+`require_verification_before_retry` may now add `verification_path` and
+`verification_value`. With those fields, a verification call counts only when
+its delivered 2xx response satisfies the semantic predicate. Without a path,
+the backward-compatible rule requires a delivered successful response from the
+named verification tool.
+
+See [the complete agent reliability guide](AGENT_RELIABILITY.md) for the
+configuration schema, commands, reports, security boundaries, and Ollama
+compatibility smoke.
+
 ## v3.3 to v3.4
 
 Existing incident directories and `replay.yaml` files remain valid. All v3.4

@@ -45,3 +45,21 @@ The public benchmark runner and competitor adapters must be reviewed separately
 from feature implementation. Until raw competitor results exist, InfernoSIM may
 claim the capabilities it demonstrates but not that it is categorically faster
 or better than a named competitor.
+
+## Agent reliability matrix
+
+The v4 benchmark runs both a defensive and an intentionally unsafe control
+loop against the same stable incident-derived case matrix. A successful run
+requires every defensive execution to pass, every unsafe fault execution to be
+rejected, the unsafe baseline to pass, and the planned case IDs to remain
+stable. Raw prompts, tool arguments, and tool results are not retained.
+
+```bash
+work_dir=$(mktemp -d)
+go build -trimpath -o "$work_dir/agentlab" ./examples/agentlab
+go run ./cmd/agentbenchmark --runs 20 --agent-command "$work_dir/agentlab"
+rm -rf "$work_dir"
+```
+
+The checked-in result is
+[`results/agent-reliability.json`](results/agent-reliability.json).

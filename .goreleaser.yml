@@ -1,5 +1,5 @@
 version: 2
-# .goreleaser.yml for InfernoSIM v3
+# .goreleaser.yml for InfernoSIM v4
 builds:
   - id: infernosim
     binary: infernosim

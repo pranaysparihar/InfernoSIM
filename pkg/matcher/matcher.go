@@ -15,6 +15,7 @@ import (
 
 	"infernosim/pkg/event"
 	"infernosim/pkg/grpcsim"
+	"infernosim/pkg/jsonpath"
 )
 
 // Config controls semantic matching of outbound requests against captured
@@ -116,7 +117,7 @@ func NewWithRegistry(cfg Config, registry *grpcsim.Registry) (*Matcher, error) {
 			cr.query[name] = re
 		}
 		for path, pattern := range rule.JSONPathRegex {
-			if _, pathErr := parseJSONPath(path); pathErr != nil {
+			if pathErr := jsonpath.Validate(path); pathErr != nil {
 				return nil, fmt.Errorf("matching.rules[%d].jsonpath_regex[%s]: %w", i, path, pathErr)
 			}
 			re, compileErr := regexp.Compile(pattern)
@@ -134,7 +135,7 @@ func NewWithRegistry(cfg Config, registry *grpcsim.Registry) (*Matcher, error) {
 			}
 		}
 		for path, pattern := range rule.ProtobufFieldRegex {
-			if _, pathErr := parseJSONPath(path); pathErr != nil {
+			if pathErr := jsonpath.Validate(path); pathErr != nil {
 				return nil, fmt.Errorf("matching.rules[%d].protobuf_field_regex[%s]: %w", i, path, pathErr)
 			}
 			re, compileErr := regexp.Compile(pattern)
@@ -144,12 +145,12 @@ func NewWithRegistry(cfg Config, registry *grpcsim.Registry) (*Matcher, error) {
 			cr.protobufValues[path] = re
 		}
 		for _, path := range rule.IgnoredProtobufFields {
-			if _, err := parseJSONPath(path); err != nil {
+			if err := jsonpath.Validate(path); err != nil {
 				return nil, fmt.Errorf("matching.rules[%d].ignored_protobuf_fields %q: %w", i, path, err)
 			}
 		}
 		for _, path := range append(append([]string{}, cfg.IgnoredJSONPaths...), rule.IgnoredJSONPaths...) {
-			if _, err := parseJSONPath(path); err != nil {
+			if err := jsonpath.Validate(path); err != nil {
 				return nil, fmt.Errorf("matching ignored JSONPath %q: %w", path, err)
 			}
 		}
@@ -595,64 +596,11 @@ func parseJSONPath(path string) ([]jsonPathToken, error) {
 // JSONPathValue extracts a value using InfernoSIM's deliberately small,
 // deterministic JSONPath subset.
 func JSONPathValue(root any, path string) (any, bool) {
-	tokens, err := parseJSONPath(path)
-	if err != nil {
-		return nil, false
-	}
-	current := root
-	for _, token := range tokens {
-		if token.array {
-			array, ok := current.([]any)
-			if !ok || token.index >= len(array) {
-				return nil, false
-			}
-			current = array[token.index]
-			continue
-		}
-		object, ok := current.(map[string]any)
-		if !ok {
-			return nil, false
-		}
-		current, ok = object[token.key]
-		if !ok {
-			return nil, false
-		}
-	}
-	return current, true
+	return jsonpath.Get(root, path)
 }
 
 func removeJSONPath(root any, path string) {
-	tokens, err := parseJSONPath(path)
-	if err != nil || len(tokens) == 0 {
-		return
-	}
-	current := root
-	for _, token := range tokens[:len(tokens)-1] {
-		if token.array {
-			array, ok := current.([]any)
-			if !ok || token.index >= len(array) {
-				return
-			}
-			current = array[token.index]
-		} else {
-			object, ok := current.(map[string]any)
-			if !ok {
-				return
-			}
-			current = object[token.key]
-		}
-	}
-	last := tokens[len(tokens)-1]
-	if last.array {
-		array, ok := current.([]any)
-		if ok && last.index < len(array) {
-			array[last.index] = nil
-		}
-		return
-	}
-	if object, ok := current.(map[string]any); ok {
-		delete(object, last.key)
-	}
+	_ = jsonpath.Delete(root, path)
 }
 
 func stringValue(value any) string {

@@ -1,3 +1,149 @@
+# InfernoSIM v4.0.0
+
+Status: release candidate; publish only from a passing annotated `v4.0.0` tag
+
+v4 adds a local, incident-derived reliability gate for tool-using agents. It
+replays recorded LLM and tool protocols, injects deterministic semantic and
+transport faults, accounts for real side-effect consequences, and emits
+reviewable CI evidence without requiring a hosted InfernoSIM service or live
+model during the test.
+
+## Highlights
+
+- `infernosim agent cases`, `agent run`, and `agent stress` plan stable
+  baseline/single-fault matrices and execute only the explicit child command
+  supplied after `--`.
+- MCP JSON-RPC over HTTP is recognized inside ordinary HTTP/HTTPS replay. The
+  new `agent mcp record` and `agent mcp replay` commands support bounded
+  newline-delimited stdio transcripts with semantic request matching and
+  runtime request-ID rewriting. Lost responses keep the replay server alive for
+  retries, and EOF evaluates assertion/fault coverage with optional reports.
+- Protocol adapters recognize OpenAI Responses, OpenAI Chat Completions,
+  Anthropic Messages, and Ollama chat tool-call envelopes. Generic HTTP
+  selectors remain available for custom gateways.
+- Faults can target response kind, provider, tool, HTTP method, host/path RE2,
+  and occurrence. Actions include semantic JSON/SSE/NDJSON mutation, status and
+  header changes, bounded delay/timeout, reset, truncation, empty success, and
+  “side effect committed but response lost.”
+- An explicit side-effect ledger tracks hashed identities, idempotency
+  deduplication, commit state, response delivery, and ambiguous completion
+  without retaining raw tool arguments or results.
+- Consequence assertions cover exactly-once, at-most-once, forbidden effects,
+  call budgets, verified retry, recorded-universe-only execution, and
+  deadlines. Verification can require a delivered 2xx response matching a
+  JSONPath/value predicate.
+- Streaming HTTP capture can preserve bounded SSE, NDJSON, and JSON-sequence
+  response frames and inter-frame delays; replay can mutate structured frames
+  without flattening their framing.
+- `agent otel import` normalizes OTLP JSON or JSONL into an owner-only
+  correlation log. Raw prompt, argument, and result attributes are excluded;
+  optional one-way content hashes support correlation.
+- Agent results produce private JSON plus JUnit, SARIF, and standalone HTML.
+  JUnit contains one testcase per planned case. A separate JSON reliability
+  surface reports unweighted observed pass rates by validated fault category;
+  it is evidence for that matrix, not a general model score.
+- `testgen --profile agent` generates a stable case manifest and agent-aware
+  Testcontainers, Compose, or GitHub Actions wiring. Generated Actions run the
+  assertion engine and fail if a selected fault is never exercised.
+- Bundle-v2 archives automatically include and encrypt optional `mcp.log` and
+  `agent-spans.jsonl` files because they remain regular incident files; the
+  encrypted format itself is unchanged.
+
+## Public validation fixture
+
+`examples/agent-reliability` contains a sanitized refund incident and recorded
+MCP/OpenAI-style exchanges. `examples/agentlab` contains a defensive loop and
+an intentionally unsafe control. The matrix covers:
+
+- a refund commit whose response is lost;
+- an HTTP-200 policy response missing its decision field;
+- an LLM refund tool call missing its arguments; and
+- an MCP tools list missing the required refund tool.
+
+The checked-in raw benchmark completed 20 identical matrix iterations. The
+defensive loop passed 100/100 executions, the unsafe baseline passed 20/20,
+and the unsafe loop was rejected in 80/80 fault executions. Case-plan hashes
+were stable and raw content was not retained. Timing is environment-specific.
+See `benchmarks/results/agent-reliability.json`.
+
+The optional local Ollama smoke passed with `llama3.1-local:latest` by producing
+a native `policy_check` tool call that the adapter recognized. Ollama sampling
+is compatibility evidence, not the deterministic release oracle.
+
+## Validation gates
+
+- Root and Testcontainers-module tests pass with the Go 1.26.6 race detector;
+  module consistency and `go vet` are clean. The Go vulnerability scan reports
+  zero reachable vulnerabilities.
+- Ten bounded fuzz targets pass, including the agent fault engine, semantic
+  JSONPath implementation, MCP request matcher, OpenAPI matcher, bundle-v2,
+  gRPC, streaming-template, healer, and message surfaces.
+- The safe/unsafe agent smoke confirms five defensive passes, the unsafe
+  baseline control, and rejection of all four unsafe fault cases. The MCP stdio
+  CLI fixture evaluates fault coverage and consequence assertions at EOF.
+- The final production image builds, runs as the unprivileged `infernosim`
+  user, enumerates the five checked-in cases, and passes the real
+  Testcontainers lifecycle test. Existing Node, Go Compose, and
+  Kafka/AsyncAPI/Redpanda smokes remain green.
+- Generated agent GitHub Actions and Compose harnesses pass `actionlint` and
+  `docker compose config`. All repository workflows pass `actionlint`.
+- A local GoReleaser snapshot builds eight platform archives plus
+  `checksums.txt`; every archive checksum verifies. Snapshot artifacts remain
+  local and are not a published release.
+
+## Safety and compatibility
+
+- Existing incidents and replay configurations remain valid; the `agent`
+  section is opt-in.
+- The minimum Go toolchain is 1.26.6. This is the first 1.26 patch that fixes
+  the reachable standard-library advisories found by the release vulnerability
+  scan; CI is pinned to it and the container builder downloads that exact
+  toolchain through Go's automatic toolchain selection.
+- Both simulator listeners bind to loopback in the runner. Calls outside the
+  recorded universe fail closed and can be asserted explicitly.
+- Agent bodies are capped at 16 MiB, MCP messages at 16 MiB, MCP transcripts at
+  100,000 records, OTel imports at 64 MiB, call/case counts at 10,000, and fault
+  delays at 60 seconds. JSONPath length/depth and regex length are bounded.
+- Configuration is strictly decoded. Duplicate IDs, unknown fields, invalid
+  selectors, unsupported mutations, conflicting terminal faults, and an
+  ambiguous-response fault without a matching declared effect are rejected.
+- Proofs expose hashes, operation names, counts, assertion results, and
+  divergence reasons—not captured bodies, prompt text, or raw tool values.
+  Bounded child stdout/stderr is stored only in owner-only JSON and should
+  still be treated as sensitive application output.
+- Case execution has a bounded timeout and process-output limit. Incident data
+  never supplies executable commands.
+- The release artifact contract is unchanged: eight platform archives plus
+  `checksums.txt` are uploaded by GoReleaser. Benchmark JSON, reports, fixtures,
+  and internal GoReleaser metadata are not release assets.
+
+## Deliberate boundaries
+
+- v4 explores the baseline plus one configured fault at a time. It does not
+  claim combinatorial search or formal verification.
+- The first recognized tool call in a provider response is independently
+  selectable. Parallel multi-tool envelopes are replayable but not yet
+  individually fault-addressable within one response.
+- MCP stdio support targets newline-delimited JSON-RPC. Other stdio framing and
+  binary MCP transports are not claimed.
+- OpenTelemetry support is an offline OTLP JSON/JSONL importer, not a live OTLP
+  collector.
+- Provider adapters recognize envelopes; they do not replace an LLM server or
+  make live model sampling deterministic.
+- Existing gRPC compression, reflection/remote descriptor, large-body, and
+  bidirectional-stream branching limitations remain.
+
+## Upgrade and documentation
+
+- New guide: `docs/AGENT_RELIABILITY.md`
+- Upgrade notes: `docs/UPGRADING.md`
+- Maintainer gates: `docs/RELEASING.md`
+- Example fixture: `examples/agent-reliability`
+- Safe/unsafe reference loop: `examples/agentlab`
+- Local gates: `scripts/agent-smoke.sh` and `scripts/ollama-smoke.sh`
+
+---
+
 # InfernoSIM v3.4.0
 
 Status: generally available

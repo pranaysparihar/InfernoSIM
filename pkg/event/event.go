@@ -45,6 +45,8 @@ type Event struct {
 	ResponseBodyTruncated bool                `json:"responseBodyTruncated,omitempty"`
 	ResponseBodyRedacted  bool                `json:"responseBodyRedacted,omitempty"`
 	ResponseCaptured      bool                `json:"responseCaptured,omitempty"`
+	ResponseStream        string              `json:"responseStream,omitempty"`
+	ResponseFrames        []StreamFrame       `json:"responseFrames,omitempty"`
 
 	// gRPC specific
 	GrpcServiceMethod string `json:"grpcServiceMethod,omitempty"`
@@ -52,6 +54,16 @@ type Event struct {
 
 	// Fault injection flag (from pkg/inject)
 	InjectionApplied string `json:"injectionApplied,omitempty"`
+}
+
+// StreamFrame preserves a bounded response chunk and its delay from the
+// preceding chunk. It is used for SSE and newline-delimited provider/MCP
+// streams. Payloads follow the same capture and privacy policy as response
+// bodies and are omitted unless body storage was explicitly authorized.
+type StreamFrame struct {
+	Delay      time.Duration `json:"delay,omitempty"`
+	BodyB64    string        `json:"bodyB64,omitempty"`
+	BodySha256 string        `json:"bodySha256"`
 }
 
 // GenerateID returns a cryptographically random 32-character hex string.
