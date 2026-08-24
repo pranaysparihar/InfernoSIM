@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -38,7 +39,7 @@ func TestRecordCommandCapturesBothDirections(t *testing.T) {
 	if !strings.Contains(output.String(), `"id":7`) {
 		t.Fatalf("protocol output = %s", output.String())
 	}
-	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 {
+	if info, err := os.Stat(path); err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0o600) {
 		t.Fatalf("transcript permissions = %v, %v", info, err)
 	}
 }
