@@ -15,6 +15,13 @@ ledger, consequence assertions, stable stress cases, redacted OpenTelemetry
 correlation, and CI-native evidence. It remains local-first and needs neither a
 hosted InfernoSIM service nor a live model during the release gate.
 
+4.0.1 extends this with monitor/state-estimate checks, bound single-use approval
+assertions, tenant predicates, compensation obligations, shared budgets,
+crash/restart testing, explicit parallel-call schedules, bounded fault pairs,
+version comparison, and failure reduction. Start with the runnable
+[4.0.1 safety and recovery guide](docs/AGENT_SAFETY_4_0_1.md). Publication status
+and validation are tracked in [release notes](RELEASE_NOTES.md).
+
 ## Feature guide
 
 | Area | Features |
@@ -28,6 +35,8 @@ hosted InfernoSIM service nor a live model during the release gate.
 | Events and workflows | Kafka-compatible capture/replay, deterministic message faults, AsyncAPI 3 JSON validation, ordered HTTP/gRPC/Kafka workflows |
 | Agent reliability | MCP HTTP/stdio replay, OpenAI/Anthropic/Ollama envelope adapters, semantic and ambiguous-commit faults, side-effect assertions, stable case matrix |
 | Agent evidence | Redacted OTLP JSON import, private JSON proof, one-test-per-case JUnit, SARIF, and HTML reports |
+| Agent safety and recovery | Monitor truth/freshness, approval binding/expiry/reuse, tenant predicates, compensation, token/cost/call budgets, process kill/restart with checkpoint retention |
+| Agent regression gates | Explicit protocol admission schedules, bounded fault pairs, exercised/violated/unexercised coverage, application-version comparison, one-minimal fault-set reduction |
 | Privacy | Built-in secret redaction, configurable HTTP and Kafka redact/drop/tokenize rules, deterministic HMAC tokens |
 | Portability | Authenticated encrypted v2 bundles using AES-256-GCM and PBKDF2-HMAC-SHA256 |
 

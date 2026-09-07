@@ -182,6 +182,10 @@ func Replay(opts ReplayOptions) error {
 	scanner := bufio.NewScanner(opts.Stdin)
 	scanner.Buffer(make([]byte, 64*1024), MaximumMessageSize)
 	position := 0
+	pending := map[string][]byte{}
+	runtimeIDs := map[string]json.RawMessage{}
+	activeIDs := map[string]bool{}
+	cancelledPending := map[string]bool{}
 clientLoop:
 	for scanner.Scan() {
 		if err := opts.Context.Err(); err != nil {
@@ -197,23 +201,64 @@ clientLoop:
 		if position >= len(records) {
 			return fmt.Errorf("MCP replay divergence: unexpected client message")
 		}
-		if !equivalentRequest(records[position].Message, request) {
+		expectedRequest := remapCancellation(records[position].Message, runtimeIDs)
+		if !equivalentRequest(expectedRequest, request) {
 			return fmt.Errorf("MCP replay divergence at transcript sequence %d", records[position].Sequence)
 		}
 		currentID, hasID := messageID(request)
+		recordedID, recordedHasID := messageID(records[position].Message)
+		if hasID != recordedHasID {
+			return fmt.Errorf("MCP replay divergence: request/notification shape changed")
+		}
+		if hasID {
+			if activeIDs[string(currentID)] || pending[string(recordedID)] != nil {
+				return fmt.Errorf("MCP replay divergence: duplicate in-flight request ID")
+			}
+			pending[string(recordedID)] = request
+			runtimeIDs[string(recordedID)] = currentID
+			activeIDs[string(currentID)] = true
+		} else if opts.Engine != nil {
+			var notification struct {
+				Method string `json:"method"`
+				Params struct {
+					RequestID json.RawMessage `json:"requestId"`
+				} `json:"params"`
+			}
+			if json.Unmarshal(request, &notification) == nil && notification.Method == "notifications/cancelled" {
+				for recorded, id := range runtimeIDs {
+					if bytes.Equal(id, notification.Params.RequestID) && pending[recorded] != nil {
+						cancelledPending[recorded] = true
+					}
+				}
+			}
+			_, err := opts.Engine.ProcessContext(opts.Context, agentreliability.Request{Method: "STDIO", Host: "stdio.mcp", Path: "/stdio", Body: request}, agentreliability.Response{Status: http.StatusNoContent})
+			if err != nil {
+				return err
+			}
+		}
 		position++
 		for position < len(records) && records[position].Direction == "server_to_client" {
 			response := append([]byte(nil), records[position].Message...)
-			if hasID {
-				response = replaceMessageID(response, currentID)
+			responseID, responseHasID := messageID(response)
+			matchedRequest := pending[string(responseID)]
+			if responseHasID {
+				if matchedRequest == nil {
+					return fmt.Errorf("MCP transcript response has no pending client request; server-initiated requests are unsupported")
+				}
+				id := runtimeIDs[string(responseID)]
+				response = replaceMessageID(response, id)
+				delete(pending, string(responseID))
+				delete(activeIDs, string(id))
 			}
-			if opts.Engine != nil && hasID {
-				decision, processErr := opts.Engine.Process(agentreliability.Request{
-					Method: "STDIO", Host: "stdio.mcp", Path: "/stdio", Headers: make(http.Header), Body: request,
+			if opts.Engine != nil && responseHasID {
+				decision, processErr := opts.Engine.ProcessContext(opts.Context, agentreliability.Request{
+					Method: "STDIO", Host: "stdio.mcp", Path: "/stdio", Headers: make(http.Header), Body: matchedRequest,
+					InFlightAtCancel: cancelledPending[string(responseID)],
 				}, agentreliability.Response{Status: http.StatusOK, Headers: make(http.Header), Body: response})
 				if processErr != nil {
 					return processErr
 				}
+				delete(cancelledPending, string(responseID))
 				if decision.Delay > 0 {
 					if err := wait(opts.Context, decision.Delay); err != nil {
 						return err
@@ -241,7 +286,31 @@ clientLoop:
 			position++
 		}
 	}
-	return scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	if position != len(records) || len(pending) > 0 {
+		return fmt.Errorf("MCP replay incomplete: transcript or pending requests remain")
+	}
+	return nil
+}
+
+func remapCancellation(message []byte, ids map[string]json.RawMessage) []byte {
+	var object map[string]json.RawMessage
+	if json.Unmarshal(message, &object) != nil || string(object["method"]) != `"notifications/cancelled"` {
+		return message
+	}
+	var params map[string]json.RawMessage
+	if json.Unmarshal(object["params"], &params) != nil {
+		return message
+	}
+	if id, ok := ids[string(params["requestId"])]; ok {
+		params["requestId"] = id
+		object["params"], _ = json.Marshal(params)
+		data, _ := json.Marshal(object)
+		return data
+	}
+	return message
 }
 
 func wait(ctx context.Context, duration time.Duration) error {

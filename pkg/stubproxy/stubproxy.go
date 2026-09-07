@@ -3,6 +3,7 @@ package stubproxy
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
@@ -319,7 +320,7 @@ func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				s.agentFailure(w, processErr)
 				return
 			}
-			if s.writeAgentDecision(w, decision, trailers, "") {
+			if s.writeAgentDecision(r.Context(), w, decision, trailers, "") {
 				return
 			}
 		}
@@ -399,7 +400,7 @@ func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			s.agentFailure(w, processErr)
 			return
 		}
-		if s.writeAgentDecision(w, decision, http.Header(expected.ResponseTrailers), "") {
+		if s.writeAgentDecision(r.Context(), w, decision, http.Header(expected.ResponseTrailers), "") {
 			return
 		}
 	}
@@ -474,7 +475,7 @@ func (s *StubProxy) processAgent(r *http.Request, requestBody []byte, status int
 	if r.URL != nil {
 		path = r.URL.Path
 	}
-	return s.agentEngine.Process(agentreliability.Request{
+	return s.agentEngine.ProcessContext(r.Context(), agentreliability.Request{
 		Method: r.Method, Host: host, Path: path, Headers: r.Header.Clone(), Body: append([]byte(nil), requestBody...),
 	}, agentreliability.Response{
 		Status: status, Headers: headers.Clone(), Body: append([]byte(nil), responseBody...),
@@ -491,12 +492,16 @@ func (s *StubProxy) agentFailure(w http.ResponseWriter, err error) {
 }
 
 // writeAgentDecision returns true when the agent engine handled the response.
-func (s *StubProxy) writeAgentDecision(w http.ResponseWriter, decision agentreliability.Decision, trailers http.Header, grpcStatus string) bool {
+func (s *StubProxy) writeAgentDecision(ctx context.Context, w http.ResponseWriter, decision agentreliability.Decision, trailers http.Header, grpcStatus string) bool {
 	if decision.Delay > 0 {
-		time.Sleep(decision.Delay)
+		if !waitAgentContext(ctx, decision.Delay) {
+			return true
+		}
 	}
 	if decision.Timeout > 0 {
-		time.Sleep(decision.Timeout)
+		if !waitAgentContext(ctx, decision.Timeout) {
+			return true
+		}
 		http.Error(w, "injected agent dependency timeout", http.StatusGatewayTimeout)
 		return true
 	}
@@ -520,6 +525,17 @@ func (s *StubProxy) writeAgentDecision(w http.ResponseWriter, decision agentreli
 	decision.Response.Headers.Set("X-Inferno-Agent-Fault", strings.Join(decision.AppliedFaults, ","))
 	writeStubResponse(w, decision.Response.Status, decision.Response.Headers, trailers, grpcStatus, decision.Response.Body)
 	return true
+}
+
+func waitAgentContext(ctx context.Context, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
 func isGRPCRequest(r *http.Request) bool {

@@ -1,5 +1,28 @@
 # Upgrading InfernoSIM
 
+## v4.0.0 to v4.0.1
+
+Existing `agent.version: 1` configurations still work. New assertions,
+`exploration.pairwise`, schedules, and `require_exercised` are opt-in. New
+configurations require the 4.0.1 binary; older strict decoders reject them.
+
+Reports add coverage, scope, schedule, usage, binding-verdict, and restart
+fields. Consume `Case.ActiveFaults()`/`fault_ids` for combinations, not just
+the legacy single `fault_id`. Schedule-only cases are not the default baseline.
+Unexercised conditional checks remain non-failing unless required, but they
+are now labeled honestly and can cause a coverage regression in comparisons.
+
+Missing declared identity/deduplication fields now fail closed. MCP stdio
+rejects incomplete transcripts and duplicate in-flight IDs, and verification
+does not accept JSON-RPC errors merely because the transport returned HTTP 200.
+Review fixtures that depended on those previous permissive behaviors.
+
+Regenerate agent harnesses to retain combined faults and schedule IDs. The
+generated image default is `ghcr.io/pranaysparihar/infernosim:4.0.1`; until that
+image is published, pass `--image infernosim:4.0.1-local` after a local Docker
+build. The encrypted bundle format and ordinary replay configuration have
+not changed. See the [full guide](AGENT_SAFETY_4_0_1.md).
+
 ## v3.4 to v4.0
 
 Existing incident directories and `replay.yaml` files remain valid. Agent

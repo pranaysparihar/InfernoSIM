@@ -24,16 +24,18 @@ import (
 const controlPrefix = "/__infernosim"
 
 type Options struct {
-	IncidentDir   string
-	ConfigPath    string
-	Listen        string
-	AdminListen   string
-	ObservedLog   string
-	HTTPS         bool
-	CADir         string
-	AllowHosts    []string
-	AgentFaultIDs []string
-	AgentCaseID   string
+	IncidentDir         string
+	ConfigPath          string
+	Listen              string
+	AdminListen         string
+	ObservedLog         string
+	HTTPS               bool
+	CADir               string
+	AllowHosts          []string
+	AgentFaultIDs       []string
+	AgentCaseID         string
+	AgentScheduleID     string
+	AgentBeforeResponse func(int) bool
 }
 
 type Server struct {
@@ -111,7 +113,13 @@ func New(opts Options) (*Server, error) {
 		if err != nil {
 			return nil, fmt.Errorf("initialize agent reliability engine: %w", err)
 		}
-	} else if len(opts.AgentFaultIDs) > 0 {
+		agentEngine.SetBeforeResponse(opts.AgentBeforeResponse)
+		if opts.AgentScheduleID != "" {
+			if err := agentEngine.SetSchedule(opts.AgentScheduleID); err != nil {
+				return nil, err
+			}
+		}
+	} else if len(opts.AgentFaultIDs) > 0 || opts.AgentScheduleID != "" {
 		return nil, fmt.Errorf("agent faults require agent.enabled: true in replay configuration")
 	}
 	var ca *capture.CAStore

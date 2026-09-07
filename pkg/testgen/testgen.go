@@ -73,7 +73,7 @@ func Generate(opts Options) (Result, error) {
 		agentCases = prepared.Cases
 	}
 	if opts.Image == "" {
-		opts.Image = "ghcr.io/pranaysparihar/infernosim:4.0.0"
+		opts.Image = "ghcr.io/pranaysparihar/infernosim:4.0.1"
 	}
 	if strings.ContainsAny(opts.Image, "\r\n") || strings.TrimSpace(opts.Image) == "" {
 		return Result{}, fmt.Errorf("image must be a non-empty single-line reference")
@@ -282,6 +282,9 @@ func startInfernoSIM(t testing.TB, agentCase ...string) *infernoSIMContainer {
 	if len(agentCase) >= 2 && agentCase[1] != "" {
 		command = append(command, "--agent-case", agentCase[1])
 	}
+	if len(agentCase) >= 3 && agentCase[2] != "" {
+		command = append(command, "--agent-schedule", agentCase[2])
+	}
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image: infernoSIMImage,
@@ -344,14 +347,14 @@ func TestInfernoSIMIncidentLoads(t *testing.T) {
 }
 {{if eq .Profile "agent"}}
 func TestInfernoSIMAgentCasesLoad(t *testing.T) {
-	cases := []struct{ id, fault string }{
-		{{range .AgentCases}}{id: {{printf "%q" .ID}}, fault: {{printf "%q" .FaultID}}},
+	cases := []struct{ id, fault, schedule string }{
+		{{range .AgentCases}}{id: {{printf "%q" .ID}}, fault: {{printf "%q" .FaultList}}, schedule: {{printf "%q" .ScheduleID}}},
 		{{end}}
 	}
 	for _, agentCase := range cases {
 		agentCase := agentCase
 		t.Run(agentCase.id, func(t *testing.T) {
-			simulator := startInfernoSIM(t, agentCase.fault, agentCase.id)
+			simulator := startInfernoSIM(t, agentCase.fault, agentCase.id, agentCase.schedule)
 			simulator.reset(t)
 		})
 	}
@@ -384,7 +387,7 @@ run your agent with ProxyURL, then assert the control API proof in CI.
 const composeTemplate = `services:
   infernosim:
     image: {{yamlQuote .Image}}
-    command: ["serve", "/incident", "--listen", "0.0.0.0:19000", "--admin-listen", "0.0.0.0:19001"{{if eq .Profile "agent"}}, "--agent-fault", "${INFERNOSIM_AGENT_FAULT:-}", "--agent-case", "${INFERNOSIM_AGENT_CASE:-baseline}"{{end}}]
+    command: ["serve", "/incident", "--listen", "0.0.0.0:19000", "--admin-listen", "0.0.0.0:19001"{{if eq .Profile "agent"}}, "--agent-fault", "${INFERNOSIM_AGENT_FAULT:-}", "--agent-case", "${INFERNOSIM_AGENT_CASE:-baseline}", "--agent-schedule", "${INFERNOSIM_AGENT_SCHEDULE:-}"{{end}}]
     volumes:
       - type: bind
         source: {{yamlQuote .IncidentPath}}

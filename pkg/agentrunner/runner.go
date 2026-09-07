@@ -33,13 +33,14 @@ const (
 )
 
 type Options struct {
-	IncidentDir string
-	ConfigPath  string
-	Case        agentreliability.Case
-	Command     []string
-	Timeout     time.Duration
-	Environment []string
-	OutputLimit int
+	IncidentDir      string
+	ConfigPath       string
+	Case             agentreliability.Case
+	Command          []string
+	Timeout          time.Duration
+	Environment      []string
+	OutputLimit      int
+	RestartAfterCall int
 }
 
 type ProcessResult struct {
@@ -48,17 +49,21 @@ type ProcessResult struct {
 	Stderr          string `json:"stderr,omitempty"`
 	OutputTruncated bool   `json:"output_truncated"`
 	TimedOut        bool   `json:"timed_out"`
+	Restarted       bool   `json:"restarted"`
 }
 
 type Result struct {
-	Version    int                                `json:"version"`
-	Case       agentreliability.Case              `json:"case"`
-	Passed     bool                               `json:"passed"`
-	Duration   time.Duration                      `json:"duration"`
-	Process    ProcessResult                      `json:"process"`
-	Simulator  any                                `json:"simulator"`
-	Assertions []agentreliability.AssertionResult `json:"assertions"`
-	Failure    string                             `json:"failure,omitempty"`
+	Version          int                                `json:"version"`
+	Case             agentreliability.Case              `json:"case"`
+	Passed           bool                               `json:"passed"`
+	Duration         time.Duration                      `json:"duration"`
+	Process          ProcessResult                      `json:"process"`
+	Simulator        any                                `json:"simulator"`
+	Assertions       []agentreliability.AssertionResult `json:"assertions"`
+	Failure          string                             `json:"failure,omitempty"`
+	ScopeHash        string                             `json:"scope_hash,omitempty"`
+	RestartAfterCall int                                `json:"restart_after_call,omitempty"`
+	InvalidRun       bool                               `json:"invalid_run,omitempty"`
 }
 
 type Prepared struct {
@@ -118,7 +123,7 @@ func Prepare(incidentDir, configPath string, seed int64, budget int, includeBase
 func ResolveCase(cases []agentreliability.Case, value string) (agentreliability.Case, error) {
 	if value == "" || value == "baseline" {
 		for _, candidate := range cases {
-			if candidate.FaultID == "" {
+			if candidate.Baseline() {
 				return candidate, nil
 			}
 		}
@@ -148,6 +153,9 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	if opts.OutputLimit < 1024 || opts.OutputLimit > 16*1024*1024 {
 		return Result{}, fmt.Errorf("output limit must be between 1 KiB and 16 MiB")
 	}
+	if opts.RestartAfterCall < 0 || opts.RestartAfterCall > agentreliability.MaximumCalls {
+		return Result{}, fmt.Errorf("restart-after-call must be between 0 and %d", agentreliability.MaximumCalls)
+	}
 	configPath := opts.ConfigPath
 	prepared, err := Prepare(opts.IncidentDir, configPath, 0, 1+agentreliability.MaximumCases, true)
 	if err != nil {
@@ -159,10 +167,26 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 			return Result{}, err
 		}
 	}
+	runContext, cancel := context.WithTimeout(ctx, opts.Timeout)
+	defer cancel()
+	boundary := make(chan struct{}, 1)
+	resume := make(chan struct{})
 	server, err := simserver.New(simserver.Options{
 		IncidentDir: opts.IncidentDir, ConfigPath: prepared.ConfigPath,
 		Listen: "127.0.0.1:0", AdminListen: "127.0.0.1:0",
 		AgentFaultIDs: faultIDs(opts.Case), AgentCaseID: opts.Case.ID,
+		AgentScheduleID: opts.Case.ScheduleID,
+		AgentBeforeResponse: func(sequence int) bool {
+			if opts.RestartAfterCall == 0 || sequence != opts.RestartAfterCall {
+				return false
+			}
+			boundary <- struct{}{}
+			select {
+			case <-resume:
+			case <-runContext.Done():
+			}
+			return true
+		},
 	})
 	if err != nil {
 		return Result{}, err
@@ -176,27 +200,18 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		_ = server.Close(closeContext)
 	}()
 
-	runContext, cancel := context.WithTimeout(ctx, opts.Timeout)
-	defer cancel()
 	proxyURL := "http://" + server.StubAddress()
 	adminURL := "http://" + server.AdminAddress()
-	command := exec.CommandContext(runContext, opts.Command[0], opts.Command[1:]...)
-	configureCommand(command)
-	command.Env = mergeEnvironment(os.Environ(), opts.Environment, map[string]string{
+	environment := mergeEnvironment(os.Environ(), opts.Environment, map[string]string{
 		"HTTP_PROXY": proxyURL, "HTTPS_PROXY": proxyURL,
 		"http_proxy": proxyURL, "https_proxy": proxyURL,
 		"NO_PROXY": "", "no_proxy": "",
 		"INFERNOSIM_PROXY_URL": proxyURL, "INFERNOSIM_ADMIN_URL": adminURL,
 		"INFERNOSIM_CASE_ID": opts.Case.ID, "INFERNOSIM_FAULT_ID": opts.Case.FaultID,
 	})
-	stdout := &boundedBuffer{limit: opts.OutputLimit}
-	stderr := &boundedBuffer{limit: opts.OutputLimit}
-	command.Stdout = stdout
-	command.Stderr = stderr
 	started := time.Now()
-	runErr := command.Run()
+	process, runErr := executeWithRestart(runContext, opts, environment, boundary, resume)
 	duration := time.Since(started)
-	process := ProcessResult{ExitCode: 0, Stdout: stdout.String(), Stderr: stderr.String(), OutputTruncated: stdout.truncated || stderr.truncated}
 	if runErr != nil {
 		process.ExitCode = -1
 		var exitError *exec.ExitError
@@ -208,11 +223,15 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		process.TimedOut = true
 	}
 	snapshot := server.Snapshot()
-	result := Result{Version: 1, Case: opts.Case, Passed: true, Duration: duration, Process: process, Simulator: snapshot}
+	result := Result{Version: 1, Case: opts.Case, Passed: true, Duration: duration, Process: process, Simulator: snapshot, ScopeHash: prepared.ScopeHash, RestartAfterCall: opts.RestartAfterCall}
 	if snapshot.Agent != nil {
 		result.Assertions = agentreliability.Evaluate(prepared.Config.Agent, *snapshot.Agent, snapshot.Unexpected, duration)
 	}
 	var failures []string
+	if opts.RestartAfterCall > 0 && !process.Restarted {
+		result.InvalidRun = true
+		failures = append(failures, "requested crash boundary was not exercised")
+	}
 	if process.TimedOut {
 		failures = append(failures, "agent command exceeded timeout")
 	} else if process.ExitCode != 0 {
@@ -224,10 +243,14 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		}
 	}
 	if len(snapshot.Divergences) > 0 {
+		result.InvalidRun = true
 		failures = append(failures, snapshot.Divergences...)
 	}
-	if opts.Case.FaultID != "" && (snapshot.Agent == nil || !contains(snapshot.Agent.AppliedFaults, opts.Case.FaultID)) {
-		failures = append(failures, "selected fault was not triggered")
+	for _, id := range opts.Case.ActiveFaults() {
+		if snapshot.Agent == nil || !contains(snapshot.Agent.AppliedFaults, id) {
+			result.InvalidRun = true
+			failures = append(failures, "selected fault was not triggered: "+id)
+		}
 	}
 	if len(failures) > 0 {
 		result.Passed = false
@@ -237,10 +260,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 }
 
 func faultIDs(value agentreliability.Case) []string {
-	if value.FaultID == "" {
-		return nil
-	}
-	return []string{value.FaultID}
+	return value.ActiveFaults()
 }
 
 func contains(values []string, wanted string) bool {
@@ -338,6 +358,13 @@ func ReportingResult(results []Result) reporting.Result {
 	var findings []reporting.Finding
 	cases := make([]reporting.Case, 0, len(results))
 	for _, result := range results {
+		var messages []string
+		if result.Failure != "" {
+			messages = append(messages, result.Failure)
+		}
+		for _, assertion := range result.Assertions {
+			messages = append(messages, assertion.Coverage+" "+assertion.ID+": "+assertion.Message)
+		}
 		if result.Passed {
 			passed++
 		} else {
@@ -360,7 +387,7 @@ func ReportingResult(results []Result) reporting.Result {
 		cases = append(cases, reporting.Case{
 			ID: result.Case.ID, Name: result.Case.Description, Passed: result.Passed,
 			Category: result.Case.Category, Severity: result.Case.Severity,
-			Duration: result.Duration.Round(time.Millisecond).String(), Message: result.Failure,
+			Duration: result.Duration.Round(time.Millisecond).String(), Message: strings.Join(messages, "\n"),
 		})
 	}
 	outcome := "PASS_AGENT_RELIABILITY"
@@ -381,7 +408,7 @@ func ReliabilitySurface(results []Result) Surface {
 	surface := Surface{Version: 1}
 	byCategory := make(map[string]*SurfaceCategory)
 	for _, result := range results {
-		if result.Case.FaultID == "" {
+		if result.Case.Baseline() {
 			surface.BaselinePassed = result.Passed
 			continue
 		}

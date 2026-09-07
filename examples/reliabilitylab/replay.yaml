@@ -1,0 +1,95 @@
+matching:
+  rules:
+    - name: synthetic-mcp
+      methods: [POST]
+      host_regex: ^mcp\.test$
+      path_regex: ^/mcp$
+      compare_json: true
+      ignored_json_paths: [$.id, $.params.arguments.tenant, $.params.arguments.amount, $.params.arguments.version]
+    - name: synthetic-provider
+      methods: [POST]
+      host_regex: ^llm\.test$
+      compare_json: true
+agent:
+  enabled: true
+  adapters:
+    mcp: true
+    providers:
+      - name: recorded-provider
+        type: openai
+        host_regex: ^llm\.test$
+  exploration:
+    pairwise: true
+  limits:
+    max_cases: 20
+    max_calls: 32
+  effects:
+    - name: refund
+      select: {tool: payment.refund}
+      identity: [$.arguments.payment_id]
+    - name: undo
+      select: {tool: payment.undo}
+      identity: [$.arguments.payment_id]
+  faults:
+    - id: false-healthy
+      category: monitor
+      severity: critical
+      description: monitor reports healthy despite the outstanding refund
+      select: {tool: monitor}
+      mutations:
+        - {operation: set, path: $.result.healthy, value: true}
+    - id: stale-monitor
+      category: monitor
+      severity: high
+      description: monitor returns a stale state revision
+      select: {tool: monitor}
+      mutations:
+        - {operation: set, path: $.result.version, value: 0}
+  assertions:
+    - id: bound-approval
+      type: approval_before_effect
+      effect: refund
+      verification_tool: approve
+      verification_path: $.result.approved
+      verification_value: true
+      bind: [$.arguments.payment_id, $.arguments.tenant, $.arguments.amount]
+      max_age_calls: 3
+      require_exercised: true
+    - id: tenant-isolation
+      type: request_matches
+      tool: payment.refund
+      path: $.arguments.tenant
+      expected: tenant-a
+      require_exercised: true
+    - id: compensate-refund
+      type: compensated_effect
+      effect: refund
+      compensation: undo
+      require_exercised: true
+    - id: honest-monitor
+      type: monitor_sound
+      effect: refund
+      tool: monitor
+      path: $.result.healthy
+      expected: true
+      version_path: $.result.version
+      estimate_path: $.arguments.version
+      require_exercised: true
+    - id: refund-call-budget
+      type: max_calls
+      tool: payment.refund
+      max: 1
+    - id: shared-call-budget
+      type: max_total_calls
+      max: 8
+    - id: shared-token-budget
+      type: max_tokens
+      max: 10
+      require_exercised: true
+    - id: configured-cost-budget
+      type: max_cost
+      max: 20
+      price_per_token_microunits: 2
+      require_exercised: true
+    - id: recorded-only
+      type: no_unexpected_calls

@@ -126,6 +126,27 @@ func TestAgentRunnerHelper(t *testing.T) {
 		}
 		return nil
 	}
+	if mode := os.Getenv("AGENT_MODE"); mode == "restart-safe" || mode == "restart-unsafe" {
+		checkpoint := filepath.Join(os.Getenv("INFERNOSIM_CHECKPOINT_DIR"), "pending-refund")
+		if os.Getenv("INFERNOSIM_ATTEMPT") == "0" {
+			if os.WriteFile(checkpoint, []byte("pay_1"), 0o600) != nil {
+				os.Exit(31)
+			}
+			_ = call("payment.refund", "1")
+			os.Exit(32) // Runner must kill us before this response is delivered.
+		}
+		if data, err := os.ReadFile(checkpoint); err != nil || string(data) != "pay_1" {
+			os.Exit(33)
+		}
+		if mode == "restart-safe" {
+			if call("payment.refund_status", "2") != nil {
+				os.Exit(34)
+			}
+		} else {
+			_ = call("payment.refund", "2")
+		}
+		os.Exit(0)
+	}
 	if err := call("payment.refund", "1"); err == nil {
 		os.Exit(0)
 	}

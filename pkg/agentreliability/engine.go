@@ -2,6 +2,7 @@ package agentreliability
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -18,11 +19,12 @@ import (
 )
 
 type Request struct {
-	Method  string
-	Host    string
-	Path    string
-	Headers http.Header
-	Body    []byte
+	Method           string
+	Host             string
+	Path             string
+	Headers          http.Header
+	Body             []byte
+	InFlightAtCancel bool
 }
 
 type Response struct {
@@ -50,12 +52,19 @@ type Operation struct {
 }
 
 type CallRecord struct {
-	Sequence               int      `json:"sequence"`
-	Kind                   string   `json:"kind"`
-	Provider               string   `json:"provider,omitempty"`
-	Tool                   string   `json:"tool,omitempty"`
-	CallID                 string   `json:"call_id,omitempty"`
-	SatisfiedVerifications []string `json:"satisfied_verifications,omitempty"`
+	Sequence               int               `json:"sequence"`
+	Kind                   string            `json:"kind"`
+	Provider               string            `json:"provider,omitempty"`
+	Tool                   string            `json:"tool,omitempty"`
+	CallID                 string            `json:"call_id,omitempty"`
+	SatisfiedVerifications []string          `json:"satisfied_verifications,omitempty"`
+	Operations             []Operation       `json:"operations,omitempty"`
+	Checks                 map[string]bool   `json:"checks,omitempty"`
+	Bindings               map[string]string `json:"bindings,omitempty"`
+	Tokens                 int64             `json:"tokens,omitempty"`
+	UsageKnown             bool              `json:"usage_known"`
+	CancelTarget           string            `json:"cancel_target,omitempty"`
+	InFlightAtCancel       bool              `json:"in_flight_at_cancel,omitempty"`
 }
 
 type EffectRecord struct {
@@ -71,11 +80,15 @@ type EffectRecord struct {
 }
 
 type Snapshot struct {
-	Version       int            `json:"version"`
-	Calls         []CallRecord   `json:"calls,omitempty"`
-	Effects       []EffectRecord `json:"effects,omitempty"`
-	AppliedFaults []string       `json:"applied_faults,omitempty"`
-	LimitExceeded bool           `json:"limit_exceeded"`
+	Version           int            `json:"version"`
+	Calls             []CallRecord   `json:"calls,omitempty"`
+	Effects           []EffectRecord `json:"effects,omitempty"`
+	AppliedFaults     []string       `json:"applied_faults,omitempty"`
+	LimitExceeded     bool           `json:"limit_exceeded"`
+	ScheduleID        string         `json:"schedule_id,omitempty"`
+	ScheduleSteps     int            `json:"schedule_steps,omitempty"`
+	ScheduleCompleted int            `json:"schedule_completed,omitempty"`
+	ScheduleFailed    bool           `json:"schedule_failed,omitempty"`
 }
 
 type compiledSelector struct {
@@ -117,6 +130,11 @@ type Engine struct {
 	faultOccurrences  map[string]int
 	idempotencyCommit map[string]struct{}
 	limitExceeded     bool
+	schedule          *Schedule
+	schedulePosition  int
+	scheduleFailed    bool
+	scheduleChanged   chan struct{}
+	beforeResponse    func(int) bool
 }
 
 func NewEngine(config Config, activeFaultIDs []string) (*Engine, error) {
@@ -191,11 +209,19 @@ func (e *Engine) Reset() {
 	e.faultOccurrences = make(map[string]int)
 	e.idempotencyCommit = make(map[string]struct{})
 	e.limitExceeded = false
+	e.schedulePosition = 0
+	e.scheduleFailed = false
+	if e.scheduleChanged != nil {
+		close(e.scheduleChanged)
+		e.scheduleChanged = make(chan struct{})
+	}
 }
 
 func (e *Engine) Process(request Request, response Response) (Decision, error) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	return e.ProcessContext(context.Background(), request, response)
+}
+
+func (e *Engine) process(request Request, response Response) (Decision, error) {
 	if len(request.Body) > e.config.Limits.MaxBodyBytes || len(response.Body) > e.config.Limits.MaxBodyBytes {
 		return Decision{}, fmt.Errorf("agent exchange exceeds configured body limit")
 	}
@@ -219,11 +245,36 @@ func (e *Engine) Process(request Request, response Response) (Decision, error) {
 	e.calls = append(e.calls, CallRecord{
 		Sequence: e.sequence, Kind: operation.Kind, Provider: operation.Provider,
 		Tool: operation.Tool, CallID: operation.CallID,
+		InFlightAtCancel: request.InFlightAtCancel,
 	})
+	operations := responseOperations(requestOperation, response.Body)
+	e.calls[len(e.calls)-1].Operations = operations
+	if requestOperation.Kind == "llm_response" {
+		var raw any
+		if json.Unmarshal(response.Body, &raw) == nil {
+			e.calls[len(e.calls)-1].Tokens, e.calls[len(e.calls)-1].UsageKnown = tokenCount(raw)
+		}
+	}
+	// Missing identity fields must not collapse unrelated operations into the
+	// same deduplication key and accidentally conceal duplicate side effects.
+	identityRoot := requestRoot(requestOperation, request)
+	for _, effect := range e.effects {
+		if effect.selector.matches(request, requestOperation) {
+			for _, paths := range [][]string{effect.value.Identity, effect.value.DeduplicateBy} {
+				if len(paths) > 0 && completeBinding(identityRoot, paths) == "" {
+					return Decision{}, fmt.Errorf("effect %s is missing a required identity or deduplication field", effect.value.Name)
+				}
+			}
+		}
+	}
 	effectIndexes := e.recordEffects(request, requestOperation)
 	decision := Decision{Response: cloneResponse(response)}
 	for _, fault := range e.faults {
-		if !e.activeFault[fault.value.ID] || !fault.selector.matches(request, operation) {
+		matches := fault.selector.matches(request, operation)
+		for _, candidate := range operations {
+			matches = matches || fault.selector.matches(request, candidate)
+		}
+		if !e.activeFault[fault.value.ID] || !matches {
 			continue
 		}
 		e.faultOccurrences[fault.value.ID]++
@@ -234,14 +285,22 @@ func (e *Engine) Process(request Request, response Response) (Decision, error) {
 			return Decision{}, fmt.Errorf("apply agent fault %q: %w", fault.value.ID, err)
 		}
 		decision.Delay += fault.delay
-		decision.Timeout = fault.timeout
-		decision.Reset = fault.value.Reset
-		decision.ResponseLost = fault.value.CommittedResponseLost
+		if decision.Delay > MaximumFaultDelay {
+			return Decision{}, fmt.Errorf("combined delay exceeds 60s")
+		}
+		if fault.timeout > decision.Timeout {
+			decision.Timeout = fault.timeout
+		}
+		decision.Reset = decision.Reset || fault.value.Reset
+		decision.ResponseLost = decision.ResponseLost || fault.value.CommittedResponseLost
 		decision.AppliedFaults = append(decision.AppliedFaults, fault.value.ID)
 		e.appliedFaults = append(e.appliedFaults, fault.value.ID)
 	}
 	if decision.ResponseLost && len(effectIndexes) == 0 {
 		return Decision{}, fmt.Errorf("committed_response_lost matched a call without a declared effect")
+	}
+	if e.beforeResponse != nil && e.beforeResponse(e.sequence) {
+		decision.ResponseLost = true
 	}
 	for _, index := range effectIndexes {
 		e.effectRecords[index].ResponseLost = decision.ResponseLost || decision.Reset || decision.Timeout > 0
@@ -250,6 +309,7 @@ func (e *Engine) Process(request Request, response Response) (Decision, error) {
 	if !decision.ResponseLost && !decision.Reset && decision.Timeout == 0 && decision.Response.Status >= 200 && decision.Response.Status < 300 {
 		e.markVerifications(len(e.calls)-1, operation.Tool, decision.Response.Body)
 	}
+	e.recordSafety(requestOperation, request, decision)
 	return decision, nil
 }
 
@@ -261,6 +321,12 @@ func (e *Engine) markVerifications(callIndex int, tool string, body []byte) {
 	}
 	var root any
 	parsed := json.Unmarshal(body, &root) == nil
+	if v, ok := jsonpath.Get(root, "$.error"); ok && v != nil {
+		return
+	}
+	if v, _ := jsonpath.Get(root, "$.result.isError"); v == true {
+		return
+	}
 	for _, assertion := range e.config.Assertions {
 		if assertion.Type != "require_verification_before_retry" || assertion.VerificationTool != tool {
 			continue
@@ -288,8 +354,10 @@ func cloneResponse(response Response) Response {
 func (e *Engine) inspectRequest(request Request) Operation {
 	operation := Operation{Kind: "http_response"}
 	var body any
-	if len(request.Body) > 0 {
-		_ = json.Unmarshal(request.Body, &body)
+	if len(request.Body) > 0 && json.Valid(request.Body) {
+		decoder := json.NewDecoder(bytes.NewReader(request.Body))
+		decoder.UseNumber()
+		_ = decoder.Decode(&body)
 	}
 	operation.Raw = body
 	if e.config.Adapters.MCP {
@@ -307,6 +375,14 @@ func (e *Engine) inspectRequest(request Request) Operation {
 				operation.Kind = "mcp_tools_list"
 				operation.CallID = scalarString(object["id"])
 				return operation
+			default:
+				if method != "" {
+					operation.Kind = "mcp_lifecycle"
+					operation.Tool = method
+					operation.CallID = scalarString(object["id"])
+					operation.Arguments = object["params"]
+					return operation
+				}
 			}
 		}
 	}
@@ -379,7 +455,7 @@ func inspectResponse(operation Operation, body []byte) Operation {
 }
 
 func (e *Engine) recordEffects(request Request, operation Operation) []int {
-	identityRoot := map[string]any{"arguments": operation.Arguments, "body": operation.Raw}
+	identityRoot := requestRoot(operation, request)
 	var indexes []int
 	for _, effect := range e.effects {
 		if !effect.selector.matches(request, operation) {
@@ -595,6 +671,9 @@ func convertedValue(value any, target string) any {
 }
 
 func (s compiledSelector) matches(request Request, operation Operation) bool {
+	if s.value.CallID != "" && s.value.CallID != operation.CallID {
+		return false
+	}
 	if s.value.Kind != "" && s.value.Kind != "any" && s.value.Kind != operation.Kind {
 		return false
 	}
@@ -634,18 +713,30 @@ func scalarString(value any) string {
 func (e *Engine) Snapshot() Snapshot {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return Snapshot{
+	snapshot := Snapshot{
 		Version: 1, Calls: append([]CallRecord(nil), e.calls...),
 		Effects:       append([]EffectRecord(nil), e.effectRecords...),
 		AppliedFaults: append([]string(nil), e.appliedFaults...), LimitExceeded: e.limitExceeded,
 	}
+	if e.schedule != nil {
+		snapshot.ScheduleID = e.schedule.ID
+		snapshot.ScheduleSteps = len(e.schedule.Steps)
+		snapshot.ScheduleCompleted = e.schedulePosition
+		snapshot.ScheduleFailed = e.scheduleFailed
+	}
+	// Deep copy nested maps/slices so callers cannot change live evidence.
+	encoded, _ := json.Marshal(snapshot)
+	var copied Snapshot
+	_ = json.Unmarshal(encoded, &copied)
+	return copied
 }
 
 type AssertionResult struct {
-	ID      string `json:"id"`
-	Type    string `json:"type"`
-	Passed  bool   `json:"passed"`
-	Message string `json:"message"`
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Passed   bool   `json:"passed"`
+	Message  string `json:"message"`
+	Coverage string `json:"coverage"`
 }
 
 func Evaluate(config Config, snapshot Snapshot, unexpectedCalls bool, elapsed time.Duration) []AssertionResult {
@@ -700,7 +791,25 @@ func Evaluate(config Config, snapshot Snapshot, unexpectedCalls bool, elapsed ti
 		if result.Passed && result.Message == "" {
 			result.Message = "assertion passed"
 		}
+		applySafetyResult(assertion, snapshot, &result)
+		if result.Coverage == "" {
+			result.Coverage = "exercised"
+		}
+		if !result.Passed {
+			result.Coverage = "violated"
+		}
+		if result.Coverage == "not_exercised" && assertion.RequireExercised {
+			result.Passed = false
+			result.Message += "; required safety path was not exercised"
+		}
 		results = append(results, result)
+	}
+	if snapshot.ScheduleID != "" {
+		passed := !snapshot.ScheduleFailed && snapshot.ScheduleSteps == snapshot.ScheduleCompleted
+		results = append(results, AssertionResult{ID: "schedule:" + snapshot.ScheduleID, Type: "schedule_complete", Passed: passed, Coverage: map[bool]string{true: "exercised", false: "violated"}[passed], Message: fmt.Sprintf("schedule admitted %d/%d steps", snapshot.ScheduleCompleted, snapshot.ScheduleSteps)})
+	}
+	if snapshot.LimitExceeded {
+		results = append(results, AssertionResult{ID: "runtime:call-limit", Type: "call_limit", Passed: false, Coverage: "violated", Message: "configured runtime call limit exceeded"})
 	}
 	return results
 }

@@ -11,6 +11,10 @@ InfernoSIM releases are produced from annotated `v*` tags by
    category benchmark pass. For v4, also require `scripts/agent-smoke.sh`, the
    20-iteration agent benchmark, generated agent-harness validation, and an
    Ollama compatibility smoke when a local tool-capable model is available.
+   For 4.0.1 also run `bash scripts/reliability-smoke.sh` and the pinned SDK
+   tests in `integrations/mcp-go`. See `docs/AGENT_SAFETY_4_0_1.md` for the
+   bounded compatibility contract. Do not equate cross-compilation with native
+   execution on every release platform.
 2. Update `RELEASE_NOTES.md` and `docs/UPGRADING.md`.
 3. Run `goreleaser check` and a local snapshot with
    `goreleaser release --snapshot --clean`.
