@@ -46,6 +46,14 @@ jobs:
         run: go run ./cmd/benchmark --runs 100 --out /tmp/infernosim-benchmark.json
       - name: Verify deterministic agent reliability controls
         run: scripts/agent-smoke.sh
+      - name: Verify 4.0.1 safety and recovery controls
+        run: bash scripts/reliability-smoke.sh
+      - name: Verify pinned official MCP SDK integration
+        working-directory: integrations/mcp-go
+        run: |
+          go mod tidy -diff
+          go vet ./...
+          go test -count=1 -race ./...
       - name: Verify agent reliability benchmark contract
         run: |
           work_dir="$(mktemp -d)"

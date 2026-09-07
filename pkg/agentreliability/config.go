@@ -29,14 +29,16 @@ const (
 )
 
 type Config struct {
-	Version    int               `yaml:"version" json:"version"`
-	Enabled    bool              `yaml:"enabled" json:"enabled"`
-	Adapters   Adapters          `yaml:"adapters" json:"adapters"`
-	Effects    []Effect          `yaml:"effects" json:"effects"`
-	Faults     []Fault           `yaml:"faults" json:"faults"`
-	Assertions []Assertion       `yaml:"assertions" json:"assertions"`
-	Limits     Limits            `yaml:"limits" json:"limits"`
-	Metadata   map[string]string `yaml:"metadata" json:"metadata,omitempty"`
+	Version     int               `yaml:"version" json:"version"`
+	Enabled     bool              `yaml:"enabled" json:"enabled"`
+	Adapters    Adapters          `yaml:"adapters" json:"adapters"`
+	Effects     []Effect          `yaml:"effects" json:"effects"`
+	Faults      []Fault           `yaml:"faults" json:"faults"`
+	Assertions  []Assertion       `yaml:"assertions" json:"assertions"`
+	Limits      Limits            `yaml:"limits" json:"limits"`
+	Metadata    map[string]string `yaml:"metadata" json:"metadata,omitempty"`
+	Exploration Exploration       `yaml:"exploration" json:"exploration"`
+	Schedules   []Schedule        `yaml:"schedules" json:"schedules,omitempty"`
 }
 
 type Adapters struct {
@@ -65,6 +67,7 @@ type Selector struct {
 	HostRegex  string `yaml:"host_regex" json:"host_regex"`
 	PathRegex  string `yaml:"path_regex" json:"path_regex"`
 	Occurrence int    `yaml:"occurrence" json:"occurrence"`
+	CallID     string `yaml:"call_id" json:"call_id,omitempty"`
 }
 
 type Effect struct {
@@ -99,17 +102,26 @@ type Mutation struct {
 }
 
 type Assertion struct {
-	ID                string   `yaml:"id" json:"id"`
-	Type              string   `yaml:"type" json:"type"`
-	Effect            string   `yaml:"effect" json:"effect"`
-	Tool              string   `yaml:"tool" json:"tool"`
-	Max               int      `yaml:"max" json:"max"`
-	VerificationTool  string   `yaml:"verification_tool" json:"verification_tool"`
-	VerificationPath  string   `yaml:"verification_path" json:"verification_path,omitempty"`
-	VerificationValue any      `yaml:"verification_value" json:"verification_value,omitempty"`
-	Duration          string   `yaml:"duration" json:"duration"`
-	Faults            []string `yaml:"faults" json:"faults,omitempty"`
-	IncludeBaseline   bool     `yaml:"include_baseline" json:"include_baseline,omitempty"`
+	ID                      string   `yaml:"id" json:"id"`
+	Type                    string   `yaml:"type" json:"type"`
+	Effect                  string   `yaml:"effect" json:"effect"`
+	Tool                    string   `yaml:"tool" json:"tool"`
+	Max                     int      `yaml:"max" json:"max"`
+	VerificationTool        string   `yaml:"verification_tool" json:"verification_tool"`
+	VerificationPath        string   `yaml:"verification_path" json:"verification_path,omitempty"`
+	VerificationValue       any      `yaml:"verification_value" json:"verification_value,omitempty"`
+	Duration                string   `yaml:"duration" json:"duration"`
+	Faults                  []string `yaml:"faults" json:"faults,omitempty"`
+	IncludeBaseline         bool     `yaml:"include_baseline" json:"include_baseline,omitempty"`
+	RequireExercised        bool     `yaml:"require_exercised" json:"require_exercised,omitempty"`
+	Path                    string   `yaml:"path" json:"path,omitempty"`
+	Expected                any      `yaml:"expected" json:"expected,omitempty"`
+	Compensation            string   `yaml:"compensation" json:"compensation,omitempty"`
+	Bind                    []string `yaml:"bind" json:"bind,omitempty"`
+	MaxAgeCalls             int      `yaml:"max_age_calls" json:"max_age_calls,omitempty"`
+	VersionPath             string   `yaml:"version_path" json:"version_path,omitempty"`
+	EstimatePath            string   `yaml:"estimate_path" json:"estimate_path,omitempty"`
+	PricePerTokenMicrounits int64    `yaml:"price_per_token_microunits" json:"price_per_token_microunits,omitempty"`
 }
 
 func (c *Config) ApplyDefaults() {
@@ -142,6 +154,9 @@ func (c *Config) ApplyDefaults() {
 
 func (c Config) Validate() error {
 	c.ApplyDefaults()
+	if err := c.validateReliability(); err != nil {
+		return err
+	}
 	if c.Version != configurationLevel {
 		return fmt.Errorf("agent.version must be %d", configurationLevel)
 	}
@@ -288,6 +303,10 @@ func (c Config) Validate() error {
 			}
 		}
 		switch assertion.Type {
+		case "approval_before_effect", "compensated_effect", "monitor_sound", "request_matches", "max_total_calls", "max_tokens", "max_cost", "no_calls_after_cancel":
+			if err := validateSafetyAssertion(assertion, effectNames); err != nil {
+				return fmt.Errorf("%s: %w", location, err)
+			}
 		case "exactly_once_effect", "at_most_once_effect", "forbidden_effect":
 			if _, exists := effectNames[assertion.Effect]; !exists {
 				return fmt.Errorf("%s.effect %q is not declared", location, assertion.Effect)
@@ -324,6 +343,7 @@ func validateSelector(location string, selector Selector) error {
 	allowedKinds := map[string]bool{
 		"": true, "any": true, "http_response": true, "mcp_tool_result": true,
 		"mcp_tools_list": true, "llm_response": true,
+		"mcp_lifecycle": true,
 	}
 	if !allowedKinds[selector.Kind] {
 		return fmt.Errorf("%s.kind %q is unsupported", location, selector.Kind)
@@ -392,12 +412,28 @@ func parseBoundedDuration(location, value string, zeroAllowed bool) (time.Durati
 }
 
 type Case struct {
-	ID          string `json:"id"`
-	FaultID     string `json:"fault_id,omitempty"`
-	Description string `json:"description"`
-	Category    string `json:"category,omitempty"`
-	Severity    string `json:"severity,omitempty"`
+	ID          string   `json:"id"`
+	FaultID     string   `json:"fault_id,omitempty"`
+	Description string   `json:"description"`
+	Category    string   `json:"category,omitempty"`
+	Severity    string   `json:"severity,omitempty"`
+	FaultIDs    []string `json:"fault_ids,omitempty"`
+	ScheduleID  string   `json:"schedule_id,omitempty"`
 }
+
+func (c Case) ActiveFaults() []string {
+	if len(c.FaultIDs) > 0 {
+		return UniqueFaults(c.FaultIDs)
+	}
+	if c.FaultID != "" {
+		return []string{c.FaultID}
+	}
+	return nil
+}
+
+func (c Case) Baseline() bool { return len(c.ActiveFaults()) == 0 && c.ScheduleID == "" }
+
+func (c Case) FaultList() string { return strings.Join(c.ActiveFaults(), ",") }
 
 // PlanCases returns the baseline followed by stable single-fault cases. The
 // caller-provided scope hash normally includes the incident and replay config.
@@ -437,12 +473,13 @@ func PlanCases(config Config, scopeHash string, seed int64, includeBaseline bool
 		}
 		cases = append(cases, plannedCase)
 	}
+	cases = appendExploration(cases, config, scopeHash, seed, budget, faultCases)
 	return cases, nil
 }
 
 func allowedFaultCategory(value string) bool {
 	switch value {
-	case "transport", "rate_limit", "schema_drift", "stale_data", "ambiguous_side_effect", "event_duplication", "tool_contract", "llm_envelope", "custom":
+	case "transport", "rate_limit", "schema_drift", "stale_data", "ambiguous_side_effect", "event_duplication", "tool_contract", "llm_envelope", "custom", "monitor", "authorization", "lifecycle":
 		return true
 	default:
 		return false

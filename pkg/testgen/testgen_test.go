@@ -168,3 +168,37 @@ func TestGenerateAgentProfile(t *testing.T) {
 		}
 	}
 }
+
+func TestGeneratedAgentHarnessRetainsCombinationsAndSchedules(t *testing.T) {
+	incident := t.TempDir()
+	if err := os.WriteFile(filepath.Join(incident, "inbound.log"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	config := `agent:
+  enabled: true
+  exploration: {pairwise: true}
+  faults:
+    - {id: a, status: 500}
+    - {id: b, status: 503}
+  schedules:
+    - id: ordered
+      timeout: 1s
+      steps: [{call_id: one}]
+`
+	if err := os.WriteFile(filepath.Join(incident, "replay.yaml"), []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := t.TempDir()
+	if _, err := Generate(Options{IncidentDir: incident, OutputDir: out, Framework: FrameworkGoTestcontainers, Profile: ProfileAgent}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(out, "infernosim_testcontainer_test.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"a,b"`, `schedule: "ordered"`, `"--agent-schedule"`, `infernosim:4.0.1`} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("missing %q in generated harness", want)
+		}
+	}
+}

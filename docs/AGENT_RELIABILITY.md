@@ -1,9 +1,13 @@
 # Deterministic agent reliability
 
 InfernoSIM v4 turns a sanitized agent incident into a repeatable local safety
-test. It replays the recorded LLM and tool universe, injects one named fault at
-a time, records side effects without retaining their raw arguments, and fails
+test. It replays the recorded LLM and tool universe, injects named faults,
+records side effects without retaining their raw arguments, and fails
 the run when a consequence assertion is violated.
+
+For 4.0.1 monitor faults, approvals, compensation, budgets, crash/restart,
+parallel schedules, comparisons, and reduction, see the
+[safety and recovery guide](AGENT_SAFETY_4_0_1.md).
 
 No InfernoSIM account, hosted control plane, API key, or live model is required
 for the deterministic test. A local Ollama model can be used while creating or
@@ -33,7 +37,7 @@ The result is a consequence-level test, not a model-quality score.
 | MCP over HTTP | Replayed through the HTTP/HTTPS simulator and recognized by JSON-RPC method and tool name |
 | MCP over stdio | Newline-delimited JSON-RPC recording and semantic replay with runtime request-ID rewriting |
 | OpenAI Responses | Recognizes `function_call` output items |
-| OpenAI Chat Completions | Recognizes the first emitted tool call |
+| OpenAI Chat Completions | Recognizes every tool call in a complete JSON envelope |
 | Anthropic Messages | Recognizes `tool_use` content blocks |
 | Ollama chat | Recognizes native `message.tool_calls` envelopes |
 | Generic HTTP | Selectors can target method, host, path, occurrence, and response kind |
@@ -179,9 +183,9 @@ and ambiguous committed-response faults are rejected before the command runs.
 
 A selector may combine:
 
-- `kind`: `any`, `http_response`, `mcp_tool_result`, `mcp_tools_list`, or
+- `kind`: `any`, `http_response`, `mcp_tool_result`, `mcp_tools_list`, `mcp_lifecycle`, or
   `llm_response`;
-- exact `provider`, `tool`, or HTTP `method`;
+- exact `provider`, `tool`, `call_id`, or HTTP `method`;
 - RE2 `host_regex` and `path_regex`;
 - one-based `occurrence`, where zero means every matching occurrence.
 
@@ -215,7 +219,7 @@ state from an ordinary pre-commit timeout.
 Each fault has a validated `category` and `severity`. Categories are
 `transport`, `rate_limit`, `schema_drift`, `stale_data`,
 `ambiguous_side_effect`, `event_duplication`, `tool_contract`,
-`llm_envelope`, or `custom`; severities are `low`, `medium`, `high`, or
+`llm_envelope`, `monitor`, `authorization`, `lifecycle`, or `custom`; severities are `low`, `medium`, `high`, or
 `critical`. Omitted values default to `custom` and `medium`.
 
 ### Consequence assertions
@@ -395,11 +399,12 @@ such a claim requires the same public corpus and raw competitor runs.
 - Proofs contain hashes, operation names, counts, and assertion outcomes—not
   raw tool arguments or results. Command output is private and bounded but can
   still contain application secrets; treat the report directory accordingly.
-- v4 explores the baseline plus one fault at a time. It does not claim
-  combinatorial fault search, formal verification, or proof of model intent.
-- The first recognized tool call in a provider response is used for selection.
-  Parallel multi-tool envelopes are replayable but not yet independently
-  fault-addressable within one response.
+- The default plan remains baseline/singles. 4.0.1 optionally enumerates bounded
+  fault pairs and explicit admission schedules. This is not exhaustive race
+  exploration, formal verification, or proof of model intent.
+- All tool entries in complete provider JSON envelopes can be selected by tool
+  or call ID. Mutations retain explicit full-envelope JSONPaths; incremental
+  streamed tool-call assembly is outside that guarantee.
 - MCP stdio support is newline-delimited JSON-RPC. Other framing schemes and
   binary transports are outside the v4 contract.
 - OpenTelemetry import supports OTLP JSON and normalized JSON/JSONL, not a live

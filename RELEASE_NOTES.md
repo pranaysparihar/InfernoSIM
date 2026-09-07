@@ -1,3 +1,83 @@
+# InfernoSIM v4.0.1
+
+Release target: v4.0.1. See [GitHub Releases](https://github.com/pranaysparihar/InfernoSIM/releases/tag/v4.0.1) for publication status.
+
+## Safety and recovery
+
+- Independent monitor assertions detect absent verdicts, false healthy status,
+  stale response revisions, and bad request-side state estimates against a
+  declared simulated effect ledger.
+- Bound, single-use approval assertions check matching arguments/tenant and a
+  logical expiry window. Request predicates support synthetic identity and
+  authorization fixtures. Compensation assertions require later,
+  identity-matched rollback effects.
+- Shared call, recorded-token, and explicitly priced cost budgets fail on
+  unknown usage. Costs are configured estimates, not provider invoices.
+- `agent run/stress --restart-after-call N` kills and restarts the explicit
+  application at a simulated response boundary. Ledger/deduplication state and
+  a private application checkpoint directory survive the restart.
+- Assertion coverage distinguishes exercised, violated, and unexercised paths;
+  `require_exercised` makes absent safety behavior a release failure.
+
+## Deterministic exploration and regression gates
+
+- Explicit call-ID admission schedules and bounded pairwise fault enumeration.
+  Every tool entry in a complete supported provider JSON envelope can be
+  selected. Combined faults no longer erase earlier transport failures.
+- `agent compare` runs two explicit application argv arrays against the same
+  corpus/cases/schedules and detects failed cases, missing assertions, and
+  safety-coverage regressions. Reports include JSON, JUnit, SARIF, and HTML.
+- `agent reduce` finds a one-minimal fault set preserving a named violated
+  assertion on repeated executions, with a hard execution budget.
+- MCP stdio correlates out-of-order responses to the correct runtime request
+  IDs, preserves notifications, remaps cancellation IDs, and rejects duplicate
+  in-flight IDs and incomplete transcripts. Already admitted work is distinct
+  from a new call after cancellation.
+
+## Fixes, compatibility, and packaging
+
+- Missing effect identity/deduplication fields fail closed instead of collapsing
+  unrelated effects into a shared key. Request identity hashing preserves large
+  integer precision. JSON-RPC/tool errors cannot satisfy retry verification.
+- Updated `golang.org/x/net` to v0.56.0 (and `x/sys` to v0.46.0), removing
+  GO-2026-5942 from the dependency graph. Injected HTTP waits honor cancellation.
+- Agent harness generation retains combined fault and schedule selections.
+- The release build targets the complete CLI package. Packaging is explicitly
+  eight platform archives plus checksums; GitHub's two automatic source
+  archives retain the established total of 11. Reports and internal JSON
+  metadata are not release assets.
+- Existing agent configuration defaults, backend replay features, and encrypted
+  bundle-v2 format remain compatible. New configuration fields are opt-in.
+
+## Validation and scope
+
+Local validation includes the full Go race suite, vet, the existing safe/unsafe
+agent smoke, the new recovery/safety/compare/reduce CLI smoke, official MCP Go
+SDK v1.7.0 record/replay/reconnect integration, a Docker image build, a real
+Testcontainers run, Kafka/AsyncAPI against Redpanda, and the installed Ollama
+model smoke. The full suite was also run with the release toolchain Go 1.26.6.
+After the dependency update, `govulncheck` reported no vulnerabilities in the
+main-module and pinned SDK integration scans. The existing agent benchmark
+passed 100/100 safe executions and rejected 80/80 unsafe controls across 20
+iterations; the incident-to-test benchmark passed 100 runs with one stable
+configuration hash, one stable harness hash, and zero detected fixture leaks.
+The new crash/recovery example also passed inside a Linux/arm64 container
+with external networking disabled. A local GoReleaser snapshot produced all eight platform
+archives and their checksums verified. Cross-builds are not native Windows or
+Intel macOS runtime tests.
+
+These checks establish the behavior of the tested fixtures, not universal
+agent safety, full MCP conformance, or superiority over competitors. Admission
+schedules do not control arbitrary OS races. Approvals/credentials are local
+test predicates, not real identity-provider enforcement. Process restart is
+not power-loss recovery. Live model execution is separate from deterministic
+recorded-envelope gates. Windows child termination does not contain descendants.
+
+Start with the [runnable safety/recovery guide](docs/AGENT_SAFETY_4_0_1.md) and
+the [upgrade notes](docs/UPGRADING.md). Existing v4.0.0 release history follows.
+
+---
+
 # InfernoSIM v4.0.0
 
 Status: generally available

@@ -1967,6 +1967,7 @@ func runServe(args []string) int {
 	allowHosts := fs.String("stub-mitm-allow-hosts", "", "Comma-separated HTTPS dependency hosts allowed for TLS stubbing")
 	agentFault := fs.String("agent-fault", "", "Agent reliability fault ID to activate")
 	agentCase := fs.String("agent-case", "", "Agent reliability case ID included in the deterministic proof")
+	agentSchedule := fs.String("agent-schedule", "", "Named agent protocol-admission schedule")
 	positionalIncident := ""
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		positionalIncident = args[0]
@@ -1983,16 +1984,17 @@ func runServe(args []string) int {
 		return 2
 	}
 	server, err := simserver.New(simserver.Options{
-		IncidentDir:   positionalIncident,
-		ConfigPath:    *configPath,
-		Listen:        *listen,
-		AdminListen:   *adminListen,
-		ObservedLog:   *observedLog,
-		HTTPS:         *httpsStub,
-		CADir:         *caDir,
-		AllowHosts:    splitNonEmpty(*allowHosts),
-		AgentFaultIDs: splitNonEmpty(*agentFault),
-		AgentCaseID:   *agentCase,
+		IncidentDir:     positionalIncident,
+		ConfigPath:      *configPath,
+		Listen:          *listen,
+		AdminListen:     *adminListen,
+		ObservedLog:     *observedLog,
+		HTTPS:           *httpsStub,
+		CADir:           *caDir,
+		AllowHosts:      splitNonEmpty(*allowHosts),
+		AgentFaultIDs:   splitNonEmpty(*agentFault),
+		AgentScheduleID: *agentSchedule,
+		AgentCaseID:     *agentCase,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "serve: %v\n", err)
@@ -2068,12 +2070,16 @@ func runTestgen(args []string) int {
 
 func runAgentReliability(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: infernosim agent <cases|run|stress|mcp|otel> ...")
+		fmt.Fprintln(os.Stderr, "Usage: infernosim agent <cases|run|stress|compare|reduce|mcp|otel> ...")
 		return 2
 	}
 	switch args[0] {
 	case "cases":
 		return runAgentCases(args[1:])
+	case "compare":
+		return runAgentCompare(args[1:])
+	case "reduce":
+		return runAgentReduce(args[1:])
 	case "run":
 		return runAgentExecution(args[1:], false)
 	case "stress":
@@ -2305,13 +2311,16 @@ func runAgentCases(args []string) int {
 		return 0
 	}
 	for _, plannedCase := range prepared.Cases {
-		fault := plannedCase.FaultID
+		fault := strings.Join(plannedCase.ActiveFaults(), "+")
 		category := plannedCase.Category
 		severity := plannedCase.Severity
-		if fault == "" {
+		if plannedCase.Baseline() {
 			fault = "baseline"
 			category = "baseline"
 			severity = "-"
+		}
+		if plannedCase.ScheduleID != "" {
+			fault += " schedule=" + plannedCase.ScheduleID
 		}
 		fmt.Printf("%s  %-24s  %-24s  %-8s  %s\n", plannedCase.ID, fault, category, severity, plannedCase.Description)
 	}
@@ -2334,6 +2343,7 @@ func runAgentExecution(args []string, stress bool) int {
 	reportDir := fs.String("report-dir", "./infernosim-agent-report", "Directory for JSON, JUnit, SARIF, and HTML results")
 	formats := fs.String("formats", "junit,sarif,html", "Comma-separated report formats")
 	outputLimit := fs.Int("output-limit", agentrunner.DefaultOutputLimit, "Maximum captured stdout and stderr bytes per stream")
+	restartAfterCall := fs.Int("restart-after-call", 0, "Kill and restart the agent once before response delivery at this exchange (0 disables)")
 	incident, remaining := positionalBeforeFlags(flagArgs)
 	if err := fs.Parse(remaining); err != nil {
 		return 2
@@ -2370,12 +2380,16 @@ func runAgentExecution(args []string, stress bool) int {
 		result, runErr := agentrunner.Run(context.Background(), agentrunner.Options{
 			IncidentDir: incident, ConfigPath: prepared.ConfigPath, Case: plannedCase,
 			Command: command, Timeout: timeout, OutputLimit: *outputLimit,
+			RestartAfterCall: *restartAfterCall,
 		})
 		if runErr != nil {
 			fmt.Fprintf(os.Stderr, "%s: %s: %v\n", fsName, plannedCase.ID, runErr)
 			return 1
 		}
 		results = append(results, result)
+		for _, assertion := range result.Assertions {
+			fmt.Printf("  %s %s: %s\n", assertion.Coverage, assertion.ID, assertion.Message)
+		}
 		if result.Passed {
 			fmt.Printf("PASS %s %s\n", plannedCase.ID, result.Duration.Round(time.Millisecond))
 		} else {

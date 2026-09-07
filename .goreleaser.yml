@@ -9,15 +9,20 @@ builds:
       - linux
       - windows
       - darwin
-    main: ./cmd/agent/main.go
+    goarch: [386, amd64, arm64]
+    goamd64: [v1]
+    ignore:
+      - goos: darwin
+        goarch: 386
+    main: ./cmd/agent
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}} -X main.versionBy=goreleaser -X infernosim/pkg/reporting.SemanticVersion={{.Version}}
 archives:
   - id: infernosim-archive
     ids: [infernosim]
-    # GoReleaser emits multiple micro-architecture variants for amd64. Keep
-    # those artifacts distinct so a release snapshot cannot overwrite one.
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Amd64 }}_{{ . }}{{ end }}"
+    # One amd64 baseline only: eight archives + checksums, plus GitHub's two
+    # automatic source archives = the established eleven release assets.
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats: [tar.gz]
     format_overrides:
       - goos: windows

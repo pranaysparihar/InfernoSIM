@@ -8,6 +8,27 @@
 
 InfernoSIM solves immediate, expensive engineering pain points. Below are simulated real-world scenarios running against live local processes to demonstrate how InfernoSIM evaluates strict API constraints and enforces determinism.
 
+## New in 4.0.1: agent recovery and independent safety evidence
+
+The [runnable refund/rollback guide](docs/AGENT_SAFETY_4_0_1.md) demonstrates:
+
+- A refund commits, the application is killed before receiving the response,
+  and recovery verifies the checkpointed intent instead of refunding twice.
+- A monitor reports healthy or a stale revision while the simulated ledger
+  records an unsafe effect. The monitor's claim cannot overwrite ground truth.
+- Approval is missing, reused, expired by a logical call window, or bound to
+  different arguments/tenant; an independent assertion catches the bad effect.
+- A rollback is omitted or applied to the wrong effect identity.
+- Multiple branches exhaust shared call, recorded-token, or configured-cost
+  budgets; unavailable usage is not silently treated as zero.
+- A candidate application loses safety coverage despite exiting successfully;
+  `agent compare` fails the CI gate, while `agent reduce` isolates a smaller
+  fault set preserving a named failure.
+
+These are synthetic local test controls, not customer incident claims or live
+payment integrations. The existing backend and agent use cases below remain
+supported; the new checks require explicit configuration.
+
 ## Use Case A: "Time Travel" for Microservices (The Undebuggable Production Crash)
 **The Situation:** A critical checkout service occasionally fails at 2:00 AM, throwing a generic HTTP 400 error. The engineering team cannot reproduce the issue locally because they don't know exactly what malformed payload permutations triggered the failure.
 **The InfernoSIM Solution:** 
