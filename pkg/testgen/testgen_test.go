@@ -196,7 +196,7 @@ func TestGeneratedAgentHarnessRetainsCombinationsAndSchedules(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"a,b"`, `schedule: "ordered"`, `"--agent-schedule"`, `infernosim:4.0.1`} {
+	for _, want := range []string{`"a,b"`, `schedule: "ordered"`, `"--agent-schedule"`, `infernosim:4.1.0`} {
 		if !strings.Contains(string(data), want) {
 			t.Fatalf("missing %q in generated harness", want)
 		}

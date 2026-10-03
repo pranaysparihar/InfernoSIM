@@ -379,3 +379,46 @@ func TestMonitorRevisionAndEstimateChecks(t *testing.T) {
 		}
 	}
 }
+
+func TestPartialScheduleRetainsOrderAndRequiresSelectedCalls(t *testing.T) {
+	c := testConfig()
+	c.Schedules = []Schedule{{ID: "partial", Timeout: "1s", Partial: true, Steps: []Selector{{CallID: "b"}, {CallID: "a"}}}}
+	e, err := NewEngine(c, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = e.SetSchedule("partial"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = e.Process(mcpRequest("lookup", "unlisted"), okResponse()); err != nil {
+		t.Fatal(err)
+	}
+	if e.Snapshot().ScheduleCompleted != 0 {
+		t.Fatal("unlisted call advanced schedule")
+	}
+	var wg sync.WaitGroup
+	for _, id := range []string{"a", "b"} {
+		wg.Add(1)
+		go func(id string) {
+			defer wg.Done()
+			if _, err := e.Process(mcpRequest("lookup", id), okResponse()); err != nil {
+				t.Error(err)
+			}
+		}(id)
+	}
+	wg.Wait()
+	if _, err = e.Process(mcpRequest("lookup", "after"), okResponse()); err != nil {
+		t.Fatal(err)
+	}
+	s := e.Snapshot()
+	if len(s.Calls) != 4 || s.Calls[1].CallID != "b" || s.Calls[2].CallID != "a" || s.ScheduleCompleted != 2 {
+		t.Fatalf("%+v", s)
+	}
+	e, _ = NewEngine(c, nil)
+	_ = e.SetSchedule("partial")
+	_, _ = e.Process(mcpRequest("lookup", "unlisted"), okResponse())
+	results := Evaluate(c, e.Snapshot(), false, 0)
+	if results[len(results)-1].Passed {
+		t.Fatal("missing required calls passed partial schedule")
+	}
+}

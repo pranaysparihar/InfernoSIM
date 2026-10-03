@@ -22,6 +22,12 @@ version comparison, and failure reduction. Start with the runnable
 [4.0.1 safety and recovery guide](docs/AGENT_SAFETY_4_0_1.md). Publication status
 and validation are tracked in [release notes](RELEASE_NOTES.md).
 
+v4.1 adds bounded automatic fault/occurrence/order exploration, independent
+application-state checks, and portable failure reproductions with constraint
+minimization. The runnable [v4.1 discovery guide](docs/DISCOVERY_4_1.md) shows an
+outbox bug that passes the simulated payment ledger but fails an independent
+state check. Run `bash scripts/discovery-smoke.sh` to reproduce the full flow.
+
 ## Feature guide
 
 | Area | Features |

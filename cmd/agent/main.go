@@ -2070,10 +2070,16 @@ func runTestgen(args []string) int {
 
 func runAgentReliability(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: infernosim agent <cases|run|stress|compare|reduce|mcp|otel> ...")
+		fmt.Fprintln(os.Stderr, "Usage: infernosim agent <cases|run|stress|explore|reproduce|minimize|compare|reduce|mcp|otel> ...")
 		return 2
 	}
 	switch args[0] {
+	case "explore":
+		return runAgentExplore(args[1:])
+	case "reproduce":
+		return runAgentReproduce(args[1:], false)
+	case "minimize":
+		return runAgentReproduce(args[1:], true)
 	case "cases":
 		return runAgentCases(args[1:])
 	case "compare":
@@ -2089,7 +2095,7 @@ func runAgentReliability(args []string) int {
 	case "otel":
 		return runAgentOTel(args[1:])
 	default:
-		fmt.Fprintf(os.Stderr, "agent: unknown subcommand %q (expected cases, run, stress, mcp, or otel)\n", args[0])
+		fmt.Fprintf(os.Stderr, "agent: unknown subcommand %q (expected cases, run, stress, explore, reproduce, minimize, compare, reduce, mcp, or otel)\n", args[0])
 		return 2
 	}
 }
@@ -2344,6 +2350,7 @@ func runAgentExecution(args []string, stress bool) int {
 	formats := fs.String("formats", "junit,sarif,html", "Comma-separated report formats")
 	outputLimit := fs.Int("output-limit", agentrunner.DefaultOutputLimit, "Maximum captured stdout and stderr bytes per stream")
 	restartAfterCall := fs.Int("restart-after-call", 0, "Kill and restart the agent once before response delivery at this exchange (0 disables)")
+	stateFlags := registerStateFlags(fs)
 	incident, remaining := positionalBeforeFlags(flagArgs)
 	if err := fs.Parse(remaining); err != nil {
 		return 2
@@ -2353,6 +2360,11 @@ func runAgentExecution(args []string, stress bool) int {
 	}
 	if incident == "" || len(command) == 0 {
 		fmt.Fprintf(os.Stderr, "Usage: infernosim %s <incident-dir> [flags] -- <agent-command> [args...]\n", map[bool]string{true: "agent stress", false: "agent run"}[stress])
+		return 2
+	}
+	stateCheck, err := stateFlags.options()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
 	timeout, err := time.ParseDuration(*timeoutValue)
@@ -2380,7 +2392,7 @@ func runAgentExecution(args []string, stress bool) int {
 		result, runErr := agentrunner.Run(context.Background(), agentrunner.Options{
 			IncidentDir: incident, ConfigPath: prepared.ConfigPath, Case: plannedCase,
 			Command: command, Timeout: timeout, OutputLimit: *outputLimit,
-			RestartAfterCall: *restartAfterCall,
+			RestartAfterCall: *restartAfterCall, StateCheck: stateCheck,
 		})
 		if runErr != nil {
 			fmt.Fprintf(os.Stderr, "%s: %s: %v\n", fsName, plannedCase.ID, runErr)

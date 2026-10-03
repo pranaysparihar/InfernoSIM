@@ -55,6 +55,36 @@ func TestRecordCommandDoesNotLeavePartialTranscript(t *testing.T) {
 	}
 }
 
+// A child can exit while its final response is still being delivered. Waiting
+// for the child first closes StdoutPipe and loses the remaining read/EOF.
+func TestRecordCommandDrainsOutputBeforeWait(t *testing.T) {
+	t.Setenv("GO_WANT_MCP_RECORD_HELPER", "1")
+	t.Setenv("GORACE", "atexit_sleep_ms=0")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	output := &delayedRecordOutput{}
+	path := filepath.Join(t.TempDir(), "mcp.log")
+	err := RecordCommand(ctx, RecordOptions{
+		OutputPath: path, Command: []string{os.Args[0], "-test.run=TestMCPRecordHelper", "--"},
+		Stdin:  strings.NewReader(`{"jsonrpc":"2.0","id":7,"method":"tools/list"}` + "\n"),
+		Stdout: output, Stderr: &bytes.Buffer{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	records, err := Load(path)
+	if err != nil || len(records) != 2 || !strings.Contains(output.String(), `"id":7`) {
+		t.Fatalf("records = %#v, output = %q, error = %v", records, output.String(), err)
+	}
+}
+
+type delayedRecordOutput struct{ bytes.Buffer }
+
+func (w *delayedRecordOutput) Write(p []byte) (int, error) {
+	time.Sleep(100 * time.Millisecond)
+	return w.Buffer.Write(p)
+}
+
 func TestMCPRecordHelper(t *testing.T) {
 	if os.Getenv("GO_WANT_MCP_RECORD_HELPER") != "1" {
 		return

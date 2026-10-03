@@ -50,6 +50,7 @@ go test -race ./...
 (cd integrations/testcontainers-go && go test -race ./...)
 (cd integrations/mcp-go && go mod tidy -diff && go vet ./... && go test -race ./...)
 bash scripts/reliability-smoke.sh
+bash scripts/discovery-smoke.sh
 git diff --check
 ```
 

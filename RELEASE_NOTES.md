@@ -1,3 +1,90 @@
+# InfernoSIM v4.1.0
+
+Release target: v4.1.0. See [GitHub Releases](https://github.com/pranaysparihar/InfernoSIM/releases/tag/v4.1.0) for publication status.
+
+## Discover failures and verify application state
+
+- `agent explore` generates a deterministic, budgeted campaign from the
+  existing incident: individual faults, subsets of up to four faults,
+  occurrence variations, and explicitly permitted schedule permutations.
+  Plans retain seed and case IDs and report truncation. Invalid replay,
+  unexercised faults, and incomplete schedules are distinguished from valid
+  assertion failures.
+- Independent application-state checks are explicit user-supplied commands.
+  Setup resets the test system before each run; a separate check process
+  returns exactly the declared assertion IDs and boolean outcomes. Each case
+  receives a private state directory shared across setup, application,
+  process restart, and check. Malformed, missing, duplicate, or timed-out
+  checks fail closed. Probe output is withheld from reports.
+- State checks work with existing run, stress, compare, and reduce commands.
+  Comparison binds the check contract into its execution scope. Hooks use the
+  caller's ordinary network environment for test-database or broker access.
+
+## Reduce and retain a regression
+
+- `agent minimize` removes faults and admission-order constraints and lowers
+  selected occurrence positions while preserving one named violation on two
+  consecutive valid executions. The execution budget is hard; incomplete
+  reduction returns its best result with a failing exit code.
+- `agent reproduce` runs an explicitly supplied application against an exported
+  incident/trial. A buggy application fails the gate; a fixed one passes.
+  Portable artifacts contain the required check contract, timeouts, and
+  restart boundary. Commands are never executed from incident or artifact
+  data. Artifacts verify file checksums, reject links and external schema
+  dependencies, and never overwrite an existing destination.
+- Optional partial schedules constrain only selected participants while still
+  requiring all of those participants to appear. Complete schedules remain
+  the default.
+- JSON, JUnit, SARIF, and existing standalone HTML reports cover the new cases.
+  No hosted service, account, frontend runtime, or live model is required.
+
+## Demonstration and compatibility
+
+The runnable outbox example models an idempotent payment service and an
+application that accidentally writes a duplicate local outbox entry after a
+lost response. The simulated payment ledger passes; the independent state
+check catches the application bug. The smoke explores eight cases per
+application version, minimizes the noisy three-fault failure, relocates the
+artifact, verifies the fix, and rejects tampered evidence.
+
+Existing v4.0.1 configurations remain compatible. Generated harnesses now use
+the v4.1.0 container. The incident guide's obsolete single-fault/parallel-call
+limitations are corrected. gRPC is updated to v1.83.2 with required x/net,
+x/sys, x/sync, and x/text updates, addressing GO-2026-6348 and GO-2026-6443.
+MCP stdio recording drains the final server response before closing the output
+pipe, fixing an intermittent shutdown failure exposed by Windows CI.
+
+Start with the [runnable discovery guide](docs/DISCOVERY_4_1.md) and
+[upgrade notes](docs/UPGRADING.md).
+
+## Validation
+
+The full Go race suite passes with the release toolchain Go 1.26.6. Module
+checks, vet, and the main-module vulnerability scan pass. The pinned official
+MCP SDK and Testcontainers modules pass, including the real Docker lifecycle
+test. The container builds as the existing unprivileged user; Kafka/AsyncAPI
+against Redpanda and both Node/Go Compose smokes pass. Existing agent and
+recovery controls and the new discovery CLI smoke pass. Generated Actions and
+Compose harnesses validate. The deterministic incident benchmark passes 100
+runs with stable configuration/harness hashes and no detected fixture leaks;
+the agent benchmark passes 100/100 safe runs and rejects 80/80 unsafe controls.
+The release workflows also execute the new discovery smoke.
+
+## Boundaries
+
+Exploration is bounded deterministic enumeration, not adaptive coverage-guided
+fuzzing or exhaustive race search. Admission schedules do not control OS
+threads or response delivery. Recorded-model divergence remains invalid; it
+never silently falls back to live inference. Reduction is a fixed point under
+its documented moves, not a globally shortest trace or root-cause proof.
+State probes are user-authored checks against isolated test systems, not a
+universal database integration or a security sandbox. Application output and
+incident artifacts can contain secrets; existing privacy and encryption
+controls still apply. Artifact checksums detect changed files, not publisher
+authenticity. Existing streaming/MCP/platform limitations remain documented.
+
+---
+
 # InfernoSIM v4.0.1
 
 Release target: v4.0.1. See [GitHub Releases](https://github.com/pranaysparihar/InfernoSIM/releases/tag/v4.0.1) for publication status.

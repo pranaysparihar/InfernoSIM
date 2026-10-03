@@ -59,6 +59,8 @@ jobs:
         run: scripts/agent-smoke.sh
       - name: Verify 4.0.1 safety and recovery controls
         run: bash scripts/reliability-smoke.sh
+      - name: Verify 4.1 exploration, independent state checks, and reproductions
+        run: bash scripts/discovery-smoke.sh
       - name: Verify pinned official MCP SDK integration
         working-directory: integrations/mcp-go
         run: |

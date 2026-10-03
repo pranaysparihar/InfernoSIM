@@ -73,7 +73,7 @@ func Generate(opts Options) (Result, error) {
 		agentCases = prepared.Cases
 	}
 	if opts.Image == "" {
-		opts.Image = "ghcr.io/pranaysparihar/infernosim:4.0.1"
+		opts.Image = "ghcr.io/pranaysparihar/infernosim:4.1.0"
 	}
 	if strings.ContainsAny(opts.Image, "\r\n") || strings.TrimSpace(opts.Image) == "" {
 		return Result{}, fmt.Errorf("image must be a non-empty single-line reference")
