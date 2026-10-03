@@ -41,6 +41,8 @@ type Options struct {
 	Environment      []string
 	OutputLimit      int
 	RestartAfterCall int
+	StateCheck       StateCheckOptions
+	AgentConfig      *agentreliability.Config
 }
 
 type ProcessResult struct {
@@ -64,6 +66,7 @@ type Result struct {
 	ScopeHash        string                             `json:"scope_hash,omitempty"`
 	RestartAfterCall int                                `json:"restart_after_call,omitempty"`
 	InvalidRun       bool                               `json:"invalid_run,omitempty"`
+	StateCheckHash   string                             `json:"state_check_hash,omitempty"`
 }
 
 type Prepared struct {
@@ -138,6 +141,9 @@ func ResolveCase(cases []agentreliability.Case, value string) (agentreliability.
 }
 
 func Run(ctx context.Context, opts Options) (Result, error) {
+	if err := opts.StateCheck.Validate(); err != nil {
+		return Result{}, err
+	}
 	if len(opts.Command) == 0 || strings.TrimSpace(opts.Command[0]) == "" {
 		return Result{}, fmt.Errorf("an explicit agent command is required after --")
 	}
@@ -161,6 +167,24 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	if opts.AgentConfig != nil {
+		prepared.Config.Agent = *opts.AgentConfig
+		prepared.Config.Agent.ApplyDefaults()
+		if err := prepared.Config.Agent.Validate(); err != nil {
+			return Result{}, err
+		}
+		prepared.ScopeHash = agentreliability.StableHash(struct {
+			Base  string
+			Agent agentreliability.Config
+		}{prepared.ScopeHash, prepared.Config.Agent})
+	}
+	if len(opts.StateCheck.Command) > 0 {
+		for _, a := range prepared.Config.Agent.Assertions {
+			if strings.HasPrefix(a.ID, "state:") {
+				return Result{}, fmt.Errorf("state: assertion prefix is reserved for independent checks")
+			}
+		}
+	}
 	if opts.Case.ID == "" {
 		opts.Case, err = ResolveCase(prepared.Cases, "baseline")
 		if err != nil {
@@ -176,6 +200,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		Listen: "127.0.0.1:0", AdminListen: "127.0.0.1:0",
 		AgentFaultIDs: faultIDs(opts.Case), AgentCaseID: opts.Case.ID,
 		AgentScheduleID: opts.Case.ScheduleID,
+		AgentConfig:     opts.AgentConfig,
 		AgentBeforeResponse: func(sequence int) bool {
 			if opts.RestartAfterCall == 0 || sequence != opts.RestartAfterCall {
 				return false
@@ -202,13 +227,28 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 
 	proxyURL := "http://" + server.StubAddress()
 	adminURL := "http://" + server.AdminAddress()
+	stateDir, err := os.MkdirTemp("", "infernosim-state-*")
+	if err != nil {
+		return Result{}, err
+	}
+	defer os.RemoveAll(stateDir)
 	environment := mergeEnvironment(os.Environ(), opts.Environment, map[string]string{
 		"HTTP_PROXY": proxyURL, "HTTPS_PROXY": proxyURL,
 		"http_proxy": proxyURL, "https_proxy": proxyURL,
 		"NO_PROXY": "", "no_proxy": "",
 		"INFERNOSIM_PROXY_URL": proxyURL, "INFERNOSIM_ADMIN_URL": adminURL,
 		"INFERNOSIM_CASE_ID": opts.Case.ID, "INFERNOSIM_FAULT_ID": opts.Case.FaultID,
+		"INFERNOSIM_STATE_DIR": stateDir,
 	})
+	// Hooks receive the caller's normal network environment, not the replay proxy.
+	hookEnvironment := mergeEnvironment(os.Environ(), opts.Environment, map[string]string{
+		"INFERNOSIM_CASE_ID": opts.Case.ID, "INFERNOSIM_STATE_DIR": stateDir,
+	})
+	if len(opts.StateCheck.SetupCommand) > 0 {
+		if _, err := runStateCommand(ctx, opts.StateCheck.SetupCommand, hookEnvironment, opts.StateCheck.timeout()); err != nil {
+			return Result{}, fmt.Errorf("state setup failed (output withheld): %w", err)
+		}
+	}
 	started := time.Now()
 	process, runErr := executeWithRestart(runContext, opts, environment, boundary, resume)
 	duration := time.Since(started)
@@ -224,10 +264,22 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 	snapshot := server.Snapshot()
 	result := Result{Version: 1, Case: opts.Case, Passed: true, Duration: duration, Process: process, Simulator: snapshot, ScopeHash: prepared.ScopeHash, RestartAfterCall: opts.RestartAfterCall}
+	result.StateCheckHash = opts.StateCheck.Hash()
 	if snapshot.Agent != nil {
 		result.Assertions = agentreliability.Evaluate(prepared.Config.Agent, *snapshot.Agent, snapshot.Unexpected, duration)
 	}
 	var failures []string
+	if len(opts.StateCheck.Command) > 0 {
+		checks, checkErr := evaluateStateCheck(ctx, opts.StateCheck, hookEnvironment)
+		result.Assertions = append(result.Assertions, checks...)
+		if checkErr != nil {
+			result.InvalidRun = true
+			failures = append(failures, "state check invalid: "+checkErr.Error())
+		}
+	}
+	if snapshot.Agent != nil && (snapshot.Agent.ScheduleFailed || snapshot.Agent.ScheduleCompleted != snapshot.Agent.ScheduleSteps) {
+		result.InvalidRun = true
+	}
 	if opts.RestartAfterCall > 0 && !process.Restarted {
 		result.InvalidRun = true
 		failures = append(failures, "requested crash boundary was not exercised")
@@ -241,6 +293,10 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		if !assertion.Passed {
 			failures = append(failures, assertion.ID+": "+assertion.Message)
 		}
+	}
+	if snapshot.Unexpected {
+		result.InvalidRun = true
+		failures = append(failures, "application called outside the recorded universe")
 	}
 	if len(snapshot.Divergences) > 0 {
 		result.InvalidRun = true

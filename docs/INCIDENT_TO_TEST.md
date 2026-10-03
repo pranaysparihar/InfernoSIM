@@ -196,5 +196,8 @@ contract, production, or report generation failed.
   declines values it cannot classify safely.
 - Bidirectional gRPC streaming still has the limitations documented in the
   release notes.
-- Agent stress uses baseline plus single-fault cases. Parallel tool calls within
-  one provider response and combinatorial fault search are not yet claimed.
+- Agent stress supports baseline/single faults, bounded pairs, and explicit
+  schedules. v4.1 `agent explore` adds bounded larger subsets, occurrence
+  positions, and opt-in schedule permutations. Complete provider JSON tool
+  calls are addressable; incremental streamed tool-call assembly remains outside
+  the supported scope. See [the discovery guide](DISCOVERY_4_1.md).

@@ -36,6 +36,7 @@ type Options struct {
 	AgentCaseID         string
 	AgentScheduleID     string
 	AgentBeforeResponse func(int) bool
+	AgentConfig         *agentreliability.Config
 }
 
 type Server struct {
@@ -89,6 +90,13 @@ func New(opts Options) (*Server, error) {
 	}
 	if config.Stub.HTTPS.Enabled {
 		opts.HTTPS = true
+	}
+	if opts.AgentConfig != nil {
+		config.Agent = *opts.AgentConfig
+		config.Agent.ApplyDefaults()
+		if err := config.Agent.Validate(); err != nil {
+			return nil, err
+		}
 	}
 	if opts.CADir == "" {
 		opts.CADir = config.Stub.HTTPS.CADir

@@ -38,7 +38,7 @@ func CompareResults(baseline, candidate []Result) (Comparison, error) {
 			return r, fmt.Errorf("different or duplicate candidate case set")
 		}
 		seen[c.Case.ID] = true
-		if b.ScopeHash == "" || b.ScopeHash != c.ScopeHash || b.RestartAfterCall != c.RestartAfterCall || agentreliability.StableHash(b.Case) != agentreliability.StableHash(c.Case) {
+		if b.ScopeHash == "" || b.ScopeHash != c.ScopeHash || b.StateCheckHash != c.StateCheckHash || b.RestartAfterCall != c.RestartAfterCall || agentreliability.StableHash(b.Case) != agentreliability.StableHash(c.Case) {
 			return r, fmt.Errorf("case %s has different evidence or execution settings", c.Case.ID)
 		}
 		if !c.Passed {

@@ -1,3 +1,19 @@
+# Upgrading to v4.1.0
+
+Existing v4.0.1 configuration and commands remain compatible. New `agent
+explore`, `agent reproduce`, and `agent minimize` commands are opt-in. The
+`partial` schedule field defaults to false. State-check hooks require explicit
+CLI argv and required IDs; incident configuration cannot launch hooks.
+`state:` assertion IDs are reserved when an independent check is supplied.
+Comparison rejects changed hook contracts. Incomplete schedules are now marked
+invalid so reducers cannot mistake missing participants for a product failure.
+
+See [v4.1 discovery](DISCOVERY_4_1.md) for examples, artifact portability,
+privacy, budget limits, and the distinction between simulated effects and
+independently observed application state.
+
+---
+
 # Upgrading InfernoSIM
 
 ## v4.0.0 to v4.0.1

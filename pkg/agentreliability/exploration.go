@@ -21,6 +21,7 @@ type Schedule struct {
 	ID      string     `yaml:"id" json:"id"`
 	Steps   []Selector `yaml:"steps" json:"steps"`
 	Timeout string     `yaml:"timeout" json:"timeout"`
+	Partial bool       `yaml:"partial,omitempty" json:"partial,omitempty"`
 }
 
 func (c Config) validateReliability() error {
@@ -189,6 +190,11 @@ func (e *Engine) ProcessContext(ctx context.Context, req Request, resp Response)
 		}
 		op := e.inspectRequest(req)
 		if e.schedulePosition >= len(e.schedule.Steps) {
+			if e.schedule.Partial {
+				d, err := e.process(req, resp)
+				e.mu.Unlock()
+				return d, err
+			}
 			e.scheduleFailed = true
 			e.mu.Unlock()
 			return Decision{}, fmt.Errorf("unexpected call after schedule completed")
@@ -214,6 +220,11 @@ func (e *Engine) ProcessContext(ctx context.Context, req Request, resp Response)
 			}
 		}
 		if !possible {
+			if e.schedule.Partial {
+				d, err := e.process(req, resp)
+				e.mu.Unlock()
+				return d, err
+			}
 			e.scheduleFailed = true
 			close(e.scheduleChanged)
 			e.scheduleChanged = make(chan struct{})

@@ -23,12 +23,18 @@ func runAgentCompare(args []string) int {
 	out := fs.String("report-dir", "./infernosim-agent-comparison", "Private report directory")
 	timeout := fs.Duration("timeout", agentrunner.DefaultTimeout, "Timeout per application run")
 	restart := fs.Int("restart-after-call", 0, "Crash/restart boundary for both applications")
+	stateFlags := registerStateFlags(fs)
 	incident, flags := positionalBeforeFlags(args)
 	if err := fs.Parse(flags); err != nil {
 		return 2
 	}
 	if incident == "" && fs.NArg() > 0 {
 		incident = fs.Arg(0)
+	}
+	stateCheck, err := stateFlags.options()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
 	}
 	var commands [2][]string
 	if incident == "" || json.Unmarshal([]byte(*base), &commands[0]) != nil || json.Unmarshal([]byte(*candidate), &commands[1]) != nil || len(commands[0]) == 0 || len(commands[1]) == 0 {
@@ -44,7 +50,7 @@ func runAgentCompare(args []string) int {
 	for _, c := range prepared.Cases {
 		for side, command := range commands {
 			fmt.Printf("Comparing %s side %d\n", c.ID, side)
-			r, err := agentrunner.Run(context.Background(), agentrunner.Options{IncidentDir: incident, ConfigPath: prepared.ConfigPath, Case: c, Command: command, Timeout: *timeout, RestartAfterCall: *restart})
+			r, err := agentrunner.Run(context.Background(), agentrunner.Options{IncidentDir: incident, ConfigPath: prepared.ConfigPath, Case: c, Command: command, Timeout: *timeout, RestartAfterCall: *restart, StateCheck: stateCheck})
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err)
 				return 1
@@ -96,6 +102,7 @@ func runAgentReduce(args []string) int {
 	budget := fs.Int("budget", 20, "Maximum application executions (2-100)")
 	out := fs.String("out", "./infernosim-reduction.json", "Private reduction report")
 	timeout := fs.Duration("timeout", agentrunner.DefaultTimeout, "Timeout per run")
+	stateFlags := registerStateFlags(fs)
 	incident, remaining := positionalBeforeFlags(flags)
 	if err := fs.Parse(remaining); err != nil {
 		return 2
@@ -105,6 +112,11 @@ func runAgentReduce(args []string) int {
 	}
 	if incident == "" || *caseID == "" || len(command) == 0 {
 		fmt.Fprintln(os.Stderr, "agent reduce requires incident --case --assertion and explicit command after --")
+		return 2
+	}
+	stateCheck, err := stateFlags.options()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
 	p, err := agentrunner.Prepare(incident, *config, *seed, agentreliability.MaximumCases, true)
@@ -118,7 +130,7 @@ func runAgentReduce(args []string) int {
 		return 1
 	}
 	r, err := agentrunner.ReduceFaults(context.Background(), c, *assertion, *budget, func(ctx context.Context, c agentreliability.Case) (agentrunner.Result, error) {
-		return agentrunner.Run(ctx, agentrunner.Options{IncidentDir: incident, ConfigPath: p.ConfigPath, Case: c, Command: command, Timeout: *timeout})
+		return agentrunner.Run(ctx, agentrunner.Options{IncidentDir: incident, ConfigPath: p.ConfigPath, Case: c, Command: command, Timeout: *timeout, StateCheck: stateCheck})
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
