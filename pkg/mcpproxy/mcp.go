@@ -100,20 +100,25 @@ func RecordCommand(ctx context.Context, opts RecordOptions) error {
 	}
 	tempPath := file.Name()
 	defer os.Remove(tempPath)
+	defer file.Close()
 	if err := file.Chmod(0o600); err != nil {
 		_ = file.Close()
 		return err
 	}
 	log := &recorder{encoder: json.NewEncoder(file)}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	command := exec.CommandContext(ctx, opts.Command[0], opts.Command[1:]...)
 	childInput, err := command.StdinPipe()
 	if err != nil {
 		return err
 	}
+	defer childInput.Close()
 	childOutput, err := command.StdoutPipe()
 	if err != nil {
 		return err
 	}
+	defer childOutput.Close()
 	command.Stderr = opts.Stderr
 	if err := command.Start(); err != nil {
 		_ = file.Close()
@@ -121,16 +126,24 @@ func RecordCommand(ctx context.Context, opts RecordOptions) error {
 	}
 	serverErr := make(chan error, 1)
 	go func() {
-		serverErr <- copyLines(childOutput, opts.Stdout, func(message []byte) error {
+		err := copyLines(childOutput, opts.Stdout, func(message []byte) error {
 			return log.write("server_to_client", message)
 		})
+		if err != nil {
+			cancel()
+		}
+		serverErr <- err
 	}()
 	clientErr := copyLines(opts.Stdin, childInput, func(message []byte) error {
 		return log.write("client_to_server", message)
 	})
 	_ = childInput.Close()
-	waitErr := command.Wait()
+	if clientErr != nil {
+		cancel()
+	}
+	// Wait closes StdoutPipe: drain it before reaping an exited server.
 	outputErr := <-serverErr
+	waitErr := command.Wait()
 	if err := errors.Join(clientErr, outputErr, waitErr, file.Sync(), file.Close()); err != nil {
 		return err
 	}

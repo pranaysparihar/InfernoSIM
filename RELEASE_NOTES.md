@@ -51,6 +51,8 @@ Existing v4.0.1 configurations remain compatible. Generated harnesses now use
 the v4.1.0 container. The incident guide's obsolete single-fault/parallel-call
 limitations are corrected. gRPC is updated to v1.83.2 with required x/net,
 x/sys, x/sync, and x/text updates, addressing GO-2026-6348 and GO-2026-6443.
+MCP stdio recording drains the final server response before closing the output
+pipe, fixing an intermittent shutdown failure exposed by Windows CI.
 
 Start with the [runnable discovery guide](docs/DISCOVERY_4_1.md) and
 [upgrade notes](docs/UPGRADING.md).
