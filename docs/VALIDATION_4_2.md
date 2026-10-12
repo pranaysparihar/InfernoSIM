@@ -103,6 +103,14 @@ empty-argument/empty-delta mutation bug in an earlier run; the exact minimized
 input is checked in and the passing count comes from the run after its fix.
 The ten historical fuzz targets also passed their ten-second smoke runs.
 
+Duration-based CI fuzz smokes use Go 1.27.2, which includes the fix for
+[Go's fuzz-deadline race](https://github.com/golang/go/issues/75804). A final
+Go 1.26.9 CI run encountered that harness error at the JSONPath fuzz duration
+boundary, without a failing corpus input. The release binaries, race/platform
+gates, completed ten-minute fuzz runs and causal soak use Go 1.26.9. CI retains
+the same fuzz targets and time budgets; failures are not suppressed or retried
+into a pass.
+
 Raw evidence: [application campaigns](../benchmarks/results/v4.2/causal-acceptance.json),
 [retained regressions](../benchmarks/fixtures/causal-v4.2/),
 [soak samples](../benchmarks/results/v4.2/causal-soak.json),
