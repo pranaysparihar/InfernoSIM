@@ -1,8 +1,10 @@
 # v4.2 validation evidence
 
-Release candidate validation is in progress. Publication is gated on the
-two-hour soak and GitHub CI. This file will record their completed results
-before the v4.2.0 tag is published.
+The pre-publication application, SDK, fuzz and two-hour soak gates passed on
+October 12, 2026. The implementation passed every job in
+[GitHub CI](https://github.com/pranaysparihar/InfernoSIM/actions/runs/38218728040).
+The release workflow repeats the race, integration, three-seed application and
+security gates before publishing binaries and the container.
 
 ## Application consequences
 
@@ -68,23 +70,49 @@ Sources: [Go release history](https://go.dev/doc/devel/release#go1.26.9),
 
 ## Soak and fuzz gates
 
-The release requires a two-hour run of the relocated, minimized five-scenario
-suite. Every cycle runs both fixed and broken clients. The same named failure
-and exact observed schedule must persist; fixed clients must pass. Resource
-thresholds are declared in `cmd/causalbenchmark/soak.go` before the run:
-32 MiB heap growth, 96 MiB RSS growth, eight extra goroutines/descriptors, and
-zero remaining descendants or identifiable orphaned fixture processes.
+The relocated five-scenario suite passed **2,507 complete cycles and
+25,070 application executions over 7,201.6 seconds** on macOS arm64.
+Every cycle ran both fixed and broken clients. Every broken run retained the
+same named failure and exact observed schedule; every fixed run passed. There
+were no invalid runs, timeouts or changed outcomes.
+
+Resource samples after the three-cycle warm-up stayed within the thresholds
+declared in `cmd/causalbenchmark/soak.go` before the run:
+
+| Measurement | Observed peak growth/result | Allowed growth |
+| --- | ---: | ---: |
+| Go heap after GC | 248.0 KiB | 32 MiB |
+| Resident memory | 0.77 MiB | 96 MiB |
+| Goroutines | 0 (peak 1) | 8 |
+| File descriptors | 0 (peak 6) | 8 |
+| Remaining descendants | 0 | 0 |
+| Identifiable orphaned fixture processes | 0 | 0 |
+
+The source provenance records the 35 unchanged causal/runtime/scenario files
+used by the soak. The runner remained unchanged. The MCP connector was rebuilt
+eight seconds into warm-up, before the cycle-three resource baseline; both
+initial and measured connector hashes are retained. Its MCP forwarding source
+did not change. A provider-parser repair made after soak launch is outside
+these five scenarios and is covered separately by the final fuzz, race and
+independent SDK checks. The soak is evidence for the causal application runtime,
+not a two-hour test of every provider adapter.
 
 Both new fuzz targets passed ten minutes on Go 1.26.9: 3,496,670 planner
 executions and 51,860,172 provider-stream executions. The latter found an
 empty-argument/empty-delta mutation bug in an earlier run; the exact minimized
 input is checked in and the passing count comes from the run after its fix.
 The ten historical fuzz targets also passed their ten-second smoke runs.
-Soak results are added here when that gate finishes.
+
+Raw evidence: [application campaigns](../benchmarks/results/v4.2/causal-acceptance.json),
+[retained regressions](../benchmarks/fixtures/causal-v4.2/),
+[soak samples](../benchmarks/results/v4.2/causal-soak.json),
+[source and binary provenance](../benchmarks/results/v4.2/causal-soak-provenance.json),
+[fuzz results](../benchmarks/results/v4.2/fuzz.json), and
+[independent provider SDK checks](../benchmarks/results/v4.2/provider-sdks.json).
 
 ## Platform interpretation
 
-| Target | Planned release validation |
+| Target | Completed release-candidate validation |
 | --- | --- |
 | macOS arm64 | Native full/race suite, SDK, SQLite campaign and two-hour soak on the maintainer host; native CI |
 | macOS amd64 | Native CI unit suite and CLI build |

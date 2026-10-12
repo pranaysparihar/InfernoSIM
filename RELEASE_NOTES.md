@@ -49,9 +49,9 @@ produce reduced regressions that distinguish the broken and fixed clients.
 The official MCP Go SDK runs concurrent calls under all six boundary orders
 across three seeds, with targeted faults. Provider stream tests also exercise
 real HTTP delivery, fragmented captures, changed IDs, cancellation and trailers.
-The release gates include a two-hour resource/nondeterminism soak, ten-minute
-planner and stream fuzz runs, historical feature smokes, full race tests and
-platform CI. Completed results and native-versus-cross-build coverage are
+The two-hour resource/nondeterminism soak passed 25,070 application runs.
+Ten-minute planner and stream fuzz runs, historical feature smokes, full race
+tests and platform CI also passed. Completed results and native-versus-cross-build coverage are
 recorded in [validation evidence](docs/VALIDATION_4_2.md).
 
 Go is updated to 1.26.9 and x/net to v0.60.0 with required transitive updates,
