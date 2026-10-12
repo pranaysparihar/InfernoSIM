@@ -161,6 +161,7 @@ only when it identifies one call in that response.
 | Ollama NDJSON | Complete tool argument objects in streamed message chunks, tool index and terminal `done` | Missing IDs use `ollama:<index>`; arbitrary argument-string fragment formats are not accepted |
 
 Limits are 16 MiB, 10,000 frames and 256 calls per stream. Malformed JSON,
+SSE framing supports LF and CRLF separators. Other separators are unsupported.
 truncated arguments, conflicting identities, missing/duplicate completion and
 unsupported event shapes fail explicitly. A selected fault may intentionally
 produce malformed argument strings where the provider represents arguments as

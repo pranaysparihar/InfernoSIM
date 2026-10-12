@@ -56,7 +56,10 @@ recorded in [validation evidence](docs/VALIDATION_4_2.md).
 
 Go is updated to 1.26.9 and x/net to v0.60.0 with required transitive updates,
 addressing newly published runtime/HTTP security advisories. Generated harnesses
-use the v4.2.0 container.
+use the v4.2.0 container. The Testcontainers adapter updates go-archive and
+x/crypto to fix reachable archive/SSH advisories; all three Go modules now have
+vulnerability-scan gates. Byte-addressed stream fixtures and regression artifacts
+preserve their line endings on Windows checkouts.
 
 ## Support boundaries
 

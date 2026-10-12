@@ -84,6 +84,18 @@ func TestLargeCausalManifestCanBeLoadedAfterExport(t *testing.T) {
 	}
 }
 
+func TestPublishedCausalReproductionsRemainPortable(t *testing.T) {
+	dirs, err := filepath.Glob(filepath.Join("..", "..", "benchmarks", "fixtures", "causal-v4.2", "*-reproduction"))
+	if err != nil || len(dirs) != 15 {
+		t.Fatalf("published reproduction inventory: %d %v", len(dirs), err)
+	}
+	for _, dir := range dirs {
+		if _, err := LoadReproduction(dir); err != nil {
+			t.Fatalf("%s: %v", dir, err)
+		}
+	}
+}
+
 func causalIncident(t *testing.T, transport string) string {
 	t.Helper()
 	dir := t.TempDir()

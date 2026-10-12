@@ -54,8 +54,11 @@ Network release alone is not treated as evidence of application commit.
   Go Compose smokes, Kafka/AsyncAPI against Redpanda, generated harness validation.
 
 The release uses Go **1.26.9**, `golang.org/x/net` **v0.60.0** and required x/sys,
-x/sync and x/text updates. The main-module `govulncheck` scan reports no
-vulnerabilities. This replaces the earlier 1.26.6/x/net v0.58.0 pins after the
+x/sync and x/text updates. The Testcontainers adapter also updates
+`github.com/moby/go-archive` to v0.3.0 and `golang.org/x/crypto` to v0.56.0,
+fixing its reachable archive/SSH advisories. The main module, pinned MCP SDK
+integration and Testcontainers adapter all pass `govulncheck`; both nested
+scans now run in CI and the release workflow. This replaces the earlier pins after the
 October 8 security advisories, including the HTTP/2 HPACK encoder race.
 Sources: [Go release history](https://go.dev/doc/devel/release#go1.26.9),
 [GO-2026-6617](https://pkg.go.dev/vuln/GO-2026-6617).
