@@ -44,6 +44,9 @@ Network release alone is not treated as evidence of application commit.
 - Four provider stream fixture families, interleaved calls, malformed/truncated
   input, completion validation, unrelated-frame preservation and real HTTP
   delivery with captured chunk fragmentation, trailers and cancellation.
+- Independent official Python SDK consumers: OpenAI 3.29.0 (Responses and Chat),
+  Anthropic 1.13.0 and Ollama 0.6.3. Four formats × baseline/mutation × three
+  server-write sizes = 24 passing checks over loopback HTTP. No live APIs used.
 - Full recording metadata and OTel ancestor integrity checks; relocation,
   changed runtime IDs, tampered manifests/files and large graph manifests.
 - Historical agent, safety/recovery and discovery smokes; local Ollama
@@ -72,9 +75,12 @@ thresholds are declared in `cmd/causalbenchmark/soak.go` before the run:
 32 MiB heap growth, 96 MiB RSS growth, eight extra goroutines/descriptors, and
 zero remaining descendants or identifiable orphaned fixture processes.
 
-Both new fuzz targets run for ten minutes on the patched release toolchain.
-The ten historical fuzz targets also run. Raw counts and soak results are added
-here when those gates finish.
+Both new fuzz targets passed ten minutes on Go 1.26.9: 3,496,670 planner
+executions and 51,860,172 provider-stream executions. The latter found an
+empty-argument/empty-delta mutation bug in an earlier run; the exact minimized
+input is checked in and the passing count comes from the run after its fix.
+The ten historical fuzz targets also passed their ten-second smoke runs.
+Soak results are added here when that gate finishes.
 
 ## Platform interpretation
 

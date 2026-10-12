@@ -160,8 +160,8 @@ only when it identifies one call in that response.
 | Anthropic SSE | Message/block lifecycle, `tool_use`, `input_json_delta`, complete or empty input, block/message completion | Client tool calls; server-tool and new block families require explicit support |
 | Ollama NDJSON | Complete tool argument objects in streamed message chunks, tool index and terminal `done` | Missing IDs use `ollama:<index>`; arbitrary argument-string fragment formats are not accepted |
 
-Limits are 16 MiB, 10,000 frames and 256 calls per stream. Malformed JSON,
-SSE framing supports LF and CRLF separators. Other separators are unsupported.
+Limits are 16 MiB, 10,000 frames and 256 calls per stream. SSE framing supports
+LF and CRLF separators; other separators are unsupported. Malformed JSON,
 truncated arguments, conflicting identities, missing/duplicate completion and
 unsupported event shapes fail explicitly. A selected fault may intentionally
 produce malformed argument strings where the provider represents arguments as
@@ -234,8 +234,10 @@ The instrumented soak supports Linux/macOS; it is not a Windows containment test
 The pinned official MCP Go SDK also exercises all six admission/release orders
 for concurrent calls across three seeds, with targeted faults and runtime ID
 remapping. Its 2026-07-28 `server/discover` path and legacy initialization fixtures
-are tested. This does not claim complete MCP 2026 protocol conformance, nor live
-OpenAI/Anthropic SDK validation. See [release evidence](VALIDATION_4_2.md).
+are tested. Official OpenAI, Anthropic and Ollama Python SDKs independently
+consume baseline and mutated recorded streams over fragmented loopback HTTP
+writes in 24 checks. This does not claim complete MCP 2026 conformance or testing
+against live provider services. See [release evidence](VALIDATION_4_2.md).
 
 ## Remaining support boundaries
 

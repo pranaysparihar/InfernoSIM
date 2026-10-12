@@ -1,5 +1,5 @@
 event: response.created
-data: {"type":"response.created","response":{"id":"resp_1","status":"in_progress"}}
+data: {"type":"response.created","response":{"id":"resp_1","object":"response","created_at":0,"model":"fixture","status":"in_progress","output":[],"tools":[],"parallel_tool_calls":true}}
 
 event: response.output_item.added
 data: {"type":"response.output_item.added","output_index":0,"item":{"id":"item_a","type":"function_call","call_id":"call_a","name":"lookup","arguments":""}}

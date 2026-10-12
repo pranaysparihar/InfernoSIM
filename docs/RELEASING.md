@@ -17,6 +17,7 @@ InfernoSIM releases are produced from annotated `v*` tags by
    fixture evidence. See `docs/AGENT_SAFETY_4_0_1.md` for the
    bounded compatibility contract. For v4.2, require `scripts/causal-smoke.sh`,
    three seeded SQLite/filesystem campaigns, ten-minute planner/stream fuzz runs,
+   `bash scripts/provider-stream-smoke.sh` with pinned independent SDK consumers,
    and a two-hour `cmd/causalbenchmark -soak 2h` run of the retained regressions.
    Save resource samples, exact execution checks and source provenance with the
    release evidence. Use the patched Go toolchain pinned in CI and run

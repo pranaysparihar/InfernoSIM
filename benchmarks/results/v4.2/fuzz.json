@@ -1,0 +1,24 @@
+{
+  "go_version": "go1.26.9",
+  "platform": "darwin/arm64",
+  "checks": [
+    {
+      "target": "planner",
+      "duration": "10m",
+      "executions": 3496670,
+      "passed": true
+    },
+    {
+      "target": "provider-streams",
+      "duration": "10m",
+      "executions": 51860172,
+      "passed": true
+    },
+    {
+      "target": "historical",
+      "targets": 10,
+      "duration_per_target": "10s",
+      "passed": true
+    }
+  ]
+}

@@ -71,6 +71,8 @@ jobs:
         env:
           INFERNOSIM_CAUSAL_ITERATIONS: "3"
         run: bash scripts/causal-smoke.sh
+      - name: Verify streamed tool mutations with official provider SDK consumers
+        run: bash scripts/provider-stream-smoke.sh
       - name: Verify pinned official MCP SDK integration
         working-directory: integrations/mcp-go
         run: |
