@@ -1,0 +1,29 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_1","object":"response","created_at":0,"model":"fixture","status":"in_progress","output":[],"tools":[],"parallel_tool_calls":true}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":0,"item":{"id":"item_a","type":"function_call","call_id":"call_a","name":"lookup","arguments":""}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":1,"item":{"id":"item_b","type":"function_call","call_id":"call_b","name":"lookup","arguments":""}}
+
+: unrelated heartbeat must survive exactly
+
+data: {"type":"response.function_call_arguments.delta","output_index":1,"item_id":"item_b","delta":"{\"account\":\""}
+
+data: {"type":"response.function_call_arguments.delta","output_index":0,"item_id":"item_a","delta":"{\"account\":\""}
+
+data: {"type":"response.function_call_arguments.delta","output_index":1,"item_id":"item_b","delta":"B\",\"amount\":20}"}
+
+data: {"type":"response.function_call_arguments.delta","output_index":0,"item_id":"item_a","delta":"A\",\"amount\":10}"}
+
+data: {"type":"response.function_call_arguments.done","output_index":0,"item_id":"item_a","arguments":"{\"account\":\"A\",\"amount\":10}"}
+
+data: {"type":"response.function_call_arguments.done","output_index":1,"item_id":"item_b","arguments":"{\"account\":\"B\",\"amount\":20}"}
+
+data: {"type":"response.output_item.done","output_index":1,"item":{"id":"item_b","type":"function_call","call_id":"call_b","name":"lookup","arguments":"{\"account\":\"B\",\"amount\":20}"}}
+
+data: {"type":"response.output_item.done","output_index":0,"item":{"id":"item_a","type":"function_call","call_id":"call_a","name":"lookup","arguments":"{\"account\":\"A\",\"amount\":10}"}}
+
+data: {"type":"response.completed","response":{"id":"resp_1","status":"completed","output":[{"id":"item_a","type":"function_call","call_id":"call_a","name":"lookup","arguments":"{\"account\":\"A\",\"amount\":10}"},{"id":"item_b","type":"function_call","call_id":"call_b","name":"lookup","arguments":"{\"account\":\"B\",\"amount\":20}"}],"usage":{"input_tokens":10,"output_tokens":20,"total_tokens":30}}}
+

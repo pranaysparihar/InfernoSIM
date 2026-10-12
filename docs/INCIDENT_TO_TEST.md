@@ -198,6 +198,6 @@ contract, production, or report generation failed.
   release notes.
 - Agent stress supports baseline/single faults, bounded pairs, and explicit
   schedules. v4.1 `agent explore` adds bounded larger subsets, occurrence
-  positions, and opt-in schedule permutations. Complete provider JSON tool
-  calls are addressable; incremental streamed tool-call assembly remains outside
-  the supported scope. See [the discovery guide](DISCOVERY_4_1.md).
+  positions, and opt-in schedule permutations. v4.2 adds evidenced causal graphs,
+  topological admission/release schedules and per-call targeting in documented
+  provider streams. See [the concurrency guide](CONCURRENCY_4_2.md).

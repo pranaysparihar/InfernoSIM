@@ -145,6 +145,9 @@ func (e *Engine) SetSchedule(id string) error {
 	if e.sequence != 0 {
 		return fmt.Errorf("cannot change schedule after execution starts")
 	}
+	if e.config.Causal != nil && e.config.Causal.Schedule.ID == id {
+		return nil
+	}
 	for _, s := range e.config.Schedules {
 		if s.ID == id {
 			e.schedule = &s

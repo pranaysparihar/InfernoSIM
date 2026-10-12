@@ -1,0 +1,14 @@
+data: {"object":"chat.completion.chunk","id":"chat_1","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_a","type":"function","function":{"name":"lookup","arguments":""}},{"index":1,"id":"call_b","type":"function","function":{"name":"lookup","arguments":""}}]},"finish_reason":null}]}
+
+: unrelated heartbeat must survive exactly
+
+data: {"object":"chat.completion.chunk","id":"chat_1","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"{\"account\":\"B\","}},{"index":0,"function":{"arguments":"{\"account\":\"A\","}}]},"finish_reason":null}]}
+
+data: {"object":"chat.completion.chunk","id":"chat_1","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"amount\":10}"}},{"index":1,"function":{"arguments":"\"amount\":20}"}}]},"finish_reason":null}]}
+
+data: {"object":"chat.completion.chunk","id":"chat_1","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+
+data: {"object":"chat.completion.chunk","id":"chat_1","choices":[],"usage":{"total_tokens":30}}
+
+data: [DONE]
+

@@ -1,0 +1,10 @@
+{
+  "review": "fixture dependencies are explicitly declared; remaining requests are independent",
+  "edges": [
+    {
+      "from": "mcp_5:release",
+      "to": "mcp_7:admit",
+      "reason": "application cancels slow work after audit returns"
+    }
+  ]
+}

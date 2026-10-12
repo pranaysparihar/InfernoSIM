@@ -21,6 +21,8 @@ import (
 	"time"
 
 	"infernosim/pkg/agentreliability"
+	"infernosim/pkg/causal"
+	"infernosim/pkg/mcpproxy"
 	"infernosim/pkg/replaydriver"
 	"infernosim/pkg/reporting"
 	"infernosim/pkg/simserver"
@@ -43,6 +45,7 @@ type Options struct {
 	RestartAfterCall int
 	StateCheck       StateCheckOptions
 	AgentConfig      *agentreliability.Config
+	MCPConnector     []string
 }
 
 type ProcessResult struct {
@@ -55,6 +58,7 @@ type ProcessResult struct {
 }
 
 type Result struct {
+	CausalExecution  *causal.Execution                  `json:"causal_execution,omitempty"`
 	Version          int                                `json:"version"`
 	Case             agentreliability.Case              `json:"case"`
 	Passed           bool                               `json:"passed"`
@@ -185,6 +189,11 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 			}
 		}
 	}
+	if prepared.Config.Agent.Causal != nil {
+		if err := ValidateCausalRecording(opts.IncidentDir, prepared.Config.Agent.Causal.Graph); err != nil {
+			return Result{}, err
+		}
+	}
 	if opts.Case.ID == "" {
 		opts.Case, err = ResolveCase(prepared.Cases, "baseline")
 		if err != nil {
@@ -240,6 +249,20 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		"INFERNOSIM_CASE_ID": opts.Case.ID, "INFERNOSIM_FAULT_ID": opts.Case.FaultID,
 		"INFERNOSIM_STATE_DIR": stateDir,
 	})
+	var mcpBridge *mcpproxy.Bridge
+	if HasCausalMCP(prepared.Config.Agent) {
+		mcpBridge, err = mcpproxy.StartBridge(runContext, filepath.Join(opts.IncidentDir, "mcp.log"), server.AgentEngine())
+		if err != nil {
+			return Result{}, err
+		}
+		defer mcpBridge.Close()
+		connector := opts.MCPConnector
+		if len(connector) == 0 {
+			connector = []string{executablePath(), "agent", "mcp", "connect"}
+		}
+		argv, _ := json.Marshal(connector)
+		environment = mergeEnvironment(environment, nil, map[string]string{"INFERNOSIM_MCP_COMMAND_JSON": string(argv), "INFERNOSIM_MCP_ENDPOINT": mcpBridge.Address, "INFERNOSIM_MCP_TOKEN": mcpBridge.Token})
+	}
 	// Hooks receive the caller's normal network environment, not the replay proxy.
 	hookEnvironment := mergeEnvironment(os.Environ(), opts.Environment, map[string]string{
 		"INFERNOSIM_CASE_ID": opts.Case.ID, "INFERNOSIM_STATE_DIR": stateDir,
@@ -251,6 +274,11 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 	started := time.Now()
 	process, runErr := executeWithRestart(runContext, opts, environment, boundary, resume)
+	if mcpBridge != nil {
+		if bridgeErr := mcpBridge.Close(); bridgeErr != nil {
+			_ = server.AgentEngine().Causal().Fail(bridgeErr)
+		}
+	}
 	duration := time.Since(started)
 	if runErr != nil {
 		process.ExitCode = -1
@@ -266,6 +294,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	result := Result{Version: 1, Case: opts.Case, Passed: true, Duration: duration, Process: process, Simulator: snapshot, ScopeHash: prepared.ScopeHash, RestartAfterCall: opts.RestartAfterCall}
 	result.StateCheckHash = opts.StateCheck.Hash()
 	if snapshot.Agent != nil {
+		result.CausalExecution = snapshot.Agent.Causal
 		result.Assertions = agentreliability.Evaluate(prepared.Config.Agent, *snapshot.Agent, snapshot.Unexpected, duration)
 	}
 	var failures []string

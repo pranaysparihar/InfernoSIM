@@ -1,0 +1,15 @@
+{
+  "review": "fixture dependencies are explicitly declared; remaining requests are independent",
+  "edges": [
+    {
+      "from": "read_new:release",
+      "to": "checkpoint_new:admit",
+      "reason": "application awaits this response before issuing the continuation"
+    },
+    {
+      "from": "checkpoint_new:admit",
+      "to": "read_old:release",
+      "reason": "Explore the stale-response regression after the new-value transaction checkpoint is observed."
+    }
+  ]
+}

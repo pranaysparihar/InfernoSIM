@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"infernosim/pkg/agentreliability"
 	"infernosim/pkg/capture"
+	"infernosim/pkg/causal"
 	"infernosim/pkg/event"
 	"infernosim/pkg/inject"
 	"infernosim/pkg/matcher"
@@ -268,6 +269,10 @@ func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		observedHost = r.URL.Host
 	}
 	s.recordObserved(r.Method, observedHost, "", 0)
+	if s.agentEngine != nil && s.agentEngine.Causal() != nil {
+		s.serveCausal(w, r, body)
+		return
+	}
 
 	maxSeen := atomic.LoadInt64(&s.maxSeen)
 	if maxSeen > 0 && seen > maxSeen {
@@ -320,7 +325,7 @@ func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				s.agentFailure(w, processErr)
 				return
 			}
-			if s.writeAgentDecision(r.Context(), w, decision, trailers, "") {
+			if s.writeAgentDecision(r.Context(), w, decision, trailers, "", nil) {
 				return
 			}
 		}
@@ -395,18 +400,26 @@ func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		grpcStatus = "0"
 	}
 	if s.agentEngine != nil && !isGRPCRequest(r) {
+		if len(expected.ResponseFrames) > 0 {
+			var err error
+			responseBody, err = causal.ResponsePayload(expected)
+			if err != nil {
+				s.agentFailure(w, err)
+				return
+			}
+		}
 		decision, processErr := s.processAgent(r, body, status, http.Header(expected.ResponseHeaders), responseBody)
 		if processErr != nil {
 			s.agentFailure(w, processErr)
 			return
 		}
-		if s.writeAgentDecision(r.Context(), w, decision, http.Header(expected.ResponseTrailers), "") {
+		if s.writeAgentDecision(r.Context(), w, decision, http.Header(expected.ResponseTrailers), "", expected.ResponseFrames) {
 			return
 		}
 	}
 	if len(expected.ResponseFrames) > 0 {
 		if frameErr := writeCapturedResponseFrames(
-			w, status, http.Header(expected.ResponseHeaders), http.Header(expected.ResponseTrailers), expected.ResponseFrames,
+			r.Context(), w, status, http.Header(expected.ResponseHeaders), http.Header(expected.ResponseTrailers), expected.ResponseFrames,
 		); frameErr != nil {
 			s.agentFailure(w, frameErr)
 		}
@@ -422,7 +435,7 @@ func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
-func writeCapturedResponseFrames(w http.ResponseWriter, status int, headers, trailers http.Header, frames []event.StreamFrame) error {
+func writeCapturedResponseFrames(ctx context.Context, w http.ResponseWriter, status int, headers, trailers http.Header, frames []event.StreamFrame) error {
 	chunks := make([][]byte, 0, len(frames))
 	for index, frame := range frames {
 		if frame.Delay < 0 || frame.Delay > time.Minute {
@@ -445,7 +458,12 @@ func writeCapturedResponseFrames(w http.ResponseWriter, status int, headers, tra
 	w.WriteHeader(status)
 	for index, chunk := range chunks {
 		if frames[index].Delay > 0 {
-			time.Sleep(frames[index].Delay)
+			if !waitAgentContext(ctx, frames[index].Delay) {
+				return ctx.Err()
+			}
+		}
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 		if _, err := w.Write(chunk); err != nil {
 			return err
@@ -492,7 +510,7 @@ func (s *StubProxy) agentFailure(w http.ResponseWriter, err error) {
 }
 
 // writeAgentDecision returns true when the agent engine handled the response.
-func (s *StubProxy) writeAgentDecision(ctx context.Context, w http.ResponseWriter, decision agentreliability.Decision, trailers http.Header, grpcStatus string) bool {
+func (s *StubProxy) writeAgentDecision(ctx context.Context, w http.ResponseWriter, decision agentreliability.Decision, trailers http.Header, grpcStatus string, frames []event.StreamFrame) bool {
 	if decision.Delay > 0 {
 		if !waitAgentContext(ctx, decision.Delay) {
 			return true
@@ -523,6 +541,16 @@ func (s *StubProxy) writeAgentDecision(ctx context.Context, w http.ResponseWrite
 		return false
 	}
 	decision.Response.Headers.Set("X-Inferno-Agent-Fault", strings.Join(decision.AppliedFaults, ","))
+	if len(frames) > 0 {
+		changed, err := reframeResponse(frames, decision.Response.Body)
+		if err == nil {
+			err = writeCapturedResponseFrames(ctx, w, decision.Response.Status, decision.Response.Headers, trailers, changed)
+		}
+		if err != nil {
+			s.agentFailure(w, err)
+		}
+		return true
+	}
 	writeStubResponse(w, decision.Response.Status, decision.Response.Headers, trailers, grpcStatus, decision.Response.Body)
 	return true
 }

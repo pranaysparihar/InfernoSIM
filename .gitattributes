@@ -1,0 +1,4 @@
+# These fixtures are byte-addressed protocol data or checksum manifests.
+# Windows autocrlf must not alter their framing or invalidate reproductions.
+pkg/toolstream/testdata/** -text
+benchmarks/fixtures/causal-v4.2/** -text

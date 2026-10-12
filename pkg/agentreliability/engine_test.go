@@ -124,7 +124,7 @@ func TestSSESemanticMutation(t *testing.T) {
 		Adapters: Adapters{Providers: []ProviderAdapter{{Name: "openai", Type: "openai", HostRegex: `^llm\.test$`}}},
 		Faults: []Fault{{
 			ID: "corrupt-stream", Select: Selector{Kind: "llm_response", Provider: "openai"},
-			Mutations: []Mutation{{Operation: "delete", Path: "$.arguments.customer_id"}},
+			Mutations: []Mutation{{Operation: "delete", Path: "$.response.metadata.customer_id"}},
 		}},
 	}
 	engine, err := NewEngine(config, []string{"corrupt-stream"})
@@ -133,7 +133,7 @@ func TestSSESemanticMutation(t *testing.T) {
 	}
 	decision, err := engine.Process(Request{Method: "POST", Host: "llm.test", Path: "/v1/responses", Headers: make(http.Header), Body: []byte(`{}`)}, Response{
 		Status: 200, Headers: http.Header{"Content-Type": {"text/event-stream"}},
-		Body: []byte("event: response.output_item.added\ndata: {\"arguments\":{\"customer_id\":\"cust_1\",\"amount\":10}}\n\ndata: [DONE]\n\n"),
+		Body: []byte("event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"metadata\":{\"customer_id\":\"cust_1\",\"amount\":10}}}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"output\":[]}}\n\n"),
 	})
 	if err != nil {
 		t.Fatal(err)

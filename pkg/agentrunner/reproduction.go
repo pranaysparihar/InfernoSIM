@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+	"infernosim/pkg/causal"
 	"infernosim/pkg/replaydriver"
 	"infernosim/pkg/reporting"
 )
@@ -23,6 +24,8 @@ const reproductionLimit = 64 << 20
 // Reproduction is inert data. Command argv is deliberately not stored;
 // the caller supplies application/setup/check argv again when reproducing.
 type Reproduction struct {
+	Integrity        string            `json:"integrity,omitempty"`
+	CausalExecution  *causal.Execution `json:"causal_execution,omitempty"`
 	Version          int               `json:"version"`
 	Trial            Trial             `json:"trial"`
 	Assertion        string            `json:"assertion,omitempty"`
@@ -65,6 +68,17 @@ func readRegular(path string, limit int64) ([]byte, error) {
 }
 func digest(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
 func ExportReproduction(destination, incident, configPath string, r Reproduction) (err error) {
+	if r.Trial.Causal != nil {
+		if r.CausalExecution == nil {
+			return fmt.Errorf("causal reproduction requires observed execution evidence")
+		}
+		if err := r.CausalExecution.Validate(r.Trial.Causal.Graph, r.Trial.Causal.Schedule); err != nil {
+			return err
+		}
+		if err := ValidateCausalRecording(incident, r.Trial.Causal.Graph); err != nil {
+			return err
+		}
+	}
 	root, err := filepath.Abs(incident)
 	if err != nil {
 		return err
@@ -122,7 +136,7 @@ func ExportReproduction(destination, incident, configPath string, r Reproduction
 			_ = os.RemoveAll(dest)
 		}
 	}()
-	r.Version = 1
+	r.Version = 2
 	r.Files = map[string]string{}
 	var total int64
 	write := func(name string, data []byte) error {
@@ -168,7 +182,17 @@ func ExportReproduction(destination, incident, configPath string, r Reproduction
 	if _, err = replaydriver.LoadReplayConfig(filepath.Join(dest, "incident", "replay.yaml")); err != nil {
 		return err
 	}
-	return WriteJSON(filepath.Join(dest, "reproduction.json"), r)
+	r.Integrity = ""
+	r.Integrity = causal.Hash(r)
+	manifest, err := json.MarshalIndent(r, "", "  ")
+	if err != nil {
+		return err
+	}
+	manifest = append(manifest, '\n')
+	if total+int64(len(manifest)) > reproductionLimit {
+		return fmt.Errorf("reproduction including manifest exceeds 64 MiB")
+	}
+	return reporting.WritePrivateFile(filepath.Join(dest, "reproduction.json"), manifest)
 }
 func LoadReproduction(dir string) (Reproduction, error) {
 	var r Reproduction
@@ -180,11 +204,12 @@ func LoadReproduction(dir string) (Reproduction, error) {
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return r, fmt.Errorf("reproduction must be a real directory")
 	}
-	data, err := readRegular(filepath.Join(root, "reproduction.json"), 1<<20)
+	data, err := readRegular(filepath.Join(root, "reproduction.json"), reproductionLimit)
 	if err != nil {
 		return r, err
 	}
 	d := json.NewDecoder(bytes.NewReader(data))
+	d.UseNumber()
 	d.DisallowUnknownFields()
 	if err = d.Decode(&r); err != nil {
 		return r, err
@@ -192,10 +217,27 @@ func LoadReproduction(dir string) (Reproduction, error) {
 	if d.Decode(new(any)) != io.EOF {
 		return r, fmt.Errorf("unexpected manifest data")
 	}
-	if r.Version != 1 || len(r.Files) == 0 || len(r.Files) > 1000 || r.Files["incident/replay.yaml"] == "" {
+	if (r.Version != 1 && r.Version != 2) || len(r.Files) == 0 || len(r.Files) > 1000 || r.Files["incident/replay.yaml"] == "" {
 		return r, fmt.Errorf("invalid reproduction manifest")
 	}
-	total := int64(0)
+	if r.Version == 2 {
+		expected := r.Integrity
+		r.Integrity = ""
+		actual := causal.Hash(r)
+		r.Integrity = expected
+		if expected != actual {
+			return r, fmt.Errorf("reproduction manifest integrity mismatch")
+		}
+	}
+	if r.Trial.Causal != nil {
+		if r.Version != 2 || r.CausalExecution == nil {
+			return r, fmt.Errorf("missing causal reproduction evidence")
+		}
+		if err := r.CausalExecution.Validate(r.Trial.Causal.Graph, r.Trial.Causal.Schedule); err != nil {
+			return r, err
+		}
+	}
+	total := int64(len(data))
 	seen := map[string]bool{}
 	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, e error) error {
 		if e != nil {
@@ -260,6 +302,14 @@ func LoadReproduction(dir string) (Reproduction, error) {
 			if _, err := inside(filepath.Join(root, "incident"), filepath.Join(root, "incident", path)); err != nil {
 				return r, err
 			}
+		}
+	}
+	if _, err := r.Trial.AgentConfig(cfg.Agent); err != nil {
+		return r, err
+	}
+	if r.Trial.Causal != nil {
+		if err := ValidateCausalRecording(filepath.Join(root, "incident"), r.Trial.Causal.Graph); err != nil {
+			return r, err
 		}
 	}
 	return r, nil

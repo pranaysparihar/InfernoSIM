@@ -50,6 +50,7 @@ type Server struct {
 	errors        chan error
 	closeOnce     sync.Once
 	closeErr      error
+	agentEngine   *agentreliability.Engine
 }
 
 type Proof struct {
@@ -156,9 +157,10 @@ func New(opts Options) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{
-		options: opts,
-		stub:    stub,
-		errors:  make(chan error, 2),
+		agentEngine: agentEngine,
+		options:     opts,
+		stub:        stub,
+		errors:      make(chan error, 2),
 		proof: Proof{
 			Version:      2,
 			IncidentHash: incidentHash,
@@ -172,6 +174,8 @@ func New(opts Options) (*Server, error) {
 	s.adminServer = &http.Server{Handler: s.controlHandler(), ReadHeaderTimeout: 5 * time.Second}
 	return s, nil
 }
+
+func (s *Server) AgentEngine() *agentreliability.Engine { return s.agentEngine }
 
 func (s *Server) Start() error {
 	stubListener, err := net.Listen("tcp", s.options.Listen)
@@ -223,6 +227,11 @@ func (s *Server) Snapshot() stubproxy.Snapshot {
 
 func (s *Server) Close(ctx context.Context) error {
 	s.closeOnce.Do(func() {
+		if s.agentEngine != nil {
+			if c := s.agentEngine.Causal(); c != nil && !c.Snapshot().Completed {
+				_ = c.Fail(fmt.Errorf("simulator closed before causal schedule completed"))
+			}
+		}
 		var errs []error
 		if s.adminServer != nil {
 			errs = append(errs, s.adminServer.Shutdown(ctx))

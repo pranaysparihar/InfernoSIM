@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"infernosim/pkg/agentrunner"
+	"infernosim/pkg/causal"
 	"infernosim/pkg/reporting"
 )
 
@@ -35,6 +36,9 @@ func runAgentExplore(args []string) int {
 	depth := fs.Int("max-faults", 3, "Maximum simultaneous selected faults (1..4)")
 	occurrences := fs.Int("occurrences", 0, "Also explore occurrence positions 1..N (0..16)")
 	permute := fs.String("permute-schedule", "", "Explicitly allow permutations of this schedule's independent calls (at most six)")
+	graphPath := fs.String("causal-graph", "", "Reviewed graph JSON from agent causal discover")
+	scheduleBudget := fs.Int("schedule-budget", 16, "Maximum seeded causal schedules (1..1000)")
+	boundaryTimeout := fs.String("boundary-timeout", "10s", "Timeout per causal admission or release boundary (<=60s)")
 	out := fs.String("report-dir", "./infernosim-exploration", "New private report directory; never overwrite")
 	timeout := fs.Duration("timeout", agentrunner.DefaultTimeout, "Application timeout per case")
 	restart := fs.Int("restart-after-call", 0, "Explicit restart boundary, retained by reproductions")
@@ -59,7 +63,15 @@ func runAgentExplore(args []string) int {
 	if err != nil {
 		return fail(err)
 	}
-	plan, err := agentrunner.PlanExploration(p.Config.Agent, p.ScopeHash, agentrunner.ExploreOptions{Seed: *seed, Budget: *budget, MaxFaults: *depth, Occurrences: *occurrences, PermuteSchedule: *permute})
+	var graph *causal.Graph
+	if *graphPath != "" {
+		g, e := agentrunner.ReadGraph(*graphPath)
+		if e != nil {
+			return fail(e)
+		}
+		graph = &g
+	}
+	plan, err := agentrunner.PlanExploration(p.Config.Agent, p.ScopeHash, agentrunner.ExploreOptions{Seed: *seed, Budget: *budget, MaxFaults: *depth, Occurrences: *occurrences, PermuteSchedule: *permute, CausalGraph: graph, ScheduleBudget: *scheduleBudget, BoundaryTimeout: *boundaryTimeout})
 	if err != nil {
 		return fail(err)
 	}
@@ -114,6 +126,7 @@ func runAgentExplore(args []string) int {
 			if assertion != "" {
 				destination := filepath.Join(*out, "reproductions", trial.Case.ID)
 				manifest := agentrunner.Reproduction{Trial: trial, Assertion: assertion, CheckIDs: check.IDs, RequiresSetup: len(check.SetupCommand) > 0, Timeout: *timeout, CheckTimeout: *sf.timeout, RestartAfterCall: *restart}
+				manifest.CausalExecution = result.CausalExecution
 				if e = agentrunner.ExportReproduction(destination, incident, p.ConfigPath, manifest); e != nil {
 					return fail(e)
 				}
@@ -191,6 +204,7 @@ func runAgentReproduce(args []string, minimize bool) int {
 			return fail(e)
 		}
 		manifest.Trial = reduced.Trial
+		manifest.CausalExecution = reduced.CausalExecution
 		manifest.Assertion = target
 		if e = agentrunner.ExportReproduction(*out, incident, p.ConfigPath, manifest); e != nil {
 			return fail(e)

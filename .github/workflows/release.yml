@@ -18,7 +18,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26.6"
+          go-version: "1.26.9"
           cache: true
       - name: Verify module files
         run: go mod tidy -diff
@@ -31,6 +31,12 @@ jobs:
         working-directory: integrations/testcontainers-go
         run: go vet ./...
       - name: Vulnerability scan
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+      - name: Vulnerability scan Testcontainers adapter
+        working-directory: integrations/testcontainers-go
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+      - name: Vulnerability scan pinned MCP SDK integration
+        working-directory: integrations/mcp-go
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
       - name: Run release tests
         run: go test -count=1 -race ./...
@@ -61,6 +67,12 @@ jobs:
         run: bash scripts/reliability-smoke.sh
       - name: Verify 4.1 exploration, independent state checks, and reproductions
         run: bash scripts/discovery-smoke.sh
+      - name: Verify 4.2 causal replay and repeated SQLite/filesystem campaigns
+        env:
+          INFERNOSIM_CAUSAL_ITERATIONS: "3"
+        run: bash scripts/causal-smoke.sh
+      - name: Verify streamed tool mutations with official provider SDK consumers
+        run: bash scripts/provider-stream-smoke.sh
       - name: Verify pinned official MCP SDK integration
         working-directory: integrations/mcp-go
         run: |

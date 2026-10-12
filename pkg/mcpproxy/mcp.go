@@ -171,11 +171,12 @@ func copyLines(input io.Reader, output io.Writer, observe func([]byte) error) er
 }
 
 type ReplayOptions struct {
-	Context        context.Context
-	TranscriptPath string
-	Stdin          io.Reader
-	Stdout         io.Writer
-	Engine         *agentreliability.Engine
+	Context          context.Context
+	TranscriptPath   string
+	Stdin            io.Reader
+	Stdout           io.Writer
+	Engine           *agentreliability.Engine
+	SharedController bool
 }
 
 func Replay(opts ReplayOptions) error {
@@ -191,6 +192,9 @@ func Replay(opts ReplayOptions) error {
 	records, err := Load(opts.TranscriptPath)
 	if err != nil {
 		return err
+	}
+	if opts.Engine != nil && opts.Engine.Causal() != nil {
+		return ReplayCausal(opts, records)
 	}
 	scanner := bufio.NewScanner(opts.Stdin)
 	scanner.Buffer(make([]byte, 64*1024), MaximumMessageSize)

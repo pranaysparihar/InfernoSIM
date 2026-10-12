@@ -15,7 +15,9 @@ import (
 	"sync"
 	"time"
 
+	"infernosim/pkg/causal"
 	"infernosim/pkg/jsonpath"
+	"infernosim/pkg/toolstream"
 )
 
 type Request struct {
@@ -34,6 +36,7 @@ type Response struct {
 }
 
 type Decision struct {
+	Sequence      int
 	Response      Response
 	Delay         time.Duration
 	Timeout       time.Duration
@@ -52,6 +55,8 @@ type Operation struct {
 }
 
 type CallRecord struct {
+	AdmissionBoundary      int               `json:"admission_boundary,omitempty"`
+	ReleaseBoundary        int               `json:"release_boundary,omitempty"`
 	Sequence               int               `json:"sequence"`
 	Kind                   string            `json:"kind"`
 	Provider               string            `json:"provider,omitempty"`
@@ -80,15 +85,16 @@ type EffectRecord struct {
 }
 
 type Snapshot struct {
-	Version           int            `json:"version"`
-	Calls             []CallRecord   `json:"calls,omitempty"`
-	Effects           []EffectRecord `json:"effects,omitempty"`
-	AppliedFaults     []string       `json:"applied_faults,omitempty"`
-	LimitExceeded     bool           `json:"limit_exceeded"`
-	ScheduleID        string         `json:"schedule_id,omitempty"`
-	ScheduleSteps     int            `json:"schedule_steps,omitempty"`
-	ScheduleCompleted int            `json:"schedule_completed,omitempty"`
-	ScheduleFailed    bool           `json:"schedule_failed,omitempty"`
+	Causal            *causal.Execution `json:"causal,omitempty"`
+	Version           int               `json:"version"`
+	Calls             []CallRecord      `json:"calls,omitempty"`
+	Effects           []EffectRecord    `json:"effects,omitempty"`
+	AppliedFaults     []string          `json:"applied_faults,omitempty"`
+	LimitExceeded     bool              `json:"limit_exceeded"`
+	ScheduleID        string            `json:"schedule_id,omitempty"`
+	ScheduleSteps     int               `json:"schedule_steps,omitempty"`
+	ScheduleCompleted int               `json:"schedule_completed,omitempty"`
+	ScheduleFailed    bool              `json:"schedule_failed,omitempty"`
 }
 
 type compiledSelector struct {
@@ -124,6 +130,7 @@ type Engine struct {
 
 	mu                sync.Mutex
 	sequence          int
+	boundary          int
 	calls             []CallRecord
 	effectRecords     []EffectRecord
 	appliedFaults     []string
@@ -135,6 +142,7 @@ type Engine struct {
 	scheduleFailed    bool
 	scheduleChanged   chan struct{}
 	beforeResponse    func(int) bool
+	causal            *causal.Controller
 }
 
 func NewEngine(config Config, activeFaultIDs []string) (*Engine, error) {
@@ -149,6 +157,13 @@ func NewEngine(config Config, activeFaultIDs []string) (*Engine, error) {
 		idempotencyCommit: make(map[string]struct{}),
 	}
 	known := make(map[string]struct{}, len(config.Faults))
+	if config.Causal != nil {
+		var err error
+		engine.causal, err = config.Causal.Controller()
+		if err != nil {
+			return nil, err
+		}
+	}
 	for _, provider := range config.Adapters.Providers {
 		compiled := compiledProvider{value: provider}
 		compiled.host, _ = compileOptional(provider.HostRegex)
@@ -203,6 +218,7 @@ func (e *Engine) Reset() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.sequence = 0
+	e.boundary = 0
 	e.calls = nil
 	e.effectRecords = nil
 	e.appliedFaults = nil
@@ -211,6 +227,9 @@ func (e *Engine) Reset() {
 	e.limitExceeded = false
 	e.schedulePosition = 0
 	e.scheduleFailed = false
+	if e.config.Causal != nil {
+		e.causal, _ = e.config.Causal.Controller()
+	}
 	if e.scheduleChanged != nil {
 		close(e.scheduleChanged)
 		e.scheduleChanged = make(chan struct{})
@@ -231,7 +250,19 @@ func (e *Engine) process(request Request, response Response) (Decision, error) {
 		return Decision{}, fmt.Errorf("agent call limit exceeded")
 	}
 	requestOperation := e.inspectRequest(request)
+	var assembled *toolstream.Stream
+	if requestOperation.Kind == "llm_response" && toolstream.IsStream(response.Headers.Get("Content-Type")) {
+		var err error
+		assembled, err = toolstream.Parse(e.providerType(requestOperation.Provider), response.Body)
+		if err != nil {
+			return Decision{}, fmt.Errorf("invalid or unsupported provider stream: %w", err)
+		}
+	}
 	responseOperation := inspectResponse(requestOperation, response.Body)
+	if assembled != nil && len(assembled.Calls) > 0 {
+		responseOperation.Tool = assembled.Calls[0].Name
+		responseOperation.CallID = assembled.Calls[0].ID
+	}
 	operation := responseOperation
 	if operation.Tool == "" {
 		operation.Tool = requestOperation.Tool
@@ -247,13 +278,26 @@ func (e *Engine) process(request Request, response Response) (Decision, error) {
 		Tool: operation.Tool, CallID: operation.CallID,
 		InFlightAtCancel: request.InFlightAtCancel,
 	})
+	if e.causal != nil {
+		e.boundary++
+		e.calls[len(e.calls)-1].AdmissionBoundary = e.boundary
+	}
 	operations := responseOperations(requestOperation, response.Body)
+	if assembled != nil {
+		operations = nil
+		for _, call := range assembled.Calls {
+			operations = append(operations, Operation{Kind: "llm_response", Provider: requestOperation.Provider, Tool: call.Name, CallID: call.ID})
+		}
+	}
 	e.calls[len(e.calls)-1].Operations = operations
 	if requestOperation.Kind == "llm_response" {
 		var raw any
 		if json.Unmarshal(response.Body, &raw) == nil {
 			e.calls[len(e.calls)-1].Tokens, e.calls[len(e.calls)-1].UsageKnown = tokenCount(raw)
 		}
+	}
+	if assembled != nil {
+		e.calls[len(e.calls)-1].Tokens, e.calls[len(e.calls)-1].UsageKnown = tokenCount(assembled.Usage)
 	}
 	// Missing identity fields must not collapse unrelated operations into the
 	// same deduplication key and accidentally conceal duplicate side effects.
@@ -268,7 +312,7 @@ func (e *Engine) process(request Request, response Response) (Decision, error) {
 		}
 	}
 	effectIndexes := e.recordEffects(request, requestOperation)
-	decision := Decision{Response: cloneResponse(response)}
+	decision := Decision{Response: cloneResponse(response), Sequence: e.sequence}
 	for _, fault := range e.faults {
 		matches := fault.selector.matches(request, operation)
 		for _, candidate := range operations {
@@ -281,7 +325,7 @@ func (e *Engine) process(request Request, response Response) (Decision, error) {
 		if wanted := fault.value.Select.Occurrence; wanted > 0 && e.faultOccurrences[fault.value.ID] != wanted {
 			continue
 		}
-		if err := applyFault(&decision, fault.value); err != nil {
+		if err := e.applyTargetedFault(&decision, fault.value, requestOperation); err != nil {
 			return Decision{}, fmt.Errorf("apply agent fault %q: %w", fault.value.ID, err)
 		}
 		decision.Delay += fault.delay
@@ -299,18 +343,66 @@ func (e *Engine) process(request Request, response Response) (Decision, error) {
 	if decision.ResponseLost && len(effectIndexes) == 0 {
 		return Decision{}, fmt.Errorf("committed_response_lost matched a call without a declared effect")
 	}
-	if e.beforeResponse != nil && e.beforeResponse(e.sequence) {
+	if e.causal == nil && e.beforeResponse != nil && e.beforeResponse(e.sequence) {
 		decision.ResponseLost = true
 	}
 	for _, index := range effectIndexes {
 		e.effectRecords[index].ResponseLost = decision.ResponseLost || decision.Reset || decision.Timeout > 0
-		e.effectRecords[index].ResponseDelivered = !e.effectRecords[index].ResponseLost
+		e.effectRecords[index].ResponseDelivered = !e.effectRecords[index].ResponseLost && e.causal == nil
 	}
-	if !decision.ResponseLost && !decision.Reset && decision.Timeout == 0 && decision.Response.Status >= 200 && decision.Response.Status < 300 {
+	if e.causal == nil && !decision.ResponseLost && !decision.Reset && decision.Timeout == 0 && decision.Response.Status >= 200 && decision.Response.Status < 300 {
 		e.markVerifications(len(e.calls)-1, operation.Tool, decision.Response.Body)
 	}
 	e.recordSafety(requestOperation, request, decision)
 	return decision, nil
+}
+
+// PrepareRelease invokes the runner's intentional crash boundary after causal
+// admission has completed. It never waits while holding the engine lock.
+func (e *Engine) PrepareRelease(decision *Decision) bool {
+	e.mu.Lock()
+	hook := e.beforeResponse
+	enabled := e.causal != nil
+	e.mu.Unlock()
+	if enabled && hook != nil && hook(decision.Sequence) {
+		decision.ResponseLost = true
+		return true
+	}
+	return false
+}
+
+// CompleteResponse records delivery at the transport release boundary, not when
+// a request was admitted. A pending approval cannot authorize a concurrent call.
+func (e *Engine) CompleteResponse(request Request, decision Decision, delivered bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.causal == nil {
+		return
+	}
+	index := -1
+	for i, c := range e.calls {
+		if c.Sequence == decision.Sequence {
+			index = i
+			break
+		}
+	}
+	if index < 0 || e.calls[index].ReleaseBoundary != 0 {
+		return
+	}
+	e.boundary++
+	e.calls[index].ReleaseBoundary = e.boundary
+	for i := range e.effectRecords {
+		if e.effectRecords[i].Sequence == decision.Sequence {
+			e.effectRecords[i].ResponseDelivered = delivered
+			e.effectRecords[i].ResponseLost = !delivered
+		}
+	}
+	decision.ResponseLost = decision.ResponseLost || !delivered
+	op := e.inspectRequest(request)
+	if delivered && !decision.ResponseLost && !decision.Reset && decision.Timeout == 0 && decision.Response.Status >= 200 && decision.Response.Status < 300 {
+		e.markVerifications(index, op.Tool, decision.Response.Body)
+	}
+	e.recordSafetyAt(index, op, request, decision)
 }
 
 // markVerifications stores only assertion IDs whose configured predicate was
@@ -521,7 +613,7 @@ func applyFault(decision *Decision, fault Fault) error {
 			decision.Response.Body = []byte(`{}`)
 		default:
 			var root any
-			if err := json.Unmarshal(decision.Response.Body, &root); err != nil {
+			if err := decodeMutationJSON(decision.Response.Body, &root); err != nil {
 				contentType := strings.ToLower(decision.Response.Headers.Get("Content-Type"))
 				if strings.Contains(contentType, "text/event-stream") || strings.Contains(contentType, "ndjson") || strings.Contains(contentType, "json-seq") {
 					mutated, streamErr := mutateStructuredStream(decision.Response.Body, mutation, strings.Contains(contentType, "text/event-stream"))
@@ -571,7 +663,7 @@ func mutateStructuredStream(body []byte, mutation Mutation, sse bool) ([]byte, e
 			}
 		}
 		var root any
-		if json.Unmarshal(payload, &root) != nil {
+		if decodeMutationJSON(payload, &root) != nil {
 			continue
 		}
 		if err := mutateJSON(root, mutation); err != nil {
@@ -643,12 +735,23 @@ func mutateJSON(root any, mutation Mutation) error {
 	return nil
 }
 
+func decodeMutationJSON(body []byte, root *any) error {
+	if !json.Valid(body) {
+		return fmt.Errorf("invalid JSON")
+	}
+	d := json.NewDecoder(bytes.NewReader(body))
+	d.UseNumber()
+	return d.Decode(root)
+}
+
 func convertedValue(value any, target string) any {
 	switch target {
 	case "string":
 		return scalarString(value)
 	case "number":
 		switch typed := value.(type) {
+		case json.Number:
+			return typed
 		case float64:
 			return typed
 		case string:
@@ -724,12 +827,23 @@ func (e *Engine) Snapshot() Snapshot {
 		snapshot.ScheduleCompleted = e.schedulePosition
 		snapshot.ScheduleFailed = e.scheduleFailed
 	}
+	if e.causal != nil {
+		execution := e.causal.Snapshot()
+		snapshot.Causal = &execution
+		snapshot.ScheduleID = execution.ScheduleID
+		snapshot.ScheduleSteps = 2 * len(e.config.Causal.Graph.Operations)
+		snapshot.ScheduleCompleted = len(execution.Observed)
+		snapshot.ScheduleFailed = execution.Failure != ""
+	}
 	// Deep copy nested maps/slices so callers cannot change live evidence.
 	encoded, _ := json.Marshal(snapshot)
 	var copied Snapshot
 	_ = json.Unmarshal(encoded, &copied)
 	return copied
 }
+
+// Causal returns the transport boundary controller, when explicitly configured.
+func (e *Engine) Causal() *causal.Controller { e.mu.Lock(); defer e.mu.Unlock(); return e.causal }
 
 type AssertionResult struct {
 	ID       string `json:"id"`
@@ -842,7 +956,7 @@ func verificationResult(assertion Assertion, snapshot Snapshot) (bool, string) {
 			}
 			verified := false
 			for _, call := range snapshot.Calls {
-				if call.Sequence > first.Sequence && call.Sequence < retry.Sequence && call.Tool == assertion.VerificationTool && containsString(call.SatisfiedVerifications, assertion.ID) {
+				if call.Sequence > first.Sequence && responseBefore(call, retry.Sequence, snapshot.Calls) && call.Tool == assertion.VerificationTool && containsString(call.SatisfiedVerifications, assertion.ID) {
 					verified = true
 					break
 				}
