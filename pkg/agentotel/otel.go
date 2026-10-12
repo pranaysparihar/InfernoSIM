@@ -22,15 +22,32 @@ const (
 )
 
 type Span struct {
-	Version       int               `json:"version"`
-	TraceID       string            `json:"trace_id"`
-	SpanID        string            `json:"span_id"`
-	ParentSpanID  string            `json:"parent_span_id,omitempty"`
-	Operation     string            `json:"operation,omitempty"`
-	Provider      string            `json:"provider,omitempty"`
-	ToolName      string            `json:"tool_name,omitempty"`
-	ToolCallID    string            `json:"tool_call_id,omitempty"`
-	ContentHashes map[string]string `json:"content_hashes,omitempty"`
+	Version           int               `json:"version"`
+	TraceID           string            `json:"trace_id"`
+	SpanID            string            `json:"span_id"`
+	ParentSpanID      string            `json:"parent_span_id,omitempty"`
+	Operation         string            `json:"operation,omitempty"`
+	Provider          string            `json:"provider,omitempty"`
+	ToolName          string            `json:"tool_name,omitempty"`
+	ToolCallID        string            `json:"tool_call_id,omitempty"`
+	ContentHashes     map[string]string `json:"content_hashes,omitempty"`
+	StartTimeUnixNano string            `json:"start_time_unix_nano,omitempty"`
+	EndTimeUnixNano   string            `json:"end_time_unix_nano,omitempty"`
+	Links             []Link            `json:"links,omitempty"`
+}
+
+// Links preserve correlation, not an invented finish-before-start relationship.
+type Link struct {
+	TraceID string `json:"trace_id"`
+	SpanID  string `json:"span_id"`
+}
+
+// Parse accepts OTLP JSON or the normalized JSON/JSONL emitted by Import.
+func Parse(data []byte) ([]Span, error) {
+	if len(data) > MaximumInputSize {
+		return nil, fmt.Errorf("OpenTelemetry input exceeds %d bytes", MaximumInputSize)
+	}
+	return parse(data, false)
 }
 
 type ImportOptions struct {
@@ -131,22 +148,43 @@ func parseOTLP(resourceSpans []any, hashContent bool) []Span {
 
 func normalizeSpan(object map[string]any, hashContent bool) (Span, bool) {
 	attributes := attributeMap(object["attributes"])
-	operation := attributeString(attributes, "gen_ai.operation.name")
-	toolName := firstNonEmpty(attributeString(attributes, "gen_ai.tool.name"), attributeString(attributes, "gen_ai.tool.call.name"))
-	toolCallID := attributeString(attributes, "gen_ai.tool.call.id")
-	if operation == "" && toolName == "" && toolCallID == "" {
-		return Span{}, false
-	}
+	operation := firstNonEmpty(attributeString(attributes, "gen_ai.operation.name"), metadata(object["operation"], 512))
+	toolName := firstNonEmpty(attributeString(attributes, "gen_ai.tool.name"), attributeString(attributes, "gen_ai.tool.call.name"), metadata(object["tool_name"], 512))
+	toolCallID := firstNonEmpty(attributeString(attributes, "gen_ai.tool.call.id"), metadata(object["tool_call_id"], 512))
 	span := Span{
 		Version:      Version,
 		TraceID:      metadata(firstValue(object, "traceId", "trace_id"), 256),
 		SpanID:       metadata(firstValue(object, "spanId", "span_id"), 256),
 		ParentSpanID: metadata(firstValue(object, "parentSpanId", "parent_span_id"), 256),
-		Operation:    metadata(operation, 512), Provider: metadata(attributeString(attributes, "gen_ai.provider.name"), 512),
+		Operation:    metadata(operation, 512), Provider: firstNonEmpty(metadata(attributeString(attributes, "gen_ai.provider.name"), 512), metadata(object["provider"], 512)),
 		ToolName: metadata(toolName, 512), ToolCallID: metadata(toolCallID, 512),
+		StartTimeUnixNano: metadata(firstValue(object, "startTimeUnixNano", "start_time_unix_nano"), 32),
+		EndTimeUnixNano:   metadata(firstValue(object, "endTimeUnixNano", "end_time_unix_nano"), 32),
 	}
-	if span.Operation == "" && span.ToolName == "" && span.ToolCallID == "" {
+	if span.TraceID == "" || span.SpanID == "" {
 		return Span{}, false
+	}
+	links, _ := object["links"].([]any)
+	for _, value := range links {
+		link, _ := value.(map[string]any)
+		trace := metadata(firstValue(link, "traceId", "trace_id"), 256)
+		id := metadata(firstValue(link, "spanId", "span_id"), 256)
+		if trace != "" && id != "" {
+			span.Links = append(span.Links, Link{TraceID: trace, SpanID: id})
+		}
+	}
+	// Preserve only valid content digests when re-importing normalized spans.
+	if hashes, ok := object["content_hashes"].(map[string]any); ok {
+		for _, key := range []string{"gen_ai.tool.call.arguments", "gen_ai.tool.call.result", "gen_ai.input.messages", "gen_ai.output.messages"} {
+			value, _ := hashes[key].(string)
+			decoded, err := hex.DecodeString(value)
+			if err == nil && len(decoded) == 32 {
+				if span.ContentHashes == nil {
+					span.ContentHashes = map[string]string{}
+				}
+				span.ContentHashes[key] = value
+			}
+		}
 	}
 	if hashContent {
 		for _, key := range []string{"gen_ai.tool.call.arguments", "gen_ai.tool.call.result", "gen_ai.input.messages", "gen_ai.output.messages"} {

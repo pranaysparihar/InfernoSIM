@@ -1,0 +1,4 @@
+{"model":"local","message":{"role":"assistant","content":"thinking first"},"done":false}
+{"model":"local","message":{"role":"assistant","content":"","tool_calls":[{"function":{"index":0,"name":"lookup","arguments":{"account":"A","amount":10}}}]},"done":false}
+{"model":"local","message":{"role":"assistant","content":"","tool_calls":[{"function":{"index":1,"name":"lookup","arguments":{"account":"B","amount":20}}}]},"done":false}
+{"model":"local","message":{"role":"assistant","content":""},"done":true,"done_reason":"stop","prompt_eval_count":10,"eval_count":20}

@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"infernosim/pkg/causal"
 	"regexp"
 	"sort"
 	"strings"
@@ -39,6 +40,7 @@ type Config struct {
 	Metadata    map[string]string `yaml:"metadata" json:"metadata,omitempty"`
 	Exploration Exploration       `yaml:"exploration" json:"exploration"`
 	Schedules   []Schedule        `yaml:"schedules" json:"schedules,omitempty"`
+	Causal      *causal.Replay    `yaml:"causal,omitempty" json:"causal,omitempty"`
 }
 
 type Adapters struct {
@@ -94,6 +96,7 @@ type Fault struct {
 }
 
 type Mutation struct {
+	Target    string `yaml:"target,omitempty" json:"target,omitempty"`
 	Operation string `yaml:"operation" json:"operation"`
 	Path      string `yaml:"path" json:"path"`
 	Value     any    `yaml:"value" json:"value,omitempty"`
@@ -154,6 +157,14 @@ func (c *Config) ApplyDefaults() {
 
 func (c Config) Validate() error {
 	c.ApplyDefaults()
+	if c.Causal != nil {
+		if len(c.Schedules) > 0 {
+			return fmt.Errorf("causal and admission-only schedules cannot be combined")
+		}
+		if _, err := c.Causal.Controller(); err != nil {
+			return err
+		}
+	}
 	if err := c.validateReliability(); err != nil {
 		return err
 	}
@@ -277,6 +288,9 @@ func (c Config) Validate() error {
 			return err
 		}
 		for mutationIndex, mutation := range fault.Mutations {
+			if mutation.Target == "tool_arguments" && fault.Select.Tool == "" && fault.Select.CallID == "" {
+				return fmt.Errorf("%s tool_arguments requires a tool or call_id selector", location)
+			}
 			if err := validateMutation(fmt.Sprintf("%s.mutations[%d]", location, mutationIndex), mutation); err != nil {
 				return err
 			}
@@ -371,6 +385,9 @@ func validateRegex(location, value string) error {
 }
 
 func validateMutation(location string, mutation Mutation) error {
+	if mutation.Target != "" && mutation.Target != "response" && mutation.Target != "tool_arguments" {
+		return fmt.Errorf("%s.target must be response or tool_arguments", location)
+	}
 	switch mutation.Operation {
 	case "delete", "set", "change_type", "duplicate", "reverse":
 		if mutation.Path == "" {

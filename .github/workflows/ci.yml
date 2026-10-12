@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26.6"
+          go-version: "1.26.9"
           cache: true
       - name: Check formatting
         run: |
@@ -50,6 +50,8 @@ jobs:
         run: bash scripts/reliability-smoke.sh
       - name: Verify 4.1 exploration, independent state checks, and reproductions
         run: bash scripts/discovery-smoke.sh
+      - name: Verify 4.2 causal replay and independent SQLite/filesystem consequences
+        run: bash scripts/causal-smoke.sh
       - name: Verify pinned official MCP SDK integration
         working-directory: integrations/mcp-go
         run: |
@@ -113,7 +115,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26.6"
+          go-version: "1.26.9"
           cache: true
       - name: Unit tests
         run: go test -count=1 ./...
@@ -131,7 +133,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26.6"
+          go-version: "1.26.9"
           cache: true
       - run: go test ./pkg/matcher -run=^$ -fuzz=FuzzJSONPathValue -fuzztime=10s
       - run: go test ./pkg/grpcsim -run=^$ -fuzz=FuzzSplitFrames -fuzztime=10s
@@ -143,6 +145,8 @@ jobs:
       - run: go test ./pkg/jsonpath -run=^$ -fuzz=FuzzOperations -fuzztime=10s
       - run: go test ./pkg/agentreliability -run=^$ -fuzz=FuzzEngineProcess -fuzztime=10s
       - run: go test ./pkg/mcpproxy -run=^$ -fuzz=FuzzEquivalentRequest -fuzztime=10s
+      - run: go test ./pkg/causal -run=^$ -fuzz=FuzzPlanner -fuzztime=30s
+      - run: go test ./pkg/toolstream -run=^$ -fuzz=FuzzProviderStreams -fuzztime=30s
 
   container:
     runs-on: ubuntu-latest

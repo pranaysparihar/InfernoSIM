@@ -2076,6 +2076,8 @@ func runAgentReliability(args []string) int {
 	switch args[0] {
 	case "explore":
 		return runAgentExplore(args[1:])
+	case "causal":
+		return runAgentCausal(args[1:])
 	case "reproduce":
 		return runAgentReproduce(args[1:], false)
 	case "minimize":
@@ -2138,6 +2140,13 @@ func runAgentOTel(args []string) int {
 }
 
 func runAgentMCP(args []string) int {
+	if len(args) == 1 && args[0] == "connect" {
+		if err := mcpproxy.Connect(context.Background(), os.Getenv("INFERNOSIM_MCP_ENDPOINT"), os.Getenv("INFERNOSIM_MCP_TOKEN"), os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "MCP connector:", err)
+			return 1
+		}
+		return 0
+	}
 	if len(args) == 0 || (args[0] != "record" && args[0] != "replay") {
 		fmt.Fprintln(os.Stderr, "Usage: infernosim agent mcp <record|replay> ...")
 		return 2

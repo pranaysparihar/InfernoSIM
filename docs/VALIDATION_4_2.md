@@ -1,0 +1,90 @@
+# v4.2 validation evidence
+
+Release candidate validation is in progress. Publication is gated on the
+two-hour soak and GitHub CI. This file will record their completed results
+before the v4.2.0 tag is published.
+
+## Application consequences
+
+The corrected SQLite/filesystem acceptance campaign uses seeds 7100, 7101 and
+7102. Each scenario runs every valid fixture schedule against fixed and broken
+clients, with the configured fault combinations. All 378 fixed-client runs
+passed. Broken clients failed 288 runs and passed 90 runs where the required
+response-loss fault was absent. No runs were invalid. These counts exclude the
+additional minimization and retained-regression repeat executions.
+
+| Scenario | Schedules per seed | Cases per client per seed | Fixed passed, three seeds | Broken failures, three seeds |
+| --- | ---: | ---: | ---: | ---: |
+| Stale write after observed new-value checkpoint | 9 | 18 | 54 | 54 |
+| Retry after committed response loss | 15 | 60 | 180 | 90 |
+| MCP cancellation and local cleanup | 3 | 6 | 18 | 18 |
+| Failed commit and compensation | 15 | 30 | 90 | 90 |
+| Crash/restart and duplicate local work | 6 | 12 | 36 | 36 |
+
+Each of the 15 scene/seed combinations produced a completed reduction, repeated
+failure on the named `state:database` assertion, and a passing fixed client.
+The filesystem oracle is independent of the SQL query; it need not fail for
+every defect caught by the database oracle.
+
+The stale-write fixture declares an explicit scenario precondition: release the
+old lookup only after the new transaction's checkpoint has been admitted. An
+earlier fixture omitted that precondition and allowed an unconstrained internal
+application race; repeated validation caught its unstable reduced outcome.
+Network release alone is not treated as evidence of application commit.
+
+## Unit, integration and security checks
+
+- Full Go race suite, `go vet`, module consistency and shell syntax checks.
+- Independent exhaustive permutation oracle for small dependency graphs; seeded
+  plan identity, budget, ambiguity, cycle and missing-participant checks.
+- Actual concurrent HTTP and MCP subprocess applications, including one shared
+  mixed-transport controller, changed JSON-RPC IDs, notifications and cancellation.
+- Pinned official MCP Go SDK v1.7.0: six concurrent boundary orders × three seeds
+  × baseline/targeted fault = 36 replays, plus existing SDK tests.
+- Four provider stream fixture families, interleaved calls, malformed/truncated
+  input, completion validation, unrelated-frame preservation and real HTTP
+  delivery with captured chunk fragmentation, trailers and cancellation.
+- Full recording metadata and OTel ancestor integrity checks; relocation,
+  changed runtime IDs, tampered manifests/files and large graph manifests.
+- Historical agent, safety/recovery and discovery smokes; local Ollama
+  `llama3.1-local:latest` compatibility smoke.
+- 100-run incident benchmark and 20-iteration agent benchmark: 100/100 safe
+  executions pass and 80/80 unsafe controls are rejected.
+- Unprivileged Linux arm64 container, real Testcontainers lifecycle, Node and
+  Go Compose smokes, Kafka/AsyncAPI against Redpanda, generated harness validation.
+
+The release uses Go **1.26.9**, `golang.org/x/net` **v0.60.0** and required x/sys,
+x/sync and x/text updates. The main-module `govulncheck` scan reports no
+vulnerabilities. This replaces the earlier 1.26.6/x/net v0.58.0 pins after the
+October 8 security advisories, including the HTTP/2 HPACK encoder race.
+Sources: [Go release history](https://go.dev/doc/devel/release#go1.26.9),
+[GO-2026-6617](https://pkg.go.dev/vuln/GO-2026-6617).
+
+## Soak and fuzz gates
+
+The release requires a two-hour run of the relocated, minimized five-scenario
+suite. Every cycle runs both fixed and broken clients. The same named failure
+and exact observed schedule must persist; fixed clients must pass. Resource
+thresholds are declared in `cmd/causalbenchmark/soak.go` before the run:
+32 MiB heap growth, 96 MiB RSS growth, eight extra goroutines/descriptors, and
+zero remaining descendants or identifiable orphaned fixture processes.
+
+Both new fuzz targets run for ten minutes on the patched release toolchain.
+The ten historical fuzz targets also run. Raw counts and soak results are added
+here when those gates finish.
+
+## Platform interpretation
+
+| Target | Planned release validation |
+| --- | --- |
+| macOS arm64 | Native full/race suite, SDK, SQLite campaign and two-hour soak on the maintainer host; native CI |
+| macOS amd64 | Native CI unit suite and CLI build |
+| Linux amd64 | Native CI unit/race suites, SDK, SQLite campaign, container and historical integration gates |
+| Linux arm64 | Native Docker runtime smokes on the arm64 maintainer host; CLI cross-build in CI |
+| Linux 386 | CLI cross-build; CI host tests run as amd64, not native 386 |
+| Windows amd64 | Native CI unit suite and CLI build; no Job Object descendant-containment claim |
+| Windows arm64/386 | Release cross-build only |
+
+A cross-built archive is not counted as native execution. Protocol fixtures do
+not imply live provider-SDK or full MCP conformance. See the exact
+[support matrix and limits](CONCURRENCY_4_2.md).

@@ -2,21 +2,30 @@ package agentrunner
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"infernosim/pkg/agentreliability"
+	"infernosim/pkg/causal"
 	"strings"
 )
 
 type Minimization struct {
-	Version   int    `json:"version"`
-	Trial     Trial  `json:"trial"`
-	Assertion string `json:"assertion"`
-	Attempts  int    `json:"attempts"`
-	Complete  bool   `json:"complete"`
+	CausalExecution *causal.Execution `json:"causal_execution,omitempty"`
+	Version         int               `json:"version"`
+	Trial           Trial             `json:"trial"`
+	Assertion       string            `json:"assertion"`
+	Attempts        int               `json:"attempts"`
+	Complete        bool              `json:"complete"`
 }
 
 func copyTrial(t Trial) Trial {
 	c := t
+	if t.Causal != nil {
+		data, _ := json.Marshal(t.Causal)
+		var replay causal.Replay
+		_ = decodeStrict(data, &replay)
+		c.Causal = &replay
+	}
 	c.Case.FaultIDs = append([]string(nil), t.Case.ActiveFaults()...)
 	c.Case.FaultID = ""
 	c.Occurrences = map[string]int{}
@@ -32,6 +41,25 @@ func copyTrial(t Trial) Trial {
 }
 func shrinkTrials(t Trial) []Trial {
 	var out []Trial
+	if t.Causal != nil {
+		// Move adjacent independent boundaries toward canonical order. This
+		// strictly reduces inversions, preserves all evidence-backed edges, and
+		// cannot cycle between equally failing permutations.
+		for i := 0; i+1 < len(t.Causal.Schedule.Order); i++ {
+			if t.Causal.Schedule.Order[i] <= t.Causal.Schedule.Order[i+1] {
+				continue
+			}
+			c := copyTrial(t)
+			order := c.Causal.Schedule.Order
+			order[i], order[i+1] = order[i+1], order[i]
+			if c.Causal.Graph.ValidateOrder(order) != nil {
+				continue
+			}
+			c.Causal.Schedule = causal.NewSchedule(c.Causal.Graph, order)
+			c.Case.ScheduleID = c.Causal.Schedule.ID
+			out = append(out, c)
+		}
+	}
 	for i := range t.Case.ActiveFaults() {
 		c := copyTrial(t)
 		id := c.Case.FaultIDs[i]
@@ -76,6 +104,7 @@ func MinimizeTrial(ctx context.Context, t Trial, assertion string, budget int, r
 		return r, fmt.Errorf("minimization requires an application assertion and budget 2..1000")
 	}
 	persists := func(c Trial) (bool, error) {
+		var execution *causal.Execution
 		for i := 0; i < 2; i++ {
 			if err := ctx.Err(); err != nil {
 				return false, err
@@ -88,6 +117,15 @@ func MinimizeTrial(ctx context.Context, t Trial, assertion string, budget int, r
 			if result.InvalidRun || result.Process.TimedOut || result.Process.ExitCode != 0 {
 				return false, nil
 			}
+			if c.Causal != nil {
+				if result.CausalExecution == nil {
+					return false, nil
+				}
+				if err := result.CausalExecution.Validate(c.Causal.Graph, c.Causal.Schedule); err != nil {
+					return false, nil
+				}
+				execution = result.CausalExecution
+			}
 			found := false
 			for _, a := range result.Assertions {
 				if a.ID == assertion && !a.Passed && a.Coverage == "violated" {
@@ -98,6 +136,7 @@ func MinimizeTrial(ctx context.Context, t Trial, assertion string, budget int, r
 				return false, nil
 			}
 		}
+		r.CausalExecution = execution
 		return true, nil
 	}
 	ok, err := persists(t)

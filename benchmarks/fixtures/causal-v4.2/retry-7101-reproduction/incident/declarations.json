@@ -1,0 +1,10 @@
+{
+  "review": "fixture dependencies are explicitly declared; remaining requests are independent",
+  "edges": [
+    {
+      "from": "refund:release",
+      "to": "refund_status:admit",
+      "reason": "application awaits this response before issuing the continuation"
+    }
+  ]
+}

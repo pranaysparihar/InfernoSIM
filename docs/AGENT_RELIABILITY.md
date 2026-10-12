@@ -402,9 +402,9 @@ such a claim requires the same public corpus and raw competitor runs.
 - The default plan remains baseline/singles. 4.0.1 optionally enumerates bounded
   fault pairs and explicit admission schedules. This is not exhaustive race
   exploration, formal verification, or proof of model intent.
-- All tool entries in complete provider JSON envelopes can be selected by tool
-  or call ID. Mutations retain explicit full-envelope JSONPaths; incremental
-  streamed tool-call assembly is outside that guarantee.
+- Complete provider JSON envelopes and the documented v4.2 streamed tool formats
+  support per-call `tool_arguments` mutations. Existing full-envelope JSONPaths
+  remain supported. See the [provider/event support matrix](CONCURRENCY_4_2.md#target-one-streamed-tool-call).
 - MCP stdio support is newline-delimited JSON-RPC. Other framing schemes and
   binary transports are outside the v4 contract.
 - OpenTelemetry import supports OTLP JSON and normalized JSON/JSONL, not a live

@@ -30,6 +30,14 @@ state check. Run `bash scripts/discovery-smoke.sh` to reproduce the full flow.
 
 ## Feature guide
 
+v4.2 adds automatic causal-dependency discovery, seeded topological schedules
+with separate request admission and response release, concurrent HTTP/MCP stdio
+replay, and individual fault targeting for streamed provider tool calls. Causal
+failures retain their graph, identity bindings and execution proof through
+minimization and portable reproduction. Start with the
+[concurrency guide](docs/CONCURRENCY_4_2.md) and
+[validation evidence](docs/VALIDATION_4_2.md).
+
 | Area | Features |
 | --- | --- |
 | Capture | Inbound reverse proxy, outbound HTTP/HTTPS MITM proxy, HTTP/2 and gRPC exchanges including trailers, bounded payload capture |
@@ -43,6 +51,8 @@ state check. Run `bash scripts/discovery-smoke.sh` to reproduce the full flow.
 | Agent evidence | Redacted OTLP JSON import, private JSON proof, one-test-per-case JUnit, SARIF, and HTML reports |
 | Agent safety and recovery | Monitor truth/freshness, approval binding/expiry/reuse, tenant predicates, compensation, token/cost/call budgets, process kill/restart with checkpoint retention |
 | Agent regression gates | Explicit protocol admission schedules, bounded fault pairs, exercised/violated/unexercised coverage, application-version comparison, one-minimal fault-set reduction |
+| Causal concurrency | Evidenced dependency discovery, seeded topological plans, separate admission/release boundaries, shared HTTP/stdio controller, graph-preserving reduction and reproduction |
+| Streamed tools | Individually addressed OpenAI Responses/Chat, Anthropic and Ollama tool arguments, interleaved assembly, strict completion checks |
 | Privacy | Built-in secret redaction, configurable HTTP and Kafka redact/drop/tokenize rules, deterministic HMAC tokens |
 | Portability | Authenticated encrypted v2 bundles using AES-256-GCM and PBKDF2-HMAC-SHA256 |
 
@@ -125,7 +135,7 @@ macOS, and Windows users who do not use Homebrew.
 
 ## Requirements
 
-- Go 1.26.6 or newer
+- Go 1.26.9 or newer
 - Docker with Compose for the container examples
 - Linux with `NET_ADMIN` only for optional transparent replay
 - Ollama only for the optional local model-envelope compatibility smoke; it is

@@ -1,11 +1,38 @@
 package agentotel
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestGenericParentAndNormalizedEvidenceRoundTrip(t *testing.T) {
+	doc := `{"resourceSpans":[{"scopeSpans":[{"spans":[{"traceId":"trace","spanId":"parent","name":"private workflow"},{"traceId":"trace","spanId":"child","parentSpanId":"parent","startTimeUnixNano":"1234567890123456789","endTimeUnixNano":"1234567890123456799","links":[{"traceId":"other","spanId":"linked","attributes":[{"key":"secret","value":{"stringValue":"do not copy"}}]}],"attributes":[{"key":"gen_ai.tool.call.id","value":{"stringValue":"call"}},{"key":"gen_ai.tool.call.arguments","value":{"stringValue":"sensitive payload"}}]}]}]}]}`
+	spans, err := parse([]byte(doc), true)
+	if err != nil || len(spans) != 2 {
+		t.Fatalf("lost generic parent: %+v %v", spans, err)
+	}
+	if spans[1].ParentSpanID != "parent" || spans[1].StartTimeUnixNano != "1234567890123456789" || len(spans[1].Links) != 1 || len(spans[1].ContentHashes) != 1 {
+		t.Fatalf("lost evidence: %+v", spans[1])
+	}
+	var lines []byte
+	for _, s := range spans {
+		b, _ := json.Marshal(s)
+		lines = append(lines, append(b, '\n')...)
+	}
+	again, err := Parse(lines)
+	if err != nil || !reflect.DeepEqual(spans, again) {
+		t.Fatalf("round trip differs: %+v %v", again, err)
+	}
+	for _, secret := range []string{"private workflow", "do not copy", "sensitive payload"} {
+		if strings.Contains(string(lines), secret) {
+			t.Fatal("raw telemetry leaked")
+		}
+	}
+}
 
 func TestImportOTLPRedactsContent(t *testing.T) {
 	directory := t.TempDir()

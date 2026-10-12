@@ -1,3 +1,79 @@
+# InfernoSIM v4.2.0
+
+Release target: v4.2.0. See [GitHub Releases](https://github.com/pranaysparihar/InfernoSIM/releases/tag/v4.2.0) for publication status.
+
+## Causal discovery and concurrent replay
+
+- `agent causal discover` builds an explainable dependency graph from supported
+  model/tool relationships, response identities, MCP protocol events and imported
+  OpenTelemetry spans. Each edge retains its rule and evidence digest. Missing or
+  ambiguous evidence requires review; timestamps do not become dependencies.
+- `agent causal plan` generates deterministic seeded topological schedules with
+  stable IDs, duplicate suppression and explicit coverage/budget reporting.
+  Request admission and response release are separate boundaries.
+- `agent explore --causal-graph` enforces that schedule across concurrent HTTP
+  and MCP stdio through one runner-owned controller. The receive path remains
+  active while responses wait. Runtime IDs, cancellation targets and progress
+  notifications remain correlated; indistinguishable calls require stable
+  application identities. Invalid or incomplete schedules cannot pass as bugs.
+
+## Faults on individual streamed tool calls
+
+`target: tool_arguments` can mutate one selected call in supported OpenAI
+Responses/Chat Completions SSE, Anthropic SSE and Ollama NDJSON streams, including
+interleaved parallel calls. The assembler checks identities, arguments and
+completion events. Ambiguous selectors and unsupported shapes fail explicitly.
+Unrelated frames remain intact; captured chunk delays and flushes are retained.
+Complete JSON envelopes support the same argument-relative target.
+
+## Causal regression artifacts
+
+Minimization preserves the graph, evidence and participants while removing
+fault noise and simplifying valid boundary orders. Every retained candidate
+must reproduce the same named failure twice with a valid execution proof.
+Version 2 artifacts retain the graph, schedule, observed order, identity digest
+bindings, faults and check contract. File and manifest integrity checks cover
+relocation and incompatible recordings, including HTTP metadata and OTel
+ancestry. Existing non-causal v1 artifacts remain readable.
+
+## Validation and maintenance
+
+Three seeded campaigns execute 756 fixed/broken application cases against a
+real SQLite database and an independent filesystem oracle, covering stale
+writes, retries after commit, cancellation, compensation and crash/restart.
+All 378 fixed-client cases pass, 288 broken-client cases expose the intended
+defects, and no runs are invalid. The other 90 broken-client cases lack the
+fault required to trigger the retry defect. All 15 scene/seed combinations
+produce reduced regressions that distinguish the broken and fixed clients.
+
+The official MCP Go SDK runs concurrent calls under all six boundary orders
+across three seeds, with targeted faults. Provider stream tests also exercise
+real HTTP delivery, fragmented captures, changed IDs, cancellation and trailers.
+The release gates include a two-hour resource/nondeterminism soak, ten-minute
+planner and stream fuzz runs, historical feature smokes, full race tests and
+platform CI. Completed results and native-versus-cross-build coverage are
+recorded in [validation evidence](docs/VALIDATION_4_2.md).
+
+Go is updated to 1.26.9 and x/net to v0.60.0 with required transitive updates,
+addressing newly published runtime/HTTP security advisories. Generated harnesses
+use the v4.2.0 container.
+
+## Support boundaries
+
+This is bounded exploration of recorded protocol boundaries, not exhaustive
+application race discovery. Response release does not prove that an application
+transaction committed; observable checkpoints and declarations can express that
+relationship. The supported stream/event matrix, MCP one-session boundary,
+reduction guarantees and existing platform limitations are explicit in the
+[concurrency guide](docs/CONCURRENCY_4_2.md). Interactive bidirectional gRPC,
+full MCP session/resumption/OAuth, virtual clocks and memory snapshots remain
+separate work. No hosted UI or Azure packaging is introduced.
+
+Start with the [concurrency guide](docs/CONCURRENCY_4_2.md) and
+[upgrade notes](docs/UPGRADING.md).
+
+---
+
 # InfernoSIM v4.1.0
 
 Release target: v4.1.0. See [GitHub Releases](https://github.com/pranaysparihar/InfernoSIM/releases/tag/v4.1.0) for publication status.

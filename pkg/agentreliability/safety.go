@@ -63,6 +63,21 @@ func equalJSON(a, b any) bool {
 	return bytes.Equal(left, right)
 }
 
+func responseBefore(call CallRecord, sequence int, calls []CallRecord) bool {
+	if call.AdmissionBoundary == 0 {
+		return call.Sequence < sequence
+	}
+	if call.ReleaseBoundary == 0 {
+		return false
+	}
+	for _, later := range calls {
+		if later.Sequence == sequence {
+			return call.ReleaseBoundary < later.AdmissionBoundary
+		}
+	}
+	return false
+}
+
 func requestRoot(op Operation, req Request) any {
 	headers := map[string]any{}
 	for k, v := range req.Headers {
@@ -97,6 +112,10 @@ func successfulResponse(d Decision, root any) bool {
 func tokenCount(root any) (int64, bool) {
 	integer := func(path string) (int64, bool) {
 		v, _ := jsonpath.Get(root, path)
+		if n, ok := v.(json.Number); ok {
+			integer, err := n.Int64()
+			return integer, err == nil && integer >= 0 && integer <= 1e12
+		}
 		n, ok := v.(float64)
 		return int64(n), ok && n >= 0 && n <= 1e12 && math.Trunc(n) == n
 	}
@@ -114,7 +133,11 @@ func tokenCount(root any) (int64, bool) {
 }
 
 func (e *Engine) recordSafety(op Operation, req Request, decision Decision) {
-	call := &e.calls[len(e.calls)-1]
+	e.recordSafetyAt(len(e.calls)-1, op, req, decision)
+}
+
+func (e *Engine) recordSafetyAt(index int, op Operation, req Request, decision Decision) {
+	call := &e.calls[index]
 	call.Checks = map[string]bool{}
 	call.Bindings = map[string]string{}
 	root := requestRoot(op, req)
@@ -209,7 +232,7 @@ func applySafetyResult(a Assertion, s Snapshot, r *AssertionResult) {
 			}
 			approved := false
 			for _, c := range s.Calls {
-				if binding != "" && c.Sequence < effect.Sequence && effect.Sequence-c.Sequence <= a.MaxAgeCalls && !used[c.Sequence] && c.Tool == a.VerificationTool && c.Checks[a.ID] && c.Bindings[a.ID] == binding {
+				if binding != "" && responseBefore(c, effect.Sequence, s.Calls) && effect.Sequence-c.Sequence <= a.MaxAgeCalls && !used[c.Sequence] && c.Tool == a.VerificationTool && c.Checks[a.ID] && c.Bindings[a.ID] == binding {
 					used[c.Sequence] = true
 					approved = true
 					break

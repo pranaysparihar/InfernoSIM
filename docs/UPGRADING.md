@@ -1,3 +1,36 @@
+# Upgrading to v4.2.0
+
+Existing non-causal configurations and commands remain supported. Causal
+discovery, graph scheduling and argument-relative provider mutations are opt-in.
+Use Go 1.26.9 or newer to build; generated harnesses now default to the 4.2.0
+container.
+
+`agent causal discover` saves an unreviewed graph but returns exit code 1 until
+the dependency review and blocking issues are resolved. `agent explore
+--causal-graph` cannot combine a causal graph with legacy admission schedules.
+Identical concurrent requests need distinct stable application identities.
+
+Configured provider streams are now validated for the supported lifecycle and
+completion events even in baseline runs. Replace synthetic or incomplete SSE
+fixtures with valid recorded events; unsupported formats fail explicitly.
+`mutations[].target: tool_arguments` uses paths relative to one selected tool's
+arguments. The existing whole-response target remains the default.
+
+New reproduction exports use manifest version 2, including a manifest checksum.
+Non-causal v1 artifacts remain readable. Causal artifacts retain the graph and
+execution evidence and require v4.2. Their total size, including the larger
+manifest, remains bounded to 64 MiB. Commands still come from explicit CLI argv.
+
+For stdio under causal replay, start the connector argv from
+`INFERNOSIM_MCP_COMMAND_JSON` so stdio and HTTP share the runner's controller.
+The bridge supports one client session; automatic MCP reconnect/resumption is
+not introduced by the HTTP process-restart feature.
+
+See the [concurrency guide](CONCURRENCY_4_2.md) and
+[validation evidence](VALIDATION_4_2.md).
+
+---
+
 # Upgrading to v4.1.0
 
 Existing v4.0.1 configuration and commands remain compatible. New `agent

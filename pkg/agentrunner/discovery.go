@@ -8,28 +8,34 @@ import (
 	"sort"
 
 	"infernosim/pkg/agentreliability"
+	"infernosim/pkg/causal"
 )
 
 type ExploreOptions struct {
-	Seed            int64  `json:"seed"`
-	Budget          int    `json:"budget"`
-	MaxFaults       int    `json:"max_faults"`
-	Occurrences     int    `json:"occurrences"`
-	PermuteSchedule string `json:"permute_schedule,omitempty"`
+	CausalGraph     *causal.Graph `json:"causal_graph,omitempty"`
+	ScheduleBudget  int           `json:"schedule_budget,omitempty"`
+	BoundaryTimeout string        `json:"boundary_timeout,omitempty"`
+	Seed            int64         `json:"seed"`
+	Budget          int           `json:"budget"`
+	MaxFaults       int           `json:"max_faults"`
+	Occurrences     int           `json:"occurrences"`
+	PermuteSchedule string        `json:"permute_schedule,omitempty"`
 }
 
 // Trial modifies only explicitly selected fault occurrences and admission
 // ordering. It cannot introduce requests or invent recorded model responses.
 type Trial struct {
+	Causal      *causal.Replay             `json:"causal,omitempty"`
 	Case        agentreliability.Case      `json:"case"`
 	Occurrences map[string]int             `json:"occurrences,omitempty"`
 	Schedule    *agentreliability.Schedule `json:"schedule,omitempty"`
 }
 type ExplorationPlan struct {
-	Version   int            `json:"version"`
-	Options   ExploreOptions `json:"options"`
-	Truncated bool           `json:"truncated"`
-	Trials    []Trial        `json:"trials"`
+	CausalPlan *causal.Plan   `json:"causal_plan,omitempty"`
+	Version    int            `json:"version"`
+	Options    ExploreOptions `json:"options"`
+	Truncated  bool           `json:"truncated"`
+	Trials     []Trial        `json:"trials"`
 }
 
 func cloneAgent(config agentreliability.Config) (agentreliability.Config, error) {
@@ -47,6 +53,13 @@ func (t Trial) AgentConfig(base agentreliability.Config) (agentreliability.Confi
 	c, err := cloneAgent(base)
 	if err != nil {
 		return c, err
+	}
+	if t.Causal != nil {
+		if t.Schedule != nil || t.Case.ScheduleID != t.Causal.Schedule.ID {
+			return c, fmt.Errorf("causal schedule ID mismatch or incompatible admission schedule")
+		}
+		c.Causal = t.Causal
+		c.Schedules = nil
 	}
 	found := map[string]bool{}
 	for i := range c.Faults {
@@ -66,7 +79,7 @@ func (t Trial) AgentConfig(base agentreliability.Config) (agentreliability.Confi
 			return c, fmt.Errorf("schedule ID mismatch")
 		}
 		c.Schedules = []agentreliability.Schedule{*t.Schedule}
-	} else if t.Case.ScheduleID != "" {
+	} else if t.Case.ScheduleID != "" && t.Causal == nil {
 		return c, fmt.Errorf("missing trial schedule")
 	}
 	if err := c.Validate(); err != nil {
@@ -98,6 +111,9 @@ func identifyTrial(t Trial, scope string, seed int64) Trial {
 // fault subsets up to depth four, and occurrence positions. The case budget is
 // strict; Truncated records that candidates remain, never a coverage claim.
 func PlanExploration(config agentreliability.Config, scope string, o ExploreOptions) (ExplorationPlan, error) {
+	if o.CausalGraph != nil {
+		return planCausalExploration(config, scope, o)
+	}
 	p := ExplorationPlan{Version: 1, Options: o}
 	if o.Budget < 1 || o.Budget > 1000 || o.MaxFaults < 1 || o.MaxFaults > 4 || o.Occurrences < 0 || o.Occurrences > 16 {
 		return p, fmt.Errorf("exploration requires budget 1..1000, max-faults 1..4, occurrences 0..16")

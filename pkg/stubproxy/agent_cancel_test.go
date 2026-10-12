@@ -15,7 +15,7 @@ func TestAgentDelayAndTimeoutHonorCancellation(t *testing.T) {
 		cancel()
 		started := time.Now()
 		recorder := httptest.NewRecorder()
-		if !(&StubProxy{}).writeAgentDecision(ctx, recorder, decision, nil, "") {
+		if !(&StubProxy{}).writeAgentDecision(ctx, recorder, decision, nil, "", nil) {
 			t.Fatal("cancelled response not handled")
 		}
 		if time.Since(started) > time.Second || recorder.Body.Len() != 0 {
