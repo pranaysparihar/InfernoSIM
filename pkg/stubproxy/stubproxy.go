@@ -15,6 +15,7 @@ import (
 	"infernosim/pkg/causal"
 	"infernosim/pkg/event"
 	"infernosim/pkg/inject"
+	"infernosim/pkg/liverecovery"
 	"infernosim/pkg/matcher"
 	"infernosim/pkg/scenario"
 	"infernosim/pkg/simtemplate"
@@ -65,9 +66,11 @@ type StubProxy struct {
 	templates       *simtemplate.Engine
 	tlsCA           *capture.CAStore
 	agentEngine     *agentreliability.Engine
+	recovery        *liverecovery.Recovery
 }
 
 type Options struct {
+	Recovery      *liverecovery.Recovery
 	Matching      matcher.Config
 	Scenarios     []scenario.Config
 	Templates     simtemplate.Config
@@ -150,6 +153,7 @@ func NewWithOptions(outboundLog string, observedLog string, rules []inject.Rule,
 		return nil, err
 	}
 	proxy := &StubProxy{
+		recovery:        opts.Recovery,
 		events:          evs,
 		rules:           rules,
 		attempts:        map[string]int{},
@@ -261,6 +265,11 @@ func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.Body = io.NopCloser(bytes.NewReader(body))
+	if s.recovery != nil {
+		var finish func()
+		w, finish = s.recovery.Observe(w, r, body)
+		defer finish()
+	}
 
 	seen := atomic.AddInt64(&s.seen, 1)
 
@@ -269,6 +278,10 @@ func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		observedHost = r.URL.Host
 	}
 	s.recordObserved(r.Method, observedHost, "", 0)
+	if s.recovery != nil && s.recovery.Active() && s.recovery.Matches(r) {
+		s.serveRecovery(w, r, body)
+		return
+	}
 	if s.agentEngine != nil && s.agentEngine.Causal() != nil {
 		s.serveCausal(w, r, body)
 		return
@@ -333,12 +346,20 @@ func (s *StubProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(s.events) == 0 {
+		if s.recovery != nil && s.recovery.Matches(r) {
+			s.serveRecovery(w, r, body)
+			return
+		}
 		http.Error(w, "no captured outbound events or matching scenario", http.StatusBadGateway)
 		return
 	}
 
 	expected, _, matched := s.matchExpected(r, body)
 	if !matched {
+		if s.recovery != nil && s.recovery.Matches(r) {
+			s.serveRecovery(w, r, body)
+			return
+		}
 		msg := fmt.Sprintf(
 			"DIVERGENCE at outbound event index=%d why=no_matching_captured_call got={method=%s url=%s host=%s}",
 			seen-1,
@@ -725,6 +746,14 @@ func (s *StubProxy) matchExpected(r *http.Request, body []byte) (event.Event, in
 	defer s.matchMu.Unlock()
 
 	for index, candidate := range s.events {
+		if s.recovery != nil && s.recovery.Matches(r) {
+			recorded, e := base64.StdEncoding.DecodeString(candidate.BodyB64)
+			left, le := causal.Decode(recorded)
+			right, re := causal.Decode(body)
+			if e != nil || le != nil || re != nil || causal.Hash(left) != causal.Hash(right) {
+				continue
+			}
+		}
 		matched, _ := s.semanticMatcher.Match(candidate, r, body)
 		if !matched {
 			continue

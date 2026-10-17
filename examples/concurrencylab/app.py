@@ -97,7 +97,12 @@ def post(tool):
         with opener.open(req, timeout=5) as response:
             result = json.load(response)
             if result["id"] != payload["id"]:
-                raise RuntimeError("response correlation changed")
+                raise RuntimeError(
+                    "response correlation changed: this fixture generates fresh JSON-RPC IDs. "
+                    "Use agent causal discover, then agent explore --causal-graph; "
+                    "see docs/RETRY_REPRODUCTION.md or scripts/retry-repro.sh. "
+                    "Ordinary agent run does not remap these HTTP response IDs."
+                )
             return result["result"]
     except (urllib.error.URLError, ConnectionError, TimeoutError):
         return None

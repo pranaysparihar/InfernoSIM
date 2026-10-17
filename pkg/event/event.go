@@ -4,16 +4,19 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"infernosim/pkg/traceorder"
 	"regexp"
 	"time"
 )
 
 // Event represents a single captured execution event
 type Event struct {
-	ID        string    `json:"id"`
-	Type      string    `json:"type"`
-	Timestamp time.Time `json:"timestamp"`
-	Sequence  int64     `json:"sequence,omitempty"` // monotonic counter for deterministic ordering
+	CaptureAdmit   *traceorder.Stamp `json:"capture_admit,omitempty"`
+	CaptureRelease *traceorder.Stamp `json:"capture_release,omitempty"`
+	ID             string            `json:"id"`
+	Type           string            `json:"type"`
+	Timestamp      time.Time         `json:"timestamp"`
+	Sequence       int64             `json:"sequence,omitempty"` // monotonic counter for deterministic ordering
 
 	Service  string        `json:"service,omitempty"`
 	Method   string        `json:"method,omitempty"`

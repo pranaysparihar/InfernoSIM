@@ -55,6 +55,9 @@ func Exchanges(records []Record) ([]causal.Exchange, error) {
 				return nil, fmt.Errorf("client responses/server-initiated requests are outside causal replay support")
 			}
 			x := causal.Exchange{ID: fmt.Sprintf("mcp_%d", r.Sequence), Protocol: "mcp", Method: "STDIO", Host: "stdio.mcp", Path: "/stdio", Record: fmt.Sprintf("mcp:%d", r.Sequence), Request: append([]byte(nil), r.Message...), Notification: !hasID}
+			if r.Received != nil || r.Forwarded != nil {
+				x.RecordingHash = causal.Hash(r)
+			}
 			if hasID {
 				if _, exists := requests[string(id)]; exists {
 					return nil, fmt.Errorf("recorded MCP request ID reused; identities must be unique within a recording")
@@ -90,12 +93,18 @@ func Exchanges(records []Record) ([]causal.Exchange, error) {
 					return nil, fmt.Errorf("MCP response requires exactly one result or error")
 				}
 				xs[index].Response = append([]byte(nil), r.Message...)
+				if r.Received != nil || r.Forwarded != nil {
+					xs[index].RecordingHash = causal.Hash([]string{xs[index].RecordingHash, causal.Hash(r)})
+				}
 				completed[string(id)] = true
 			} else {
 				if method == "" {
 					return nil, fmt.Errorf("MCP server notification requires method")
 				}
 				xs = append(xs, causal.Exchange{ID: fmt.Sprintf("mcp_%d", r.Sequence), Protocol: "mcp", Method: "STDIO-SERVER", Host: "stdio.mcp", Path: "/stdio", Record: fmt.Sprintf("mcp:%d", r.Sequence), Request: append([]byte(nil), r.Message...), Notification: true, ServerNotification: true})
+				if r.Received != nil || r.Forwarded != nil {
+					xs[len(xs)-1].RecordingHash = causal.Hash(r)
+				}
 			}
 		} else {
 			return nil, fmt.Errorf("unsupported transcript direction")

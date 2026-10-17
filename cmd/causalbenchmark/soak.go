@@ -186,7 +186,7 @@ func runSoak(binary, python, app, input, out string, duration time.Duration) (re
 		base := agentrunner.Options{IncidentDir: incident, ConfigPath: prepared.ConfigPath, Timeout: manifest.Timeout,
 			RestartAfterCall: manifest.RestartAfterCall, MCPConnector: []string{binary, "agent", "mcp", "connect"},
 			StateCheck: agentrunner.StateCheckOptions{SetupCommand: []string{python, app, "--scenario", entry.Scenario, "--setup"},
-				Command: []string{python, app, "--scenario", entry.Scenario, "--check"}, IDs: manifest.CheckIDs, Timeout: manifest.CheckTimeout}}
+				Command: []string{python, app, "--scenario", entry.Scenario, "--check"}, IDs: manifest.CheckIDs, Timeout: manifest.CheckTimeout, Expected: manifest.Checker, Legacy: manifest.Checker == nil}}
 		opts, err := agentrunner.RunTrial(base, prepared.Config.Agent, manifest.Trial)
 		if err != nil {
 			return err

@@ -30,6 +30,15 @@ state check. Run `bash scripts/discovery-smoke.sh` to reproduce the full flow.
 
 ## Feature guide
 
+v4.2.1 adds opt-in [local model recovery](docs/LIVE_RECOVERY.md),
+[real HTTP/MCP capture-to-schedule conversion](docs/OBSERVED_SCHEDULES.md),
+and [checker fingerprints with explicit case lineage](docs/CHECKER_FINGERPRINTS.md).
+The [recovery suite](examples/recoverylab/README.md) exercises committed writes
+with lost responses, retry/cancellation races, pending originals across restart
+and lost operation handles against an independent SQLite destination oracle.
+See the [release validation](docs/VALIDATION_4_2_1.md) and
+[fresh-ID retry reproduction](docs/RETRY_REPRODUCTION.md).
+
 v4.2 adds automatic causal-dependency discovery, seeded topological schedules
 with separate request admission and response release, concurrent HTTP/MCP stdio
 replay, and individual fault targeting for streamed provider tool calls. Causal

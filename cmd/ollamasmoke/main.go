@@ -13,22 +13,56 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"infernosim/pkg/agentreliability"
+	"infernosim/pkg/liverecovery"
 )
 
 func main() {
 	endpoint := flag.String("endpoint", "http://127.0.0.1:11434", "Ollama base URL")
 	model := flag.String("model", "llama3.1-local:latest", "Local model with tool support")
 	timeout := flag.Duration("timeout", 2*time.Minute, "Request timeout")
+	live := flag.Bool("live-recovery", false, "Also check bounded live recovery JSON and NDJSON against the local model")
 	flag.Parse()
 	if err := run(*endpoint, *model, *timeout, http.DefaultClient); err != nil {
 		fmt.Fprintln(os.Stderr, "OLLAMA_SMOKE: FAIL:", err)
 		os.Exit(1)
 	}
+	if *live {
+		if err := runLive(*endpoint, *model, *timeout); err != nil {
+			fmt.Fprintln(os.Stderr, "OLLAMA_LIVE_RECOVERY_SMOKE: FAIL:", err)
+			os.Exit(1)
+		}
+		fmt.Println("OLLAMA_LIVE_RECOVERY_SMOKE: PASS (bounded JSON and NDJSON; measured output-token accounting)")
+	}
 	fmt.Printf("OLLAMA_SMOKE: PASS (model=%s)\n", *model)
+}
+
+func runLive(endpoint, model string, timeout time.Duration) error {
+	dir, err := os.MkdirTemp("", "infernosim-ollama-recovery-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dir)
+	r, err := liverecovery.New(liverecovery.Options{Endpoint: endpoint, Model: model, OutputDir: filepath.Join(dir, "branch"), MaxRequests: 2, MaxTokens: 128, Timeout: timeout, CaptureSensitiveData: true})
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+	for _, stream := range []bool{false, true} {
+		body, _ := json.Marshal(map[string]any{"model": model, "stream": stream, "messages": []map[string]string{{"role": "user", "content": "Reply with only the word OK."}}, "options": map[string]any{"temperature": 0}})
+		if _, _, _, err := r.Respond(context.Background(), body); err != nil {
+			return err
+		}
+	}
+	state := r.Snapshot()
+	if !state.Hybrid || state.Deterministic || state.Requests != 2 || state.OutputTokens <= 0 || state.OutputTokens > 128 {
+		return fmt.Errorf("unexpected live recovery accounting")
+	}
+	return nil
 }
 
 func run(endpoint, model string, timeout time.Duration, client *http.Client) error {

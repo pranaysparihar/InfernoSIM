@@ -20,6 +20,7 @@ import (
 	"infernosim/pkg/event"
 	"infernosim/pkg/inject"
 	"infernosim/pkg/privacy"
+	"infernosim/pkg/traceorder"
 
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -32,6 +33,7 @@ const (
 
 // ProxyContext holds the dependencies for starting proxies
 type ProxyContext struct {
+	Order   *traceorder.Clock
 	Logger  *event.Logger
 	CA      *CAStore
 	Inject  *inject.InjectConfig
@@ -392,6 +394,8 @@ func StartForwardProxy(listenAddr string, ctx *ProxyContext) (*http.Server, erro
 
 func handleHTTP(w http.ResponseWriter, req *http.Request, ctx *ProxyContext) {
 	startTime := time.Now().UTC()
+	admit := ctx.Order.Next()
+	var release *traceorder.Stamp
 
 	// Evaluate injection
 	action := ctx.Inject.Evaluate(true)
@@ -538,7 +542,14 @@ func handleHTTP(w http.ResponseWriter, req *http.Request, ctx *ProxyContext) {
 			respBodyBytes, respBodyTruncated, respFrames = copyStreamingResponse(w, resp)
 		} else {
 			respBodyBytes, respBodyTruncated, resp.Body, _ = peekBody(resp.Body)
-			copyResponse(w, resp)
+			if copyErr := copyResponse(w, resp); copyErr != nil {
+				respBodyTruncated = true
+			}
+		}
+		if !respBodyTruncated && ctx.Order != nil {
+			if flushErr := http.NewResponseController(w).Flush(); flushErr == nil {
+				release = ctx.Order.Next()
+			}
 		}
 		if IsGRPCRequest(req) {
 			grpcStatus = extractGRPCStatus(resp)
@@ -549,6 +560,7 @@ func handleHTTP(w http.ResponseWriter, req *http.Request, ctx *ProxyContext) {
 	logRequestBody, storeRequestBody, requestTransformed := payloadForLog(bodyBytes, ctx)
 	logResponseBody, storeResponseBody, responseTransformed := payloadForLog(respBodyBytes, ctx)
 	evt := &event.Event{
+		CaptureAdmit: admit, CaptureRelease: release,
 		ID:               event.GenerateID(),
 		Type:             "OutboundCall",
 		Timestamp:        startTime,
@@ -792,7 +804,7 @@ func (s *singleConnListener) Accept() (net.Conn, error) {
 func (s *singleConnListener) Close() error   { return nil }
 func (s *singleConnListener) Addr() net.Addr { return s.conn.LocalAddr() }
 
-func copyResponse(w http.ResponseWriter, resp *http.Response) {
+func copyResponse(w http.ResponseWriter, resp *http.Response) error {
 	for k, vals := range resp.Header {
 		if strings.ToLower(k) == "connection" {
 			continue
@@ -805,10 +817,11 @@ func copyResponse(w http.ResponseWriter, resp *http.Response) {
 		w.Header().Add("Trailer", name)
 	}
 	w.WriteHeader(resp.StatusCode)
-	_, _ = io.Copy(w, resp.Body)
+	_, copyErr := io.Copy(w, resp.Body)
 	for name, values := range resp.Trailer {
 		w.Header()[name] = append([]string(nil), values...)
 	}
+	return copyErr
 }
 
 func responseStreamFormat(contentType string) string {
@@ -856,7 +869,10 @@ func copyStreamingResponse(w http.ResponseWriter, resp *http.Response) ([]byte, 
 			} else {
 				truncated = true
 			}
-			_, _ = w.Write(chunk)
+			if _, err := w.Write(chunk); err != nil {
+				truncated = true
+				break
+			}
 			if flusher, ok := w.(http.Flusher); ok {
 				flusher.Flush()
 			}

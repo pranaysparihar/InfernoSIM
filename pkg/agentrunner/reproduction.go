@@ -24,17 +24,21 @@ const reproductionLimit = 64 << 20
 // Reproduction is inert data. Command argv is deliberately not stored;
 // the caller supplies application/setup/check argv again when reproducing.
 type Reproduction struct {
-	Integrity        string            `json:"integrity,omitempty"`
-	CausalExecution  *causal.Execution `json:"causal_execution,omitempty"`
-	Version          int               `json:"version"`
-	Trial            Trial             `json:"trial"`
-	Assertion        string            `json:"assertion,omitempty"`
-	CheckIDs         []string          `json:"check_ids,omitempty"`
-	RequiresSetup    bool              `json:"requires_setup"`
-	Timeout          time.Duration     `json:"timeout"`
-	CheckTimeout     time.Duration     `json:"check_timeout"`
-	RestartAfterCall int               `json:"restart_after_call,omitempty"`
-	Files            map[string]string `json:"files"`
+	Checker          *CheckerFingerprint `json:"checker,omitempty"`
+	CaseIdentity     string              `json:"case_identity,omitempty"`
+	ParentCase       string              `json:"parent_case,omitempty"`
+	CheckerChange    string              `json:"checker_change,omitempty"`
+	Integrity        string              `json:"integrity,omitempty"`
+	CausalExecution  *causal.Execution   `json:"causal_execution,omitempty"`
+	Version          int                 `json:"version"`
+	Trial            Trial               `json:"trial"`
+	Assertion        string              `json:"assertion,omitempty"`
+	CheckIDs         []string            `json:"check_ids,omitempty"`
+	RequiresSetup    bool                `json:"requires_setup"`
+	Timeout          time.Duration       `json:"timeout"`
+	CheckTimeout     time.Duration       `json:"check_timeout"`
+	RestartAfterCall int                 `json:"restart_after_call,omitempty"`
+	Files            map[string]string   `json:"files"`
 }
 
 func inside(root, path string) (string, error) {
@@ -68,6 +72,12 @@ func readRegular(path string, limit int64) ([]byte, error) {
 }
 func digest(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
 func ExportReproduction(destination, incident, configPath string, r Reproduction) (err error) {
+	if err := r.Checker.Validate(); err != nil {
+		return err
+	}
+	if r.Checker != nil {
+		r.CaseIdentity = CaseIdentity(r.Trial, r.Checker)
+	}
 	if r.Trial.Causal != nil {
 		if r.CausalExecution == nil {
 			return fmt.Errorf("causal reproduction requires observed execution evidence")
@@ -136,7 +146,7 @@ func ExportReproduction(destination, incident, configPath string, r Reproduction
 			_ = os.RemoveAll(dest)
 		}
 	}()
-	r.Version = 2
+	r.Version = 3
 	r.Files = map[string]string{}
 	var total int64
 	write := func(name string, data []byte) error {
@@ -217,10 +227,10 @@ func LoadReproduction(dir string) (Reproduction, error) {
 	if d.Decode(new(any)) != io.EOF {
 		return r, fmt.Errorf("unexpected manifest data")
 	}
-	if (r.Version != 1 && r.Version != 2) || len(r.Files) == 0 || len(r.Files) > 1000 || r.Files["incident/replay.yaml"] == "" {
+	if (r.Version != 1 && r.Version != 2 && r.Version != 3) || len(r.Files) == 0 || len(r.Files) > 1000 || r.Files["incident/replay.yaml"] == "" {
 		return r, fmt.Errorf("invalid reproduction manifest")
 	}
-	if r.Version == 2 {
+	if r.Version >= 2 {
 		expected := r.Integrity
 		r.Integrity = ""
 		actual := causal.Hash(r)
@@ -229,8 +239,14 @@ func LoadReproduction(dir string) (Reproduction, error) {
 			return r, fmt.Errorf("reproduction manifest integrity mismatch")
 		}
 	}
+	if err := r.Checker.Validate(); err != nil {
+		return r, err
+	}
+	if r.Checker != nil && r.CaseIdentity != CaseIdentity(r.Trial, r.Checker) {
+		return r, fmt.Errorf("checker case identity mismatch")
+	}
 	if r.Trial.Causal != nil {
-		if r.Version != 2 || r.CausalExecution == nil {
+		if r.Version < 2 || r.CausalExecution == nil {
 			return r, fmt.Errorf("missing causal reproduction evidence")
 		}
 		if err := r.CausalExecution.Validate(r.Trial.Causal.Graph, r.Trial.Causal.Schedule); err != nil {

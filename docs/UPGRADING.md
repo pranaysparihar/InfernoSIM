@@ -1,3 +1,40 @@
+# Upgrading to v4.2.1
+
+Existing replay stays offline unless you explicitly configure live recovery.
+Generated harnesses now use the `4.2.1` container. The patched build toolchain
+remains Go 1.26.9; fuzz verification uses Go 1.27.2.
+
+New reproduction exports use format v3 with checker fingerprints and case
+lineage. Use v4.2.1 to read them. Formats v1/v2 remain readable; artifacts that
+did not retain a checker are labelled `legacy-unpinned`. They can be replayed,
+but cannot establish an unchanged-checker comparison or reduction. Supply an
+explicit checker and `--new-case-out` to create a new pinned case.
+
+Checker fingerprints now include executable/direct-script contents, arguments,
+required assertion IDs, timeout and setup presence. Declare imported helpers,
+lockfiles and configuration with `--checker-manifest`. Changing those inputs
+requires a new case. Do not declare the mutable destination being checked.
+See [checker fingerprints](CHECKER_FINGERPRINTS.md) for scope and migration.
+
+New capture metadata adds session/counter observations and a completion seal.
+`agent causal record` creates a shared HTTP/MCP session. Standalone MCP captures
+also produce a `.capture-session.json` sidecar; retain it with the transcript.
+Old recordings still replay, but timestamps alone cannot establish an exact
+observed order. Conversion reports missing evidence instead of inventing it.
+See [observed schedules](OBSERVED_SCHEDULES.md).
+
+Opt-in [live recovery](LIVE_RECOVERY.md) is limited to explicitly configured
+local Ollama HTTP chat. Hybrid runs are labelled non-deterministic; convert and
+validate their newly captured branch before offline comparison or minimization.
+Existing causal schedules, stdio sessions and process-restart mode cannot be
+combined with this initial live mode.
+
+For fresh JSON-RPC request IDs use the documented [retry reproduction](RETRY_REPRODUCTION.md)
+route. Ordinary HTTP replay still does not remap those IDs. New destination
+recovery regressions live in [recoverylab](../examples/recoverylab/README.md).
+
+---
+
 # Upgrading to v4.2.0
 
 Existing non-causal configurations and commands remain supported. Causal

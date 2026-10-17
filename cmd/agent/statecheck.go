@@ -12,6 +12,7 @@ import (
 type stateFlags struct {
 	setup, check, ids *string
 	timeout           *time.Duration
+	manifest          *string
 }
 
 func registerStateFlags(fs *flag.FlagSet) stateFlags {
@@ -20,10 +21,11 @@ func registerStateFlags(fs *flag.FlagSet) stateFlags {
 		fs.String("check-command-json", "", "Explicit state-check argv JSON; emits {assertions:[{id,passed}]}"),
 		fs.String("check-ids", "", "Comma-separated required application-state assertion IDs"),
 		fs.Duration("check-timeout", 10*time.Second, "Maximum time for each setup/check hook"),
+		fs.String("checker-manifest", "", "Caller-supplied checker dependencies/config manifest; otherwise only direct inputs are pinned"),
 	}
 }
 func (f stateFlags) options() (agentrunner.StateCheckOptions, error) {
-	o := agentrunner.StateCheckOptions{Timeout: *f.timeout}
+	o := agentrunner.StateCheckOptions{Timeout: *f.timeout, Manifest: *f.manifest}
 	for _, entry := range []struct {
 		raw  string
 		dest *[]string

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "provider_scope": "synthetic/account-1/test",
+  "active_dedupe": "Same business key and scope returns the same execution while dedupe_active is 1, including pending executions.",
+  "expiry": "Explicit key expiry disables deduplication and does not fence pending work.",
+  "receipts": "Execution receipts and immutable effect history survive client restart and object deletion for the complete fixture lifetime.",
+  "lookup": "Content searches can be incomplete, stale or ambiguous; matching content is not operation identity.",
+  "authorization": "Cancellation revokes new mutation admission; pre-admitted work may settle. Read-only reconciliation stays authorized.",
+  "observation": "Harness drains every admitted execution after client exit before independent read-only checks.",
+  "identity_recovery": "Only the recovered-identity control grants a unique authoritative index for the original request and scope."
+}

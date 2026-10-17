@@ -1,3 +1,54 @@
+# InfernoSIM v4.2.1
+
+Release target: v4.2.1. See [GitHub Releases](https://github.com/pranaysparihar/InfernoSIM/releases/tag/v4.2.1) for publication status.
+
+This release implements the seven community backlog issues opened after v4.2:
+
+- **Live model recovery (#14).** An explicit, bounded local Ollama mode lets an
+  agent react to an injected tool failure with a new model request. The actual
+  prefix and continuation are captured as a new branch for reviewed offline
+  replay. Requests, output tokens and elapsed time are bounded; unknown tools
+  still fail. Default replay remains offline.
+- **Capture real schedules (#15).** `agent causal record` observes HTTP and MCP
+  admissions/releases with a shared counter. `agent causal convert` preserves
+  the observed order as a replayable schedule when capture and dependency
+  evidence are complete. Incomplete or unrelated capture clocks stay partial.
+  `agent explore --observed-schedule` reuses that order without guessing from
+  timestamps.
+- **Pin the checker (#17).** Reproductions retain hashes of the checker binary,
+  direct script, declared dependencies/configuration and verification contract.
+  A changed checker cannot verify or minimize the original case. Explicit
+  `--new-case-out` creates a separate case with parent lineage. New exports use
+  format v3; older artifacts remain readable and visibly unpinned.
+- **Exercise ambiguous writes and recovery (#16, #19, #20).** The new recovery
+  suite checks an actual SQLite destination and execution history independently:
+  a committed write whose response is lost while retry and MCP cancellation
+  race; a pending original across process restart; and a lost operation handle
+  with stale, missing, misleading or failed reads. All 15 variants include safe
+  and unsafe controls, named failure reduction and relocated replay. Queued
+  writes drain after the client exits. Active deduplication and authoritative
+  identity recovery are explicit positive controls.
+- **Reproduce fresh-ID retries (#18).** A runnable reproduction script and a
+  targeted diagnostic show the causal route that remaps fresh JSON-RPC IDs.
+
+The recovery provider is a synthetic contract backed by a real database. These
+checks do not imply that a production provider has the same deduplication,
+receipt-retention, cancellation or visibility guarantees. Captured schedules
+represent proxy observations; they do not expose database commit order or prove
+that every possible interleaving was explored. Live recovery currently supports
+HTTP Ollama chat, buffers provider output, and requires a new reviewed branch;
+it cannot reuse an old causal schedule or mix with stdio/restart execution.
+Checker dependency closure is explicitly declared, not automatically inferred.
+
+Guides: [live recovery](https://github.com/pranaysparihar/InfernoSIM/blob/v4.2.1/docs/LIVE_RECOVERY.md),
+[observed schedules](https://github.com/pranaysparihar/InfernoSIM/blob/v4.2.1/docs/OBSERVED_SCHEDULES.md),
+[checker fingerprints](https://github.com/pranaysparihar/InfernoSIM/blob/v4.2.1/docs/CHECKER_FINGERPRINTS.md),
+[retry reproduction](https://github.com/pranaysparihar/InfernoSIM/blob/v4.2.1/docs/RETRY_REPRODUCTION.md),
+[recovery fixture](https://github.com/pranaysparihar/InfernoSIM/blob/v4.2.1/examples/recoverylab/README.md),
+and [validation evidence](https://github.com/pranaysparihar/InfernoSIM/blob/v4.2.1/docs/VALIDATION_4_2_1.md).
+
+---
+
 # InfernoSIM v4.2.0
 
 Release target: v4.2.0. See [GitHub Releases](https://github.com/pranaysparihar/InfernoSIM/releases/tag/v4.2.0) for publication status.

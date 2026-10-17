@@ -5,7 +5,7 @@ changes reviewable, deterministic, and safe to run on real incident data.
 
 ## Development setup
 
-1. Install Go 1.26.6 or a newer patched Go release.
+1. Install Go 1.26.9 or a newer patched Go release.
 2. Install Docker with Compose if you will run the container smoke profiles.
 3. Clone the repository and build the CLI:
 
@@ -129,3 +129,11 @@ an issue. Follow [SECURITY.md](SECURITY.md) instead.
 Open an issue that states the user problem, proposed CLI or configuration
 experience, expected safety implications, and why existing capture, replay,
 scenario, or contract functionality does not solve it.
+
+For community recovery work, run `bash scripts/community-smoke.sh`. It verifies
+fresh-ID retry reproduction and the synthetic destination contracts in
+[`examples/recoverylab`](examples/recoverylab/README.md), including reduction
+and relocation. Capture conversion, bounded live recovery and checker lineage
+are exercised by the Go tests. See [`docs/RELEASING.md`](docs/RELEASING.md) for
+the longer release gates and [`docs/CHECKER_FINGERPRINTS.md`](docs/CHECKER_FINGERPRINTS.md)
+when changing a retained regression's checker.

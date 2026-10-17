@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 
 	"infernosim/pkg/agentrunner"
 	"infernosim/pkg/causal"
+	"infernosim/pkg/privacy"
 )
 
 func readCausalJSON(path string, value any) error {
@@ -39,8 +41,11 @@ func readCausalJSON(path string, value any) error {
 }
 
 func runAgentCausal(args []string) int {
+	if len(args) > 0 && args[0] == "record" {
+		return runCausalRecord(args[1:])
+	}
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: infernosim agent causal <discover|plan> <incident-or-graph> [flags]")
+		fmt.Fprintln(os.Stderr, "Usage: infernosim agent causal <record|convert|discover|plan> <incident-or-graph> [flags]")
 		return 2
 	}
 	mode := args[0]
@@ -67,6 +72,31 @@ func runAgentCausal(args []string) int {
 		return fail(err)
 	}
 	switch mode {
+	case "convert":
+		d := causal.Declarations{}
+		if *declarations != "" {
+			if err := readCausalJSON(*declarations, &d); err != nil {
+				return fail(err)
+			}
+		}
+		if *review != "" {
+			d.Review = *review
+		}
+		r, err := agentrunner.ConvertObserved(input, d)
+		if err != nil {
+			return fail(err)
+		}
+		if err = agentrunner.WriteJSON(*out, r); err != nil {
+			return fail(err)
+		}
+		fmt.Printf("Capture conversion: %s; boundaries=%d; output=%s\n", r.Status, len(r.Boundaries), *out)
+		for _, issue := range r.Issues {
+			fmt.Println(issue)
+		}
+		if r.Schedule == nil {
+			return 1
+		}
+		return 0
 	case "discover":
 		d := causal.Declarations{}
 		if *declarations != "" {
@@ -110,4 +140,39 @@ func runAgentCausal(args []string) int {
 	default:
 		return fail(fmt.Errorf("unknown causal subcommand %q", mode))
 	}
+}
+
+func runCausalRecord(args []string) int {
+	flags, command := splitCommand(args)
+	fs := flag.NewFlagSet("agent causal record", flag.ContinueOnError)
+	mcp := fs.String("mcp-command-json", "", "Explicit test MCP server argv; application uses INFERNOSIM_MCP_COMMAND_JSON")
+	sensitive := fs.Bool("capture-sensitive-data", false, "Explicitly retain request/response bodies; use synthetic test data")
+	policyPath := fs.String("privacy-policy", "", "Privacy policy applied before capture storage")
+	private := fs.Bool("allow-private-destinations", false, "Explicitly allow local/private test HTTP destinations")
+	timeout := fs.Duration("timeout", agentrunner.DefaultTimeout, "Maximum recording duration")
+	dir, rest := positionalBeforeFlags(flags)
+	if err := fs.Parse(rest); err != nil {
+		return 2
+	}
+	fail := func(err error) int { fmt.Fprintln(os.Stderr, "causal record:", err); return 1 }
+	var mcpCommand []string
+	if *mcp != "" {
+		if err := json.Unmarshal([]byte(*mcp), &mcpCommand); err != nil || len(mcpCommand) == 0 {
+			return fail(fmt.Errorf("MCP command must be a nonempty JSON argv array"))
+		}
+	}
+	var p *privacy.Policy
+	if *policyPath != "" {
+		var err error
+		p, err = privacy.Load(*policyPath)
+		if err != nil {
+			return fail(err)
+		}
+	}
+	_, err := agentrunner.Record(context.Background(), agentrunner.RecordOptions{Incident: dir, Command: command, MCPCommand: mcpCommand, Timeout: *timeout, CaptureSensitiveData: *sensitive, AllowPrivateDestinations: *private, Privacy: p})
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Printf("Recorded shared HTTP/MCP observation boundaries in %s; review and convert before replay\n", dir)
+	return 0
 }

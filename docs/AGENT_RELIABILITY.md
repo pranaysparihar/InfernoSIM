@@ -411,3 +411,18 @@ such a claim requires the same public corpus and raw competitor runs.
   OTLP collector.
 - Bidirectional gRPC streaming retains the limitations in the main release
   notes.
+
+## v4.2.1 community recovery workflows
+
+Use [capture-to-schedule conversion](OBSERVED_SCHEDULES.md) to retain real HTTP/MCP
+proxy observation orders, and [checker fingerprints](CHECKER_FINGERPRINTS.md) to
+pin the verification contract of a retained failure. A changed checker creates
+a new case. For agents that need a new model response after an injected fault,
+[local Ollama live recovery](LIVE_RECOVERY.md) is explicit, bounded and labelled
+hybrid; validate its captured branch before offline reuse.
+
+The [recovery fixtures](../examples/recoverylab/README.md) independently check
+committed/lost-response retries, cancellation, pending originals and lost
+operation handles against a SQLite destination and history. They state their
+provider assumptions explicitly. Use the [fresh-ID retry guide](RETRY_REPRODUCTION.md)
+for the supported causal reproduction route.

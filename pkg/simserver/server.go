@@ -17,6 +17,7 @@ import (
 
 	"infernosim/pkg/agentreliability"
 	"infernosim/pkg/capture"
+	"infernosim/pkg/liverecovery"
 	"infernosim/pkg/replaydriver"
 	"infernosim/pkg/stubproxy"
 )
@@ -24,6 +25,7 @@ import (
 const controlPrefix = "/__infernosim"
 
 type Options struct {
+	Recovery            *liverecovery.Recovery
 	IncidentDir         string
 	ConfigPath          string
 	Listen              string
@@ -146,6 +148,7 @@ func New(opts Options) (*Server, error) {
 		}
 	}
 	stub, err := stubproxy.NewWithOptions(bundle.OutboundLog, opts.ObservedLog, nil, stubproxy.Options{
+		Recovery:      opts.Recovery,
 		Matching:      config.Matching,
 		Scenarios:     config.Scenarios,
 		Templates:     config.Templates,

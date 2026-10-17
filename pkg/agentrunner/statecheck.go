@@ -18,6 +18,10 @@ import (
 // instructions from incident files. Probes query independently maintained test
 // state; their stdout/stderr is not retained in reports.
 type StateCheckOptions struct {
+	Manifest     string
+	Expected     *CheckerFingerprint
+	Legacy       bool
+	Environment  []string
 	SetupCommand []string
 	Command      []string
 	IDs          []string
@@ -38,6 +42,9 @@ func (o StateCheckOptions) Validate() error {
 	}
 	if len(o.Command) == 0 && (len(o.IDs) > 0 || len(o.SetupCommand) > 0) {
 		return fmt.Errorf("state checks require an explicit check command")
+	}
+	if len(o.Command) == 0 && o.Manifest != "" {
+		return fmt.Errorf("checker manifest requires a check command")
 	}
 	if len(o.Command) > 0 && (len(o.IDs) == 0 || len(o.IDs) > 100) {
 		return fmt.Errorf("state checks require 1..100 expected IDs")

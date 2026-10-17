@@ -30,3 +30,5 @@ ca/
 
 # Runtime dependencies
 node_modules/
+__pycache__/
+*.pyc

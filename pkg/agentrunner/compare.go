@@ -38,6 +38,15 @@ func CompareResults(baseline, candidate []Result) (Comparison, error) {
 			return r, fmt.Errorf("different or duplicate candidate case set")
 		}
 		seen[c.Case.ID] = true
+		if (b.Recovery != nil && b.Recovery.Hybrid) || (c.Recovery != nil && c.Recovery.Hybrid) {
+			return r, fmt.Errorf("hybrid live runs are not deterministic comparisons; validate and replay the captured branch offline")
+		}
+		if _, err := resultCheckerDigest(b); err != nil {
+			return r, err
+		}
+		if _, err := resultCheckerDigest(c); err != nil {
+			return r, err
+		}
 		if b.ScopeHash == "" || b.ScopeHash != c.ScopeHash || b.StateCheckHash != c.StateCheckHash || b.RestartAfterCall != c.RestartAfterCall || agentreliability.StableHash(b.Case) != agentreliability.StableHash(c.Case) {
 			return r, fmt.Errorf("case %s has different evidence or execution settings", c.Case.ID)
 		}
@@ -102,6 +111,8 @@ type Reduction struct {
 // the target failure. Complete means 1-minimal, not a globally minimal trace.
 func ReduceFaults(ctx context.Context, original agentreliability.Case, assertion string, budget int, run func(context.Context, agentreliability.Case) (Result, error)) (Reduction, error) {
 	r := Reduction{Version: 1, Case: original, Assertion: assertion}
+	checkerDigest := ""
+	checkerSeen := false
 	if assertion == "" || budget < 2 || budget > 100 {
 		return r, fmt.Errorf("reduction requires assertion and budget between 2 and 100")
 	}
@@ -118,6 +129,17 @@ func ReduceFaults(ctx context.Context, original agentreliability.Case, assertion
 			if err != nil {
 				return false, err
 			}
+			if result.Recovery != nil && result.Recovery.Hybrid {
+				return false, fmt.Errorf("capture the live branch before offline reduction")
+			}
+			digest, err := resultCheckerDigest(result)
+			if err != nil {
+				return false, err
+			}
+			if checkerSeen && checkerDigest != digest {
+				return false, fmt.Errorf("checker changed during reduction; create a new case")
+			}
+			checkerSeen, checkerDigest = true, digest
 			if result.Process.ExitCode != 0 || result.Process.TimedOut || result.InvalidRun {
 				return false, nil
 			}
