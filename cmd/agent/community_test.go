@@ -19,33 +19,45 @@ import (
 )
 
 func TestCausalRecordConvertExploreCLI(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"ok":true}`)
-	}))
-	defer server.Close()
-	t.Setenv("INFERNOSIM_CLI_TEST_TARGET", server.URL)
-	t.Setenv("GORACE", "atexit_sleep_ms=0")
-	root := t.TempDir()
-	incident, observed := filepath.Join(root, "incident"), filepath.Join(root, "observed.json")
-	command := []string{os.Args[0], "-test.run=TestCommunityCLIApplicationHelper", "--", "request"}
-	args := append([]string{incident, "--capture-sensitive-data", "--allow-private-destinations", "--timeout", "10s", "--"}, command...)
-	if code := runCausalRecord(args); code != 0 {
-		t.Fatal("record failed", code)
-	}
-	if code := runAgentCausal([]string{"convert", incident, "--review", "one awaited HTTP request", "--out", observed}); code != 0 {
-		t.Fatal("conversion failed", code)
-	}
-	server.Close()
-	args = append([]string{incident, "--observed-schedule", observed, "--report-dir", filepath.Join(root, "results"), "--timeout", "10s", "--"}, command...)
-	if code := runAgentExplore(args); code != 0 {
-		t.Fatal("offline observed replay failed", code)
-	}
-	if err := os.Remove(filepath.Join(incident, "capture-session.json")); err != nil {
-		t.Fatal(err)
-	}
-	if code := runAgentCausal([]string{"convert", incident, "--review", "same request", "--out", filepath.Join(root, "partial.json")}); code != 1 {
-		t.Fatal("unsealed capture became exact", code)
+	for _, contentType := range []string{"application/json", "application/x-ndjson"} {
+		t.Run(contentType, func(t *testing.T) {
+			expected := `{"ok":true}`
+			if contentType == "application/x-ndjson" {
+				expected = `{"model":"fixture","message":{"role":"assistant","content":"OK"},"done":false}` + "\n" + `{"model":"fixture","message":{"role":"assistant","content":""},"done":true,"eval_count":1}` + "\n"
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", contentType)
+				for _, frame := range strings.SplitAfter(expected, "\n") {
+					fmt.Fprint(w, frame)
+					http.NewResponseController(w).Flush()
+				}
+			}))
+			defer server.Close()
+			t.Setenv("INFERNOSIM_CLI_TEST_TARGET", server.URL)
+			t.Setenv("INFERNOSIM_CLI_TEST_EXPECTED", expected)
+			t.Setenv("GORACE", "atexit_sleep_ms=0")
+			root := t.TempDir()
+			incident, observed := filepath.Join(root, "incident"), filepath.Join(root, "observed.json")
+			command := []string{os.Args[0], "-test.run=TestCommunityCLIApplicationHelper", "--", "request"}
+			args := append([]string{incident, "--capture-sensitive-data", "--allow-private-destinations", "--timeout", "10s", "--"}, command...)
+			if code := runCausalRecord(args); code != 0 {
+				t.Fatal("record failed", code)
+			}
+			if code := runAgentCausal([]string{"convert", incident, "--review", "one awaited HTTP request", "--out", observed}); code != 0 {
+				t.Fatal("conversion failed", code)
+			}
+			server.Close()
+			args = append([]string{incident, "--observed-schedule", observed, "--report-dir", filepath.Join(root, "results"), "--timeout", "10s", "--"}, command...)
+			if code := runAgentExplore(args); code != 0 {
+				t.Fatal("offline observed replay failed", code)
+			}
+			if err := os.Remove(filepath.Join(incident, "capture-session.json")); err != nil {
+				t.Fatal(err)
+			}
+			if code := runAgentCausal([]string{"convert", incident, "--review", "same request", "--out", filepath.Join(root, "partial.json")}); code != 1 {
+				t.Fatal("unsealed capture became exact", code)
+			}
+		})
 	}
 }
 
@@ -65,7 +77,7 @@ func TestCommunityCLIApplicationHelper(t *testing.T) {
 	}
 	b, err := io.ReadAll(response.Body)
 	response.Body.Close()
-	if err != nil || response.StatusCode != 200 || string(b) != `{"ok":true}` {
+	if err != nil || response.StatusCode != 200 || string(b) != os.Getenv("INFERNOSIM_CLI_TEST_EXPECTED") {
 		os.Exit(4)
 	}
 	os.Exit(0)
