@@ -1,0 +1,501 @@
+{
+  "checker": {
+    "version": 1,
+    "digest": "1d5cb3496a8e5af670bf65cd1fb18324817c1c808f541946c8b9b2d8d324e7ff",
+    "scope": "declared-inputs",
+    "files": {
+      "contract": "e890f50e84d70e94bd57640ca455f7a0b2ada36795be42c14c9aa2df6c2e6385",
+      "executable": "b502cb4c5b46b8d4192ec6bcb600ce8922f1afc396fcf646e8765c6eba74a0bf",
+      "provider": "a6ae94893cd7a81569109d352eed8b9f79ba002adb7e6420851c00205cea64e9",
+      "script": "c89e6d5dc7ac428b41777e37f97cb2e8115c230f5070e43f648dcb830d331dea"
+    },
+    "contract": "455c11de66adcd1fb6f20089a7f4bd238b9597a57095049cb84fdf7640f8cce3",
+    "declarations": "236e4b0bb910cce0d6f04d4f2cc35ce854ceb57d41bf7e205331e8fea8dd0adb"
+  },
+  "case_identity": "case_9a3aa005651d5ece7d65b3bd",
+  "integrity": "26b93a0671968e98b3e9863daf545a492b8c447463bc0b4f14093c728fdeb219",
+  "causal_execution": {
+    "schedule_id": "causal_7dd878b0dcc01944db4b",
+    "graph_hash": "bb026ce2834f5ffaa85e6a7463d20b01f2b0aff8ad8084078a5e7efc05e650d1",
+    "observed": [
+      "mcp_1:admit",
+      "mcp_1:release",
+      "mcp_3:admit",
+      "mcp_3:release",
+      "original_response:admit",
+      "original_response:release",
+      "mcp_4:admit",
+      "mcp_5:admit",
+      "mcp_5:release",
+      "mcp_7:admit",
+      "mcp_7:release",
+      "cancel_observed:admit",
+      "cancel_observed:release",
+      "mcp_4:release",
+      "retry_admit:admit",
+      "retry_admit:release",
+      "retry_finished:admit",
+      "retry_finished:release"
+    ],
+    "bindings": [
+      {
+        "operation": "cancel_observed",
+        "runtime_id_hash": "84f4d79c17a350c6c230ff8a8b2776e9133b3c6f7582b3e253250405b6e35048"
+      },
+      {
+        "operation": "mcp_1",
+        "runtime_id_hash": "5e685e4666ff8a5cd3c51f2995f792d76f46883ce908420f6c98ef08a2d09715"
+      },
+      {
+        "operation": "mcp_3"
+      },
+      {
+        "operation": "mcp_4",
+        "runtime_id_hash": "1886df7461a5bffe2a419a0bfe15c40a37c816367677e8a2c24f8b01479ccb99"
+      },
+      {
+        "operation": "mcp_5",
+        "runtime_id_hash": "4338d9692c002a89dd108d2162864aebf12765b3a52f6af240b8da25e6a44ac6"
+      },
+      {
+        "operation": "mcp_7"
+      },
+      {
+        "operation": "original_response",
+        "runtime_id_hash": "efa6af9df7cb5cd4b3daa1da6dad6646c1eca9dee2a476f8bb12e57ac0fa568b"
+      },
+      {
+        "operation": "retry_admit",
+        "runtime_id_hash": "4dd71ff78f094b44e7965169d0688c90fda8f4ee3d60944728e42bdf9c8f94e8"
+      },
+      {
+        "operation": "retry_finished",
+        "runtime_id_hash": "a3efd18b51c063ff5791d92d6056848a714b4e22402cd0c3e38639b68ce7fd4a"
+      }
+    ],
+    "completed": true
+  },
+  "version": 3,
+  "trial": {
+    "causal": {
+      "graph": {
+        "version": 1,
+        "operations": [
+          {
+            "id": "cancel_observed",
+            "protocol": "http",
+            "fingerprint": "d03342b46badba4cb5a4bb0fcc5cb8fe077c2887864ef20e4a1f54653000379a",
+            "record": "event:cancel_observed",
+            "request_id": "\"cancel_observed\""
+          },
+          {
+            "id": "mcp_1",
+            "protocol": "mcp",
+            "fingerprint": "c565e85e2add671ec9bc4adc0c2bd934b840742bca2bedd0215a31fb19d48ab5",
+            "record": "mcp:1",
+            "request_id": "\"init\""
+          },
+          {
+            "id": "mcp_3",
+            "protocol": "mcp",
+            "fingerprint": "41711944331518fd273cc818a13dd0697af04b1c350e30e07b99cca94a2cee2c",
+            "record": "mcp:3",
+            "notification": true
+          },
+          {
+            "id": "mcp_4",
+            "protocol": "mcp",
+            "fingerprint": "909847c0700c31e8ab08f1b0fa52a3a7a307312e8906cf257ba44c35791a86ae",
+            "record": "mcp:4",
+            "request_id": "\"slow\""
+          },
+          {
+            "id": "mcp_5",
+            "protocol": "mcp",
+            "fingerprint": "245b15f6233affccbe17fb1354eae3bdee37284b652064df249c2d207095e11f",
+            "record": "mcp:5",
+            "request_id": "\"audit\""
+          },
+          {
+            "id": "mcp_7",
+            "protocol": "mcp",
+            "fingerprint": "7eb0e667d31b7733047b5b6f82869bbf45682878f44300a545028c29f4b1b3aa",
+            "record": "mcp:7",
+            "notification": true
+          },
+          {
+            "id": "original_response",
+            "protocol": "http",
+            "fingerprint": "f3d2ef9b30a0a8d781f3d9935629e69d9149d30b089ee81e8c4ad022f1f3a785",
+            "record": "event:original_response",
+            "request_id": "\"original_response\""
+          },
+          {
+            "id": "retry_admit",
+            "protocol": "http",
+            "fingerprint": "563bf6939225402cdbaf181bca83d40a7113df41d24436b240f8037c8f8e93ee",
+            "record": "event:retry_admit",
+            "request_id": "\"retry_admit\""
+          },
+          {
+            "id": "retry_finished",
+            "protocol": "http",
+            "fingerprint": "ade85888c60bf91840592f21567d2686849c2ff1c37935e6ff2919344a4234cb",
+            "record": "event:retry_finished",
+            "request_id": "\"retry_finished\""
+          }
+        ],
+        "edges": [
+          {
+            "from": "cancel_observed:admit",
+            "to": "cancel_observed:release",
+            "evidence": [
+              {
+                "rule": "request_before_response",
+                "source": "event:cancel_observed",
+                "sha256": "64c45c707a152a7301b2d4638e63a7dc4a5d5167ecbe1c15bd3eeb58e9932899"
+              }
+            ]
+          },
+          {
+            "from": "mcp_1:admit",
+            "to": "mcp_1:release",
+            "evidence": [
+              {
+                "rule": "request_before_response",
+                "source": "mcp:1",
+                "sha256": "e0ade35671403c6e13546016fbee272de0d6bccdfb52cecab543c55c0dbe2e9f"
+              }
+            ]
+          },
+          {
+            "from": "mcp_1:release",
+            "to": "mcp_3:admit",
+            "evidence": [
+              {
+                "rule": "mcp_initialization",
+                "source": "mcp:3",
+                "sha256": "53a099ef742df9362ce6b6db6971a4d753b5cf7b4e63d7f943bc364acaf4fc46"
+              }
+            ]
+          },
+          {
+            "from": "mcp_3:admit",
+            "to": "mcp_3:release",
+            "evidence": [
+              {
+                "rule": "request_before_response",
+                "source": "mcp:3",
+                "sha256": "82d54827039f3cea36c438a22454f97d6af7dd4ea78c626e5efc7432c4d43520"
+              }
+            ]
+          },
+          {
+            "from": "mcp_3:release",
+            "to": "cancel_observed:admit",
+            "evidence": [
+              {
+                "rule": "mcp_initialization",
+                "source": "mcp:3",
+                "sha256": "53a099ef742df9362ce6b6db6971a4d753b5cf7b4e63d7f943bc364acaf4fc46"
+              }
+            ]
+          },
+          {
+            "from": "mcp_3:release",
+            "to": "mcp_4:admit",
+            "evidence": [
+              {
+                "rule": "mcp_initialization",
+                "source": "mcp:3",
+                "sha256": "53a099ef742df9362ce6b6db6971a4d753b5cf7b4e63d7f943bc364acaf4fc46"
+              }
+            ]
+          },
+          {
+            "from": "mcp_3:release",
+            "to": "mcp_5:admit",
+            "evidence": [
+              {
+                "rule": "mcp_initialization",
+                "source": "mcp:3",
+                "sha256": "53a099ef742df9362ce6b6db6971a4d753b5cf7b4e63d7f943bc364acaf4fc46"
+              }
+            ]
+          },
+          {
+            "from": "mcp_3:release",
+            "to": "mcp_7:admit",
+            "evidence": [
+              {
+                "rule": "mcp_initialization",
+                "source": "mcp:3",
+                "sha256": "53a099ef742df9362ce6b6db6971a4d753b5cf7b4e63d7f943bc364acaf4fc46"
+              }
+            ]
+          },
+          {
+            "from": "mcp_3:release",
+            "to": "original_response:admit",
+            "evidence": [
+              {
+                "rule": "user_declaration",
+                "source": "declarations",
+                "sha256": "db54dff43c5d5d8f4d332ab1c9aa116998189f9898748f95ae259682dded3692",
+                "detail": "explicit fixture checkpoint or awaited continuation; provider commit is separate from response delivery"
+              },
+              {
+                "rule": "mcp_initialization",
+                "source": "mcp:3",
+                "sha256": "53a099ef742df9362ce6b6db6971a4d753b5cf7b4e63d7f943bc364acaf4fc46"
+              }
+            ]
+          },
+          {
+            "from": "mcp_3:release",
+            "to": "retry_admit:admit",
+            "evidence": [
+              {
+                "rule": "mcp_initialization",
+                "source": "mcp:3",
+                "sha256": "53a099ef742df9362ce6b6db6971a4d753b5cf7b4e63d7f943bc364acaf4fc46"
+              }
+            ]
+          },
+          {
+            "from": "mcp_3:release",
+            "to": "retry_finished:admit",
+            "evidence": [
+              {
+                "rule": "mcp_initialization",
+                "source": "mcp:3",
+                "sha256": "53a099ef742df9362ce6b6db6971a4d753b5cf7b4e63d7f943bc364acaf4fc46"
+              }
+            ]
+          },
+          {
+            "from": "mcp_4:admit",
+            "to": "mcp_4:release",
+            "evidence": [
+              {
+                "rule": "request_before_response",
+                "source": "mcp:4",
+                "sha256": "a9fb9c1112e9ae9581f0ac158bdd6aa403e053ff0057a368e0b4a2676e27135c"
+              }
+            ]
+          },
+          {
+            "from": "mcp_4:admit",
+            "to": "mcp_5:admit",
+            "evidence": [
+              {
+                "rule": "user_declaration",
+                "source": "declarations",
+                "sha256": "8fae11c3575a6c17014cb0dc22809e6cbe4ceec1236f34ca562b237aec2c49c3",
+                "detail": "explicit fixture checkpoint or awaited continuation; provider commit is separate from response delivery"
+              }
+            ]
+          },
+          {
+            "from": "mcp_4:admit",
+            "to": "mcp_7:admit",
+            "evidence": [
+              {
+                "rule": "cancellation_target",
+                "source": "mcp:7",
+                "sha256": "4ae497b1fe6449706dd2bdbe18fd5ab170fc354881c0b6db36edde68dc98ba39"
+              }
+            ]
+          },
+          {
+            "from": "mcp_5:admit",
+            "to": "mcp_5:release",
+            "evidence": [
+              {
+                "rule": "request_before_response",
+                "source": "mcp:5",
+                "sha256": "a948afb90cad9df71f54e39cd243c467d6a90518e4eba9dc5c0faff92fa9e13a"
+              }
+            ]
+          },
+          {
+            "from": "mcp_5:release",
+            "to": "mcp_7:admit",
+            "evidence": [
+              {
+                "rule": "user_declaration",
+                "source": "declarations",
+                "sha256": "6d1b9ed0e48d2926604f207580a4d0c46dfde5e154ff2595978ddb6e13d68f98",
+                "detail": "explicit fixture checkpoint or awaited continuation; provider commit is separate from response delivery"
+              }
+            ]
+          },
+          {
+            "from": "mcp_7:admit",
+            "to": "mcp_7:release",
+            "evidence": [
+              {
+                "rule": "request_before_response",
+                "source": "mcp:7",
+                "sha256": "c48cea4dede79bcb43cf1a71ffd222142ca8bad6093781cb4900872f9aec1d49"
+              }
+            ]
+          },
+          {
+            "from": "mcp_7:release",
+            "to": "cancel_observed:admit",
+            "evidence": [
+              {
+                "rule": "user_declaration",
+                "source": "declarations",
+                "sha256": "3be73e9564ae1981ac93c091cfc293719b3ec5d4b93284a7ada8f75f85e822d1",
+                "detail": "explicit fixture checkpoint or awaited continuation; provider commit is separate from response delivery"
+              }
+            ]
+          },
+          {
+            "from": "mcp_7:release",
+            "to": "mcp_4:release",
+            "evidence": [
+              {
+                "rule": "cancelled_without_response",
+                "source": "mcp:7",
+                "sha256": "4ae497b1fe6449706dd2bdbe18fd5ab170fc354881c0b6db36edde68dc98ba39"
+              }
+            ]
+          },
+          {
+            "from": "original_response:admit",
+            "to": "original_response:release",
+            "evidence": [
+              {
+                "rule": "request_before_response",
+                "source": "event:original_response",
+                "sha256": "aaeb03593cb1ceae2febe880e885f96147a8895c3b1c28d2246c1f4b9a4dec2c"
+              }
+            ]
+          },
+          {
+            "from": "original_response:release",
+            "to": "mcp_4:admit",
+            "evidence": [
+              {
+                "rule": "user_declaration",
+                "source": "declarations",
+                "sha256": "60638976732a47f5e6551ede609cdeb49e00c28b3e69e234494e77aeaa367ee5",
+                "detail": "explicit fixture checkpoint or awaited continuation; provider commit is separate from response delivery"
+              }
+            ]
+          },
+          {
+            "from": "original_response:release",
+            "to": "retry_admit:admit",
+            "evidence": [
+              {
+                "rule": "user_declaration",
+                "source": "declarations",
+                "sha256": "963c08a6c875a6525028e20cd731cdb784ab81091a3076bcc7794ca2fbef94b3",
+                "detail": "explicit fixture checkpoint or awaited continuation; provider commit is separate from response delivery"
+              }
+            ]
+          },
+          {
+            "from": "retry_admit:admit",
+            "to": "retry_admit:release",
+            "evidence": [
+              {
+                "rule": "request_before_response",
+                "source": "event:retry_admit",
+                "sha256": "a2a27c716990cd13ad8ce1135205ef7f55de0a4f68aba610d4bca0bdc2c46f74"
+              }
+            ]
+          },
+          {
+            "from": "retry_admit:release",
+            "to": "retry_finished:admit",
+            "evidence": [
+              {
+                "rule": "user_declaration",
+                "source": "declarations",
+                "sha256": "e92565bbd6fa5803b79ed78a774692b977050f7d72e80a5ee268f2cad4cfdd98",
+                "detail": "explicit fixture checkpoint or awaited continuation; provider commit is separate from response delivery"
+              }
+            ]
+          },
+          {
+            "from": "retry_finished:admit",
+            "to": "retry_finished:release",
+            "evidence": [
+              {
+                "rule": "request_before_response",
+                "source": "event:retry_finished",
+                "sha256": "514eeb4c73ce85669b616d8b3664522f6742f7c9b72cf4710608d463df79f62e"
+              }
+            ]
+          }
+        ],
+        "issues": [
+          {
+            "id": "unobserved_dependencies_1af39a22f6df",
+            "kind": "unobserved_dependencies",
+            "detail": "recordings cannot establish the absence of hidden application dependencies; review before scheduling",
+            "blocking": false
+          }
+        ],
+        "review": "bounded synthetic provider; all application dependencies declared; retry/cancel branches may interleave"
+      },
+      "schedule": {
+        "id": "causal_7dd878b0dcc01944db4b",
+        "graph_hash": "bb026ce2834f5ffaa85e6a7463d20b01f2b0aff8ad8084078a5e7efc05e650d1",
+        "order": [
+          "mcp_1:admit",
+          "mcp_1:release",
+          "mcp_3:admit",
+          "mcp_3:release",
+          "original_response:admit",
+          "original_response:release",
+          "mcp_4:admit",
+          "mcp_5:admit",
+          "mcp_5:release",
+          "mcp_7:admit",
+          "mcp_7:release",
+          "cancel_observed:admit",
+          "cancel_observed:release",
+          "mcp_4:release",
+          "retry_admit:admit",
+          "retry_admit:release",
+          "retry_finished:admit",
+          "retry_finished:release"
+        ]
+      },
+      "timeout": "8s"
+    },
+    "case": {
+      "id": "explore_398bb2e5e3de2e28877b",
+      "description": "causal admission and response-release exploration",
+      "category": "exploration",
+      "severity": "high",
+      "fault_ids": [
+        "response-lost"
+      ],
+      "schedule_id": "causal_7dd878b0dcc01944db4b"
+    }
+  },
+  "assertion": "state:destination",
+  "check_ids": [
+    "destination",
+    "authorization",
+    "knowledge"
+  ],
+  "requires_setup": true,
+  "timeout": 30000000000,
+  "check_timeout": 5000000000,
+  "files": {
+    "incident/declarations.json": "3d772962373ba1bb0165998960f7012f739010555988f022cf626054661acd07",
+    "incident/inbound.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "incident/incident.json": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "incident/mcp.log": "2268e69e93965227e68588d5a7d04051fd86b8f75fa311decb5662ead15e321e",
+    "incident/outbound.log": "20f92e86211ec50dd57b88f69f5e9106b2eac110a97b6ca3727b645d4ba1256f",
+    "incident/replay.yaml": "68508a79ebe63761f8be78cbfa5155fab10a078dce98383ae75ea40a7a64380e"
+  }
+}

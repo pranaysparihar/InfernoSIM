@@ -1,0 +1,233 @@
+{
+  "case_identity": "case_14c5c7d7c6c0fc39f5cc9374",
+  "checker": {
+    "version": 1,
+    "digest": "955f33b497a8f0a7227adc4d8890755ff15992742d8d7604989ecffbcf27ab27",
+    "scope": "declared-inputs",
+    "files": {
+      "contract": "e890f50e84d70e94bd57640ca455f7a0b2ada36795be42c14c9aa2df6c2e6385",
+      "executable": "b502cb4c5b46b8d4192ec6bcb600ce8922f1afc396fcf646e8765c6eba74a0bf",
+      "provider": "a6ae94893cd7a81569109d352eed8b9f79ba002adb7e6420851c00205cea64e9",
+      "script": "c89e6d5dc7ac428b41777e37f97cb2e8115c230f5070e43f648dcb830d331dea"
+    },
+    "contract": "05d2c9225afb0356fa4878cd56394a813fba5d91f0d20c747b9d65e9faa274d4",
+    "declarations": "236e4b0bb910cce0d6f04d4f2cc35ce854ceb57d41bf7e205331e8fea8dd0adb"
+  },
+  "checker_status": "pinned/declared-inputs",
+  "causal_execution": {
+    "schedule_id": "causal_28226cdf8da682500068",
+    "graph_hash": "2ea9edcfa9aa0406943acc3ec49fb434a735e66db2c631cc007a35ef9104cf89",
+    "observed": [
+      "submitted:admit",
+      "submitted:release",
+      "status:admit",
+      "status:release",
+      "retry_considered:admit",
+      "retry_considered:release",
+      "client_done:admit",
+      "client_done:release",
+      "drained:admit",
+      "drained:release",
+      "receipt_read:admit",
+      "receipt_read:release"
+    ],
+    "bindings": [
+      {
+        "operation": "client_done",
+        "runtime_id_hash": "4bb9baa16f107555311cbf864bf94a8ac02c5522007504e1f9a0b05d4bcb55f4"
+      },
+      {
+        "operation": "drained",
+        "runtime_id_hash": "dc9e42a7ecee8999a9c7312b2f95fc2e5e49f6f37ad55a667e8951f2a6942c05"
+      },
+      {
+        "operation": "receipt_read",
+        "runtime_id_hash": "323011cda2df8c4152915065377667046e63b7798851e9db397d6bfd53dbcdd7"
+      },
+      {
+        "operation": "retry_considered",
+        "runtime_id_hash": "b865e3cff90de64ad5ec6af9be8dcd3d6e8d22997c82ab94d90eae106d16dc0e"
+      },
+      {
+        "operation": "status",
+        "runtime_id_hash": "33dcdc5be7830158fb16b8dfcd4f42d3552ab823bd6192348934dfcf5d1e4c57"
+      },
+      {
+        "operation": "submitted",
+        "runtime_id_hash": "08abf09646f47886046f9575d93df59de2160a1ba8562c9936aefa67bb07c677"
+      }
+    ],
+    "completed": true
+  },
+  "version": 1,
+  "case": {
+    "id": "explore_6df43df17812728d2303",
+    "description": "causal admission and response-release exploration",
+    "category": "exploration",
+    "severity": "high",
+    "schedule_id": "causal_28226cdf8da682500068"
+  },
+  "passed": true,
+  "duration": 380505625,
+  "process": {
+    "exit_code": 0,
+    "stdout": "{\"decision\": {\"observation\": {\"complete_lookup\": false, \"items\": [], \"read_ok\": false}, \"outcome\": \"unknown\", \"retry_permission\": \"none\"}, \"destination\": {\"audit\": [{\"detail\": \"original\", \"handle\": \"e87820d8-1d45-4c99-9546-9bb415e9c4ee\", \"kind\": \"admit\", \"seq\": 1}, {\"detail\": \"original\", \"handle\": \"e87820d8-1d45-4c99-9546-9bb415e9c4ee\", \"kind\": \"commit\", \"seq\": 2}, {\"detail\": \"failed-read\", \"handle\": \"\", \"kind\": \"content_lookup\", \"seq\": 3}, {\"detail\": \"all admitted executions settled\", \"handle\": \"\", \"kind\": \"drained\", \"seq\": 4}], \"executions\": [{\"admitted_after_cancel\": 0, \"business\": \"payment-1\", \"handle\": \"e87820d8-1d45-4c99-9546-9bb415e9c4ee\", \"idem_key\": \"payment-1\", \"request_hash\": \"858bd0382cb5912ef6f44698d0d43497db45c8c1170b134f8fad8615b5ecd89a\", \"role\": \"original\", \"scope\": \"synthetic/account-1/test\", \"state\": \"complete\"}], \"history\": [{\"handle\": \"e87820d8-1d45-4c99-9546-9bb415e9c4ee\", \"role\": \"original\", \"seq\": 1}], \"objects\": [{\"business\": \"payment-1\", \"handle\": \"e87820d8-1d45-4c99-9546-9bb415e9c4ee\"}]}, \"scenario\": \"lost-handle\", \"variant\": \"failed-read\"}\n",
+    "output_truncated": false,
+    "timed_out": false,
+    "restarted": true
+  },
+  "simulator": {
+    "expected": 6,
+    "observed": 6,
+    "unexpected": false,
+    "agent": {
+      "causal": {
+        "schedule_id": "causal_28226cdf8da682500068",
+        "graph_hash": "2ea9edcfa9aa0406943acc3ec49fb434a735e66db2c631cc007a35ef9104cf89",
+        "observed": [
+          "submitted:admit",
+          "submitted:release",
+          "status:admit",
+          "status:release",
+          "retry_considered:admit",
+          "retry_considered:release",
+          "client_done:admit",
+          "client_done:release",
+          "drained:admit",
+          "drained:release",
+          "receipt_read:admit",
+          "receipt_read:release"
+        ],
+        "bindings": [
+          {
+            "operation": "client_done",
+            "runtime_id_hash": "4bb9baa16f107555311cbf864bf94a8ac02c5522007504e1f9a0b05d4bcb55f4"
+          },
+          {
+            "operation": "drained",
+            "runtime_id_hash": "dc9e42a7ecee8999a9c7312b2f95fc2e5e49f6f37ad55a667e8951f2a6942c05"
+          },
+          {
+            "operation": "receipt_read",
+            "runtime_id_hash": "323011cda2df8c4152915065377667046e63b7798851e9db397d6bfd53dbcdd7"
+          },
+          {
+            "operation": "retry_considered",
+            "runtime_id_hash": "b865e3cff90de64ad5ec6af9be8dcd3d6e8d22997c82ab94d90eae106d16dc0e"
+          },
+          {
+            "operation": "status",
+            "runtime_id_hash": "33dcdc5be7830158fb16b8dfcd4f42d3552ab823bd6192348934dfcf5d1e4c57"
+          },
+          {
+            "operation": "submitted",
+            "runtime_id_hash": "08abf09646f47886046f9575d93df59de2160a1ba8562c9936aefa67bb07c677"
+          }
+        ],
+        "completed": true
+      },
+      "version": 1,
+      "calls": [
+        {
+          "admission_boundary": 1,
+          "release_boundary": 2,
+          "sequence": 1,
+          "kind": "mcp_tool_result",
+          "tool": "submitted",
+          "call_id": "submitted",
+          "usage_known": false
+        },
+        {
+          "admission_boundary": 3,
+          "release_boundary": 4,
+          "sequence": 2,
+          "kind": "mcp_tool_result",
+          "tool": "status",
+          "call_id": "status",
+          "usage_known": false
+        },
+        {
+          "admission_boundary": 5,
+          "release_boundary": 6,
+          "sequence": 3,
+          "kind": "mcp_tool_result",
+          "tool": "retry_considered",
+          "call_id": "retry_considered",
+          "usage_known": false
+        },
+        {
+          "admission_boundary": 7,
+          "release_boundary": 8,
+          "sequence": 4,
+          "kind": "mcp_tool_result",
+          "tool": "client_done",
+          "call_id": "client_done",
+          "usage_known": false
+        },
+        {
+          "admission_boundary": 9,
+          "release_boundary": 10,
+          "sequence": 5,
+          "kind": "mcp_tool_result",
+          "tool": "drained",
+          "call_id": "drained",
+          "usage_known": false
+        },
+        {
+          "admission_boundary": 11,
+          "release_boundary": 12,
+          "sequence": 6,
+          "kind": "mcp_tool_result",
+          "tool": "receipt_read",
+          "call_id": "receipt_read",
+          "usage_known": false
+        }
+      ],
+      "limit_exceeded": false,
+      "schedule_id": "causal_28226cdf8da682500068",
+      "schedule_steps": 12,
+      "schedule_completed": 12
+    }
+  },
+  "assertions": [
+    {
+      "id": "recorded-only",
+      "type": "no_unexpected_calls",
+      "passed": true,
+      "message": "all agent outbound calls stayed within the recorded universe",
+      "coverage": "exercised"
+    },
+    {
+      "id": "schedule:causal_28226cdf8da682500068",
+      "type": "schedule_complete",
+      "passed": true,
+      "message": "schedule admitted 12/12 steps",
+      "coverage": "exercised"
+    },
+    {
+      "id": "state:authorization",
+      "type": "application_state",
+      "passed": true,
+      "message": "independent application-state check passed",
+      "coverage": "exercised"
+    },
+    {
+      "id": "state:destination",
+      "type": "application_state",
+      "passed": true,
+      "message": "independent application-state check passed",
+      "coverage": "exercised"
+    },
+    {
+      "id": "state:knowledge",
+      "type": "application_state",
+      "passed": true,
+      "message": "independent application-state check passed",
+      "coverage": "exercised"
+    }
+  ],
+  "scope_hash": "de6aa1e15589b7a0a4be5fc7a0697bfc9d6b55e2a6f76a3e98009daf96622a45",
+  "restart_after_call": 1,
+  "state_check_hash": "955f33b497a8f0a7227adc4d8890755ff15992742d8d7604989ecffbcf27ab27",
+  "setup_command_hash": "5721924b3740b4427da147f9a14dba1e0c429998b8d29bb89bf97e4d5abdbbe2"
+}

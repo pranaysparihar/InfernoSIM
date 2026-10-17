@@ -1,0 +1,164 @@
+{
+  "checker": {
+    "version": 1,
+    "digest": "875b5957e6afcf5ee4aeee9539d6dbb5242885d393cfa69bb4eea5bbb7d4109c",
+    "scope": "direct-inputs-only",
+    "files": {
+      "executable": "b502cb4c5b46b8d4192ec6bcb600ce8922f1afc396fcf646e8765c6eba74a0bf",
+      "script": "09b5db50a90d2f16dc536113acb098c67b1bbfc8536988b1eabb019de8c5fbe0"
+    },
+    "contract": "ef88931061aea31c38da17ccfbb7af2e3a86085bf55bc9ae66aa4a4040a63253",
+    "declarations": "316c0cb23da2a6975124fcffbd629f0af819f05ae36d7049aff3b7011680260b"
+  },
+  "case_identity": "case_fb4c7956424c7e817f239c7c",
+  "integrity": "54e5fc5e713ce082f8f8e053229b93cb21549eaa8d5cb141d8215cf2f11dded4",
+  "causal_execution": {
+    "schedule_id": "causal_d31ceb86adacf89a31d9",
+    "graph_hash": "d3123be5a9d9994c66e991a20b65ab42bf022ae6365e611060479198b5bddabb",
+    "observed": [
+      "audit:admit",
+      "audit:release",
+      "reserve:admit",
+      "reserve:release",
+      "commit:admit",
+      "commit:release"
+    ],
+    "bindings": [
+      {
+        "operation": "audit",
+        "runtime_id_hash": "a9196ff1e724f5a2eb1bdb7f821a4f246a3a68a14379a739c102334cf55ed8d7"
+      },
+      {
+        "operation": "commit",
+        "runtime_id_hash": "4015a1d05474241923b40c8780ee2799a619760fd28212cf3b40b9902343ebc3"
+      },
+      {
+        "operation": "reserve",
+        "runtime_id_hash": "5cad86f06fb6167e675805734f75855dd1b706398a409873c655db7abc925aea"
+      }
+    ],
+    "completed": true
+  },
+  "version": 3,
+  "trial": {
+    "causal": {
+      "graph": {
+        "version": 1,
+        "operations": [
+          {
+            "id": "audit",
+            "protocol": "http",
+            "fingerprint": "80ed3a2561614f633c2d7258b2777e9538f2fbf7e77daf3e0c80997c13999a2d",
+            "record": "event:audit",
+            "request_id": "\"audit\""
+          },
+          {
+            "id": "commit",
+            "protocol": "http",
+            "fingerprint": "d627d4b389f6491aa87827159fbf778c3f95862b5fe75348ccae84cfc41e506a",
+            "record": "event:commit",
+            "request_id": "\"commit\""
+          },
+          {
+            "id": "reserve",
+            "protocol": "http",
+            "fingerprint": "f2c45ed9dd9c3f2383adf293cc22379641ab6adf561d252c166096f35f961350",
+            "record": "event:reserve",
+            "request_id": "\"reserve\""
+          }
+        ],
+        "edges": [
+          {
+            "from": "audit:admit",
+            "to": "audit:release",
+            "evidence": [
+              {
+                "rule": "request_before_response",
+                "source": "event:audit",
+                "sha256": "e0ea069dbeebe980405ec6d7b69f63e6e5cfde883d48b9d1a49ea35271a1922e"
+              }
+            ]
+          },
+          {
+            "from": "commit:admit",
+            "to": "commit:release",
+            "evidence": [
+              {
+                "rule": "request_before_response",
+                "source": "event:commit",
+                "sha256": "780740fba5b32cfaddd3cf50e15213deed000568a351cf2006782cf80ee46701"
+              }
+            ]
+          },
+          {
+            "from": "reserve:admit",
+            "to": "reserve:release",
+            "evidence": [
+              {
+                "rule": "request_before_response",
+                "source": "event:reserve",
+                "sha256": "8d1ae8c19f184ec948f8f19af7e274131e71b0402932e8d8ceb36127377a85ac"
+              }
+            ]
+          },
+          {
+            "from": "reserve:release",
+            "to": "commit:admit",
+            "evidence": [
+              {
+                "rule": "user_declaration",
+                "source": "declarations",
+                "sha256": "ecda6beab3f5ab4ba5895a6fab0822ae4476b83f9d5891335092f440bf30b99e",
+                "detail": "application awaits this response before issuing the continuation"
+              }
+            ]
+          }
+        ],
+        "issues": [
+          {
+            "id": "unobserved_dependencies_1af39a22f6df",
+            "kind": "unobserved_dependencies",
+            "detail": "recordings cannot establish the absence of hidden application dependencies; review before scheduling",
+            "blocking": false
+          }
+        ],
+        "review": "fixture dependencies are explicitly declared; remaining requests are independent"
+      },
+      "schedule": {
+        "id": "causal_d31ceb86adacf89a31d9",
+        "graph_hash": "d3123be5a9d9994c66e991a20b65ab42bf022ae6365e611060479198b5bddabb",
+        "order": [
+          "audit:admit",
+          "audit:release",
+          "reserve:admit",
+          "reserve:release",
+          "commit:admit",
+          "commit:release"
+        ]
+      },
+      "timeout": "5s"
+    },
+    "case": {
+      "id": "explore_a040a4e4c37c5e2f1c84",
+      "description": "causal admission and response-release exploration",
+      "category": "exploration",
+      "severity": "high",
+      "schedule_id": "causal_d31ceb86adacf89a31d9"
+    }
+  },
+  "assertion": "state:database",
+  "check_ids": [
+    "database",
+    "filesystem"
+  ],
+  "requires_setup": true,
+  "timeout": 10000000000,
+  "check_timeout": 5000000000,
+  "files": {
+    "incident/declarations.json": "63ab34503b47f92516f4c782b1395e63f84842a8336611a70bbec164a8f4d017",
+    "incident/inbound.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "incident/incident.json": "0421214960441d55a9859ecf90ddb72f90b7ca185481b2154652c40f392d63af",
+    "incident/outbound.log": "5c9b861083097b70132b7a063366e73235537cc7cb93c1dd1368c3a25aca6bd5",
+    "incident/replay.yaml": "c7ceaa083a75eb31a5d12854a179a119798a05050114653dc80ce04c3ba975ca"
+  }
+}

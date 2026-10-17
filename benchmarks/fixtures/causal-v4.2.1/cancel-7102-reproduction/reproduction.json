@@ -1,0 +1,281 @@
+{
+  "checker": {
+    "version": 1,
+    "digest": "b558f98048db569c1caf198b483881fea2c20f70590e35d41d0d58b0ffb43782",
+    "scope": "direct-inputs-only",
+    "files": {
+      "executable": "b502cb4c5b46b8d4192ec6bcb600ce8922f1afc396fcf646e8765c6eba74a0bf",
+      "script": "09b5db50a90d2f16dc536113acb098c67b1bbfc8536988b1eabb019de8c5fbe0"
+    },
+    "contract": "08d5d70c18ae46f42fa606d6d4c21b8a735ea48ebd3c14bd8a9970913f973e3d",
+    "declarations": "316c0cb23da2a6975124fcffbd629f0af819f05ae36d7049aff3b7011680260b"
+  },
+  "case_identity": "case_25e907068f3fd8d5954d2b6d",
+  "integrity": "9f3bcce8bc02055ce42ab9a131a23b6ae3656cf0e209f5e5bad716f5dc22e565",
+  "causal_execution": {
+    "schedule_id": "causal_0ce8512cbfe7d265736f",
+    "graph_hash": "7772afcfe11da06eb4b0e39079794e81a44cc3d2afa28333e4d99cb894622544",
+    "observed": [
+      "mcp_1:admit",
+      "mcp_1:release",
+      "mcp_3:admit",
+      "mcp_3:release",
+      "mcp_4:admit",
+      "mcp_5:admit",
+      "mcp_5:release",
+      "mcp_7:admit",
+      "mcp_7:release",
+      "mcp_4:release"
+    ],
+    "bindings": [
+      {
+        "operation": "mcp_1",
+        "runtime_id_hash": "ed24d768416860947c59dc481420163ed02c776113cc8520cc861a9c72866b5b"
+      },
+      {
+        "operation": "mcp_3"
+      },
+      {
+        "operation": "mcp_4",
+        "runtime_id_hash": "4ab53e4cf60bd8dfdd420f51b7d38d4bbb97c8d4777ec908e364c1525c1e0478"
+      },
+      {
+        "operation": "mcp_5",
+        "runtime_id_hash": "d914bce969a013ae32c0830f2d08660f33ce410b4130aa5b049547244ea969f1"
+      },
+      {
+        "operation": "mcp_7"
+      }
+    ],
+    "completed": true
+  },
+  "version": 3,
+  "trial": {
+    "causal": {
+      "graph": {
+        "version": 1,
+        "operations": [
+          {
+            "id": "mcp_1",
+            "protocol": "mcp",
+            "fingerprint": "0e0dd0583ba0285fd5bb93f01de9d6895dca95bb390928a5e7a16b8930ee454e",
+            "record": "mcp:1",
+            "request_id": "\"init\""
+          },
+          {
+            "id": "mcp_3",
+            "protocol": "mcp",
+            "fingerprint": "41711944331518fd273cc818a13dd0697af04b1c350e30e07b99cca94a2cee2c",
+            "record": "mcp:3",
+            "notification": true
+          },
+          {
+            "id": "mcp_4",
+            "protocol": "mcp",
+            "fingerprint": "909847c0700c31e8ab08f1b0fa52a3a7a307312e8906cf257ba44c35791a86ae",
+            "record": "mcp:4",
+            "request_id": "\"slow\""
+          },
+          {
+            "id": "mcp_5",
+            "protocol": "mcp",
+            "fingerprint": "245b15f6233affccbe17fb1354eae3bdee37284b652064df249c2d207095e11f",
+            "record": "mcp:5",
+            "request_id": "\"audit\""
+          },
+          {
+            "id": "mcp_7",
+            "protocol": "mcp",
+            "fingerprint": "7eb0e667d31b7733047b5b6f82869bbf45682878f44300a545028c29f4b1b3aa",
+            "record": "mcp:7",
+            "notification": true
+          }
+        ],
+        "edges": [
+          {
+            "from": "mcp_1:admit",
+            "to": "mcp_1:release",
+            "evidence": [
+              {
+                "rule": "request_before_response",
+                "source": "mcp:1",
+                "sha256": "54f035cdd3d4b18840f8bb3b8cfbda2b10a5b2d97ad0846edb782cb737e7df3c"
+              }
+            ]
+          },
+          {
+            "from": "mcp_1:release",
+            "to": "mcp_3:admit",
+            "evidence": [
+              {
+                "rule": "mcp_initialization",
+                "source": "mcp:3",
+                "sha256": "53a099ef742df9362ce6b6db6971a4d753b5cf7b4e63d7f943bc364acaf4fc46"
+              }
+            ]
+          },
+          {
+            "from": "mcp_3:admit",
+            "to": "mcp_3:release",
+            "evidence": [
+              {
+                "rule": "request_before_response",
+                "source": "mcp:3",
+                "sha256": "82d54827039f3cea36c438a22454f97d6af7dd4ea78c626e5efc7432c4d43520"
+              }
+            ]
+          },
+          {
+            "from": "mcp_3:release",
+            "to": "mcp_4:admit",
+            "evidence": [
+              {
+                "rule": "mcp_initialization",
+                "source": "mcp:3",
+                "sha256": "53a099ef742df9362ce6b6db6971a4d753b5cf7b4e63d7f943bc364acaf4fc46"
+              }
+            ]
+          },
+          {
+            "from": "mcp_3:release",
+            "to": "mcp_5:admit",
+            "evidence": [
+              {
+                "rule": "mcp_initialization",
+                "source": "mcp:3",
+                "sha256": "53a099ef742df9362ce6b6db6971a4d753b5cf7b4e63d7f943bc364acaf4fc46"
+              }
+            ]
+          },
+          {
+            "from": "mcp_3:release",
+            "to": "mcp_7:admit",
+            "evidence": [
+              {
+                "rule": "mcp_initialization",
+                "source": "mcp:3",
+                "sha256": "53a099ef742df9362ce6b6db6971a4d753b5cf7b4e63d7f943bc364acaf4fc46"
+              }
+            ]
+          },
+          {
+            "from": "mcp_4:admit",
+            "to": "mcp_4:release",
+            "evidence": [
+              {
+                "rule": "request_before_response",
+                "source": "mcp:4",
+                "sha256": "a9fb9c1112e9ae9581f0ac158bdd6aa403e053ff0057a368e0b4a2676e27135c"
+              }
+            ]
+          },
+          {
+            "from": "mcp_4:admit",
+            "to": "mcp_7:admit",
+            "evidence": [
+              {
+                "rule": "cancellation_target",
+                "source": "mcp:7",
+                "sha256": "4ae497b1fe6449706dd2bdbe18fd5ab170fc354881c0b6db36edde68dc98ba39"
+              }
+            ]
+          },
+          {
+            "from": "mcp_5:admit",
+            "to": "mcp_5:release",
+            "evidence": [
+              {
+                "rule": "request_before_response",
+                "source": "mcp:5",
+                "sha256": "a948afb90cad9df71f54e39cd243c467d6a90518e4eba9dc5c0faff92fa9e13a"
+              }
+            ]
+          },
+          {
+            "from": "mcp_5:release",
+            "to": "mcp_7:admit",
+            "evidence": [
+              {
+                "rule": "user_declaration",
+                "source": "declarations",
+                "sha256": "7cfa291cc68c6108f74c7893e2064f12dd73d496fa531e4dce56e529eac8543a",
+                "detail": "application cancels slow work after audit returns"
+              }
+            ]
+          },
+          {
+            "from": "mcp_7:admit",
+            "to": "mcp_7:release",
+            "evidence": [
+              {
+                "rule": "request_before_response",
+                "source": "mcp:7",
+                "sha256": "c48cea4dede79bcb43cf1a71ffd222142ca8bad6093781cb4900872f9aec1d49"
+              }
+            ]
+          },
+          {
+            "from": "mcp_7:release",
+            "to": "mcp_4:release",
+            "evidence": [
+              {
+                "rule": "cancelled_without_response",
+                "source": "mcp:7",
+                "sha256": "4ae497b1fe6449706dd2bdbe18fd5ab170fc354881c0b6db36edde68dc98ba39"
+              }
+            ]
+          }
+        ],
+        "issues": [
+          {
+            "id": "unobserved_dependencies_1af39a22f6df",
+            "kind": "unobserved_dependencies",
+            "detail": "recordings cannot establish the absence of hidden application dependencies; review before scheduling",
+            "blocking": false
+          }
+        ],
+        "review": "fixture dependencies are explicitly declared; remaining requests are independent"
+      },
+      "schedule": {
+        "id": "causal_0ce8512cbfe7d265736f",
+        "graph_hash": "7772afcfe11da06eb4b0e39079794e81a44cc3d2afa28333e4d99cb894622544",
+        "order": [
+          "mcp_1:admit",
+          "mcp_1:release",
+          "mcp_3:admit",
+          "mcp_3:release",
+          "mcp_4:admit",
+          "mcp_5:admit",
+          "mcp_5:release",
+          "mcp_7:admit",
+          "mcp_7:release",
+          "mcp_4:release"
+        ]
+      },
+      "timeout": "5s"
+    },
+    "case": {
+      "id": "explore_916f44b503c6066c14ee",
+      "description": "causal admission and response-release exploration",
+      "category": "exploration",
+      "severity": "high",
+      "schedule_id": "causal_0ce8512cbfe7d265736f"
+    }
+  },
+  "assertion": "state:database",
+  "check_ids": [
+    "database",
+    "filesystem"
+  ],
+  "requires_setup": true,
+  "timeout": 10000000000,
+  "check_timeout": 5000000000,
+  "files": {
+    "incident/declarations.json": "a6fd6b387a52d15d564bbac541909c84a65170e5e1d4304706d3440d0242620b",
+    "incident/inbound.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "incident/incident.json": "0421214960441d55a9859ecf90ddb72f90b7ca185481b2154652c40f392d63af",
+    "incident/mcp.log": "dd1ae1ff8038ebff19756d6a77114e1cc0e1dbbbe156a003af253adea5d2311a",
+    "incident/outbound.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "incident/replay.yaml": "c7ceaa083a75eb31a5d12854a179a119798a05050114653dc80ce04c3ba975ca"
+  }
+}

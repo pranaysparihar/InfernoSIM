@@ -1,0 +1,180 @@
+{
+  "python": "3.14.6",
+  "platform": "Darwin/arm64",
+  "sdks": {
+    "openai": "3.29.0",
+    "anthropic": "1.13.0",
+    "ollama": "0.6.3"
+  },
+  "passed": true,
+  "cases": [
+    {
+      "format": "responses.sse",
+      "mode": "baseline",
+      "write_chunk_size": 1,
+      "sha256": "7df67a356e87299a29a28cb752a184d00a8d05ae7b89d40d4e2348f7a36adb0b",
+      "passed": true
+    },
+    {
+      "format": "responses.sse",
+      "mode": "baseline",
+      "write_chunk_size": 17,
+      "sha256": "7df67a356e87299a29a28cb752a184d00a8d05ae7b89d40d4e2348f7a36adb0b",
+      "passed": true
+    },
+    {
+      "format": "responses.sse",
+      "mode": "baseline",
+      "write_chunk_size": 4096,
+      "sha256": "7df67a356e87299a29a28cb752a184d00a8d05ae7b89d40d4e2348f7a36adb0b",
+      "passed": true
+    },
+    {
+      "format": "responses.sse",
+      "mode": "mutated",
+      "write_chunk_size": 1,
+      "sha256": "322f41855663eafa2af3a106bb74effb9a449444abbb625dc9fb3bd7df03e99a",
+      "passed": true
+    },
+    {
+      "format": "responses.sse",
+      "mode": "mutated",
+      "write_chunk_size": 17,
+      "sha256": "322f41855663eafa2af3a106bb74effb9a449444abbb625dc9fb3bd7df03e99a",
+      "passed": true
+    },
+    {
+      "format": "responses.sse",
+      "mode": "mutated",
+      "write_chunk_size": 4096,
+      "sha256": "322f41855663eafa2af3a106bb74effb9a449444abbb625dc9fb3bd7df03e99a",
+      "passed": true
+    },
+    {
+      "format": "chat.sse",
+      "mode": "baseline",
+      "write_chunk_size": 1,
+      "sha256": "d5be45a41b9617473cf7efb236f5566ba8e138419e2031b2f6103a86c83612bb",
+      "passed": true
+    },
+    {
+      "format": "chat.sse",
+      "mode": "baseline",
+      "write_chunk_size": 17,
+      "sha256": "d5be45a41b9617473cf7efb236f5566ba8e138419e2031b2f6103a86c83612bb",
+      "passed": true
+    },
+    {
+      "format": "chat.sse",
+      "mode": "baseline",
+      "write_chunk_size": 4096,
+      "sha256": "d5be45a41b9617473cf7efb236f5566ba8e138419e2031b2f6103a86c83612bb",
+      "passed": true
+    },
+    {
+      "format": "chat.sse",
+      "mode": "mutated",
+      "write_chunk_size": 1,
+      "sha256": "43d9435b2f6ff5c4a0dcf168179497ee3d42f10dc16b7ceea8af239a4167029d",
+      "passed": true
+    },
+    {
+      "format": "chat.sse",
+      "mode": "mutated",
+      "write_chunk_size": 17,
+      "sha256": "43d9435b2f6ff5c4a0dcf168179497ee3d42f10dc16b7ceea8af239a4167029d",
+      "passed": true
+    },
+    {
+      "format": "chat.sse",
+      "mode": "mutated",
+      "write_chunk_size": 4096,
+      "sha256": "43d9435b2f6ff5c4a0dcf168179497ee3d42f10dc16b7ceea8af239a4167029d",
+      "passed": true
+    },
+    {
+      "format": "anthropic.sse",
+      "mode": "baseline",
+      "write_chunk_size": 1,
+      "sha256": "36cabb6347861d6f3c9da4cce95d7cd9511bfb6b33bf5a494f345fd9a3b0f0d8",
+      "passed": true
+    },
+    {
+      "format": "anthropic.sse",
+      "mode": "baseline",
+      "write_chunk_size": 17,
+      "sha256": "36cabb6347861d6f3c9da4cce95d7cd9511bfb6b33bf5a494f345fd9a3b0f0d8",
+      "passed": true
+    },
+    {
+      "format": "anthropic.sse",
+      "mode": "baseline",
+      "write_chunk_size": 4096,
+      "sha256": "36cabb6347861d6f3c9da4cce95d7cd9511bfb6b33bf5a494f345fd9a3b0f0d8",
+      "passed": true
+    },
+    {
+      "format": "anthropic.sse",
+      "mode": "mutated",
+      "write_chunk_size": 1,
+      "sha256": "d6e8bf62916780e270f2f62c46775f393c109881023141b6a9b31bb4f5871983",
+      "passed": true
+    },
+    {
+      "format": "anthropic.sse",
+      "mode": "mutated",
+      "write_chunk_size": 17,
+      "sha256": "d6e8bf62916780e270f2f62c46775f393c109881023141b6a9b31bb4f5871983",
+      "passed": true
+    },
+    {
+      "format": "anthropic.sse",
+      "mode": "mutated",
+      "write_chunk_size": 4096,
+      "sha256": "d6e8bf62916780e270f2f62c46775f393c109881023141b6a9b31bb4f5871983",
+      "passed": true
+    },
+    {
+      "format": "ollama.ndjson",
+      "mode": "baseline",
+      "write_chunk_size": 1,
+      "sha256": "d691962d32b651122abfd0693d17f6c4cb08211b91a4b61b4b3e39d35925449c",
+      "passed": true
+    },
+    {
+      "format": "ollama.ndjson",
+      "mode": "baseline",
+      "write_chunk_size": 17,
+      "sha256": "d691962d32b651122abfd0693d17f6c4cb08211b91a4b61b4b3e39d35925449c",
+      "passed": true
+    },
+    {
+      "format": "ollama.ndjson",
+      "mode": "baseline",
+      "write_chunk_size": 4096,
+      "sha256": "d691962d32b651122abfd0693d17f6c4cb08211b91a4b61b4b3e39d35925449c",
+      "passed": true
+    },
+    {
+      "format": "ollama.ndjson",
+      "mode": "mutated",
+      "write_chunk_size": 1,
+      "sha256": "3859f54f5077add5e99e4120f5e4b5cf78c83501902d46eb9781eef65836b943",
+      "passed": true
+    },
+    {
+      "format": "ollama.ndjson",
+      "mode": "mutated",
+      "write_chunk_size": 17,
+      "sha256": "3859f54f5077add5e99e4120f5e4b5cf78c83501902d46eb9781eef65836b943",
+      "passed": true
+    },
+    {
+      "format": "ollama.ndjson",
+      "mode": "mutated",
+      "write_chunk_size": 4096,
+      "sha256": "3859f54f5077add5e99e4120f5e4b5cf78c83501902d46eb9781eef65836b943",
+      "passed": true
+    }
+  ]
+}

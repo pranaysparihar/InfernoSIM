@@ -1,0 +1,40 @@
+{
+  "review": "bounded synthetic provider; all application dependencies declared; retry/cancel branches may interleave",
+  "edges": [
+    {
+      "from": "mcp_3:release",
+      "to": "original_response:admit",
+      "reason": "explicit fixture checkpoint or awaited continuation; provider commit is separate from response delivery"
+    },
+    {
+      "from": "original_response:release",
+      "to": "mcp_4:admit",
+      "reason": "explicit fixture checkpoint or awaited continuation; provider commit is separate from response delivery"
+    },
+    {
+      "from": "original_response:release",
+      "to": "retry_admit:admit",
+      "reason": "explicit fixture checkpoint or awaited continuation; provider commit is separate from response delivery"
+    },
+    {
+      "from": "mcp_4:admit",
+      "to": "mcp_5:admit",
+      "reason": "explicit fixture checkpoint or awaited continuation; provider commit is separate from response delivery"
+    },
+    {
+      "from": "mcp_5:release",
+      "to": "mcp_7:admit",
+      "reason": "explicit fixture checkpoint or awaited continuation; provider commit is separate from response delivery"
+    },
+    {
+      "from": "mcp_7:release",
+      "to": "cancel_observed:admit",
+      "reason": "explicit fixture checkpoint or awaited continuation; provider commit is separate from response delivery"
+    },
+    {
+      "from": "retry_admit:release",
+      "to": "retry_finished:admit",
+      "reason": "explicit fixture checkpoint or awaited continuation; provider commit is separate from response delivery"
+    }
+  ]
+}

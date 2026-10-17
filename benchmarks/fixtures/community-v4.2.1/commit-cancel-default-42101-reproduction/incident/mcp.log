@@ -1,0 +1,7 @@
+{"version": 1, "sequence": 1, "direction": "client_to_server", "message": {"jsonrpc": "2.0", "id": "init", "method": "initialize", "params": {"protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "recoverylab", "version": "1"}}}}
+{"version": 1, "sequence": 2, "direction": "server_to_client", "message": {"jsonrpc": "2.0", "id": "init", "result": {"protocolVersion": "2025-11-25", "capabilities": {"tools": {}}, "serverInfo": {"name": "fixture", "version": "1"}}}}
+{"version": 1, "sequence": 3, "direction": "client_to_server", "message": {"jsonrpc": "2.0", "method": "notifications/initialized"}}
+{"version": 1, "sequence": 4, "direction": "client_to_server", "message": {"jsonrpc": "2.0", "id": "slow", "method": "tools/call", "params": {"name": "slow", "arguments": {"business_key": "payment-1"}}}}
+{"version": 1, "sequence": 5, "direction": "client_to_server", "message": {"jsonrpc": "2.0", "id": "audit", "method": "tools/call", "params": {"name": "audit", "arguments": {"business_key": "payment-1"}}}}
+{"version": 1, "sequence": 6, "direction": "server_to_client", "message": {"jsonrpc": "2.0", "id": "audit", "result": {"ok": true}}}
+{"version": 1, "sequence": 7, "direction": "client_to_server", "message": {"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": "slow", "reason": "fixture cancellation"}}}

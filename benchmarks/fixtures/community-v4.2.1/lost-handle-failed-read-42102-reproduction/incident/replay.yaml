@@ -1,0 +1,66 @@
+target: ""
+time_scale: 0
+runs: 0
+safe_mode: false
+chaos:
+    latency:
+        request: 0
+        delay: ""
+state:
+    file: ""
+matching:
+    ignored_query_parameters: []
+    ignored_headers: []
+    ignored_json_paths: []
+    grpc:
+        proto_files: []
+        descriptor_sets: []
+        import_paths: []
+    rules: []
+scenarios: []
+templates:
+    seed: ""
+    max_output_bytes: 0
+stub:
+    https:
+        enabled: false
+        ca_dir: ""
+        allow_hosts: []
+workflows: []
+agent:
+    version: 1
+    enabled: true
+    adapters:
+        mcp: true
+        providers: []
+    effects: []
+    faults: []
+    assertions:
+        - id: recorded-only
+          type: no_unexpected_calls
+          effect: ""
+          tool: ""
+          max: 0
+          verification_tool: ""
+          verification_path: ""
+          verification_value: null
+          duration: ""
+          faults: []
+          include_baseline: false
+          require_exercised: false
+          path: ""
+          expected: null
+          compensation: ""
+          bind: []
+          max_age_calls: 0
+          version_path: ""
+          estimate_path: ""
+          price_per_token_microunits: 0
+    limits:
+        max_cases: 100
+        max_calls: 32
+        max_body_bytes: 16777216
+    metadata: {}
+    exploration:
+        pairwise: false
+    schedules: []

@@ -50,6 +50,8 @@ application's setup implementation as part of the checker.
 
 Only deliberately public config belongs in `public_environment` or config
 files. Never declare secrets: even a public hash can disclose a guessable secret.
+Keep secret values out of checker/setup command arguments, which are also hashed;
+provide credentials through caller-controlled secret storage instead.
 For secret-dependent settings, declare a non-secret opaque configuration
 revision and enforce that revision's mapping in your own CI secret store. The
 runner neither reads nor proves secret values from that revision. Unrelated

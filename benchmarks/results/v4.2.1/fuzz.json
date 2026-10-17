@@ -1,0 +1,75 @@
+{
+  "toolchain": "go1.27.2",
+  "planner": {
+    "seconds": 600.562,
+    "executions": 5810968,
+    "passed": true
+  },
+  "provider_streams": {
+    "seconds": 601.491,
+    "executions": 50072872,
+    "passed": true
+  },
+  "historical_smokes": [
+    {
+      "target": "matcher",
+      "requested_seconds": 10,
+      "passed": true,
+      "log_sha256": "2956095055050ed41b4a3465e20f3fc4d299d630c74331a4f650b3175f38dd9c"
+    },
+    {
+      "target": "grpc",
+      "requested_seconds": 10,
+      "passed": true,
+      "log_sha256": "762c5728a7847f95b504cda2703b0c117c558ccba5e39dcbf1458aa59a4f416b"
+    },
+    {
+      "target": "template",
+      "requested_seconds": 10,
+      "passed": true,
+      "log_sha256": "36a19094c93e0241466400fef2556be2155de57db9fbab07e6bfcc9c4755f672"
+    },
+    {
+      "target": "contract",
+      "requested_seconds": 10,
+      "passed": true,
+      "log_sha256": "9bcb8c7c59e9d22b9016322764de96e0acd1916a92f48a485dfbe1371ddad17a"
+    },
+    {
+      "target": "bundle",
+      "requested_seconds": 10,
+      "passed": true,
+      "log_sha256": "c8ed2c44d1f68f3535fbe767b114896e5781f4184068ce43f1c9a03e037c15ef"
+    },
+    {
+      "target": "heal",
+      "requested_seconds": 10,
+      "passed": true,
+      "log_sha256": "b8128375add4c04ca05e364b05b6277638cbc02a1ba041f24eb801a9fed9ad92"
+    },
+    {
+      "target": "message",
+      "requested_seconds": 10,
+      "passed": true,
+      "log_sha256": "7914ae3563b55ba6b4de8c5e9ee3bd56bbc596867beb5612f51c41cbbd55793f"
+    },
+    {
+      "target": "jsonpath",
+      "requested_seconds": 10,
+      "passed": true,
+      "log_sha256": "7d0c5cd21325606ce6af682daceae44d515d7725396ee3d702e993eef28e747d"
+    },
+    {
+      "target": "agent",
+      "requested_seconds": 10,
+      "passed": true,
+      "log_sha256": "e380c7f1a28e1c616537a607a97448fcb55c3420aa0dbd4e3c0a99bc5bc7bb8f"
+    },
+    {
+      "target": "mcp",
+      "requested_seconds": 10,
+      "passed": true,
+      "log_sha256": "73628a81f073d663cb6d4acde52803392c6f5514eadd472a9b717c8bcd00e423"
+    }
+  ]
+}

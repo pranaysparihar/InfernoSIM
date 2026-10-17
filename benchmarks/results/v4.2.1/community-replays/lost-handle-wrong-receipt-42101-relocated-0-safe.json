@@ -1,0 +1,233 @@
+{
+  "case_identity": "case_73b642f9c7990c978dcf1a3e",
+  "checker": {
+    "version": 1,
+    "digest": "45430ccad09541fa7b2d725bf5040b0ee73522b046e5025c76f746ad5d94b0fe",
+    "scope": "declared-inputs",
+    "files": {
+      "contract": "e890f50e84d70e94bd57640ca455f7a0b2ada36795be42c14c9aa2df6c2e6385",
+      "executable": "b502cb4c5b46b8d4192ec6bcb600ce8922f1afc396fcf646e8765c6eba74a0bf",
+      "provider": "a6ae94893cd7a81569109d352eed8b9f79ba002adb7e6420851c00205cea64e9",
+      "script": "c89e6d5dc7ac428b41777e37f97cb2e8115c230f5070e43f648dcb830d331dea"
+    },
+    "contract": "37e0c17974490a96469f040eb71d68eb9c4ab36accf5d5d77124d068805d6839",
+    "declarations": "236e4b0bb910cce0d6f04d4f2cc35ce854ceb57d41bf7e205331e8fea8dd0adb"
+  },
+  "checker_status": "pinned/declared-inputs",
+  "causal_execution": {
+    "schedule_id": "causal_28226cdf8da682500068",
+    "graph_hash": "2ea9edcfa9aa0406943acc3ec49fb434a735e66db2c631cc007a35ef9104cf89",
+    "observed": [
+      "submitted:admit",
+      "submitted:release",
+      "status:admit",
+      "status:release",
+      "retry_considered:admit",
+      "retry_considered:release",
+      "client_done:admit",
+      "client_done:release",
+      "drained:admit",
+      "drained:release",
+      "receipt_read:admit",
+      "receipt_read:release"
+    ],
+    "bindings": [
+      {
+        "operation": "client_done",
+        "runtime_id_hash": "6b9356c64177bed19b21830e2069bed8be2514a5197f5b5e504cefd6415beb69"
+      },
+      {
+        "operation": "drained",
+        "runtime_id_hash": "d2e37943c7946b34109985b3b68a89c8f1203bd391ee3c4b14863a71d0179f7f"
+      },
+      {
+        "operation": "receipt_read",
+        "runtime_id_hash": "e5f25dc2690512a617a84558e6916ce6a3cd20b893432cbfe826277e10fdfaa3"
+      },
+      {
+        "operation": "retry_considered",
+        "runtime_id_hash": "4ceae1003bc3ffde2be9bd4557ffa48bda9a17d4d82896ffe2f3ef9c7abbb730"
+      },
+      {
+        "operation": "status",
+        "runtime_id_hash": "a61d53d7ea3117698b17bc59b003199c7e3057c62f94dcffea7d1dad554ad775"
+      },
+      {
+        "operation": "submitted",
+        "runtime_id_hash": "f270a3a7b2db088518ab5c6d9c4484072aeb9acc0627c4d8b5a0e04e3bfc7152"
+      }
+    ],
+    "completed": true
+  },
+  "version": 1,
+  "case": {
+    "id": "explore_f86f545a765a8edc0a45",
+    "description": "causal admission and response-release exploration",
+    "category": "exploration",
+    "severity": "high",
+    "schedule_id": "causal_28226cdf8da682500068"
+  },
+  "passed": true,
+  "duration": 397878459,
+  "process": {
+    "exit_code": 0,
+    "stdout": "{\"decision\": {\"observation\": {\"bound_to_original\": false, \"read_ok\": true, \"receipt\": {\"admitted_after_cancel\": 0, \"business\": \"payment-1\", \"handle\": \"19ba3a17-831a-4401-b70c-fc4bd3f36528\", \"idem_key\": \"separate-identical-request\", \"request_hash\": \"858bd0382cb5912ef6f44698d0d43497db45c8c1170b134f8fad8615b5ecd89a\", \"role\": \"unrelated\", \"scope\": \"synthetic/account-1/test\", \"state\": \"complete\"}}, \"outcome\": \"unknown\", \"retry_permission\": \"none\"}, \"destination\": {\"audit\": [{\"detail\": \"original\", \"handle\": \"bc92c562-1208-4bb0-b3ef-a25461eb94ad\", \"kind\": \"admit\", \"seq\": 1}, {\"detail\": \"original\", \"handle\": \"bc92c562-1208-4bb0-b3ef-a25461eb94ad\", \"kind\": \"commit\", \"seq\": 2}, {\"detail\": \"unrelated\", \"handle\": \"19ba3a17-831a-4401-b70c-fc4bd3f36528\", \"kind\": \"admit\", \"seq\": 3}, {\"detail\": \"unrelated\", \"handle\": \"19ba3a17-831a-4401-b70c-fc4bd3f36528\", \"kind\": \"commit\", \"seq\": 4}, {\"detail\": \"wrong-receipt\", \"handle\": \"\", \"kind\": \"content_lookup\", \"seq\": 5}, {\"detail\": \"all admitted executions settled\", \"handle\": \"\", \"kind\": \"drained\", \"seq\": 6}], \"executions\": [{\"admitted_after_cancel\": 0, \"business\": \"payment-1\", \"handle\": \"bc92c562-1208-4bb0-b3ef-a25461eb94ad\", \"idem_key\": \"payment-1\", \"request_hash\": \"858bd0382cb5912ef6f44698d0d43497db45c8c1170b134f8fad8615b5ecd89a\", \"role\": \"original\", \"scope\": \"synthetic/account-1/test\", \"state\": \"complete\"}, {\"admitted_after_cancel\": 0, \"business\": \"payment-1\", \"handle\": \"19ba3a17-831a-4401-b70c-fc4bd3f36528\", \"idem_key\": \"separate-identical-request\", \"request_hash\": \"858bd0382cb5912ef6f44698d0d43497db45c8c1170b134f8fad8615b5ecd89a\", \"role\": \"unrelated\", \"scope\": \"synthetic/account-1/test\", \"state\": \"complete\"}], \"history\": [{\"handle\": \"bc92c562-1208-4bb0-b3ef-a25461eb94ad\", \"role\": \"original\", \"seq\": 1}, {\"handle\": \"19ba3a17-831a-4401-b70c-fc4bd3f36528\", \"role\": \"unrelated\", \"seq\": 2}], \"objects\": [{\"business\": \"payment-1\", \"handle\": \"bc92c562-1208-4bb0-b3ef-a25461eb94ad\"}, {\"business\": \"payment-1\", \"handle\": \"19ba3a17-831a-4401-b70c-fc4bd3f36528\"}]}, \"scenario\": \"lost-handle\", \"variant\": \"wrong-receipt\"}\n",
+    "output_truncated": false,
+    "timed_out": false,
+    "restarted": true
+  },
+  "simulator": {
+    "expected": 6,
+    "observed": 6,
+    "unexpected": false,
+    "agent": {
+      "causal": {
+        "schedule_id": "causal_28226cdf8da682500068",
+        "graph_hash": "2ea9edcfa9aa0406943acc3ec49fb434a735e66db2c631cc007a35ef9104cf89",
+        "observed": [
+          "submitted:admit",
+          "submitted:release",
+          "status:admit",
+          "status:release",
+          "retry_considered:admit",
+          "retry_considered:release",
+          "client_done:admit",
+          "client_done:release",
+          "drained:admit",
+          "drained:release",
+          "receipt_read:admit",
+          "receipt_read:release"
+        ],
+        "bindings": [
+          {
+            "operation": "client_done",
+            "runtime_id_hash": "6b9356c64177bed19b21830e2069bed8be2514a5197f5b5e504cefd6415beb69"
+          },
+          {
+            "operation": "drained",
+            "runtime_id_hash": "d2e37943c7946b34109985b3b68a89c8f1203bd391ee3c4b14863a71d0179f7f"
+          },
+          {
+            "operation": "receipt_read",
+            "runtime_id_hash": "e5f25dc2690512a617a84558e6916ce6a3cd20b893432cbfe826277e10fdfaa3"
+          },
+          {
+            "operation": "retry_considered",
+            "runtime_id_hash": "4ceae1003bc3ffde2be9bd4557ffa48bda9a17d4d82896ffe2f3ef9c7abbb730"
+          },
+          {
+            "operation": "status",
+            "runtime_id_hash": "a61d53d7ea3117698b17bc59b003199c7e3057c62f94dcffea7d1dad554ad775"
+          },
+          {
+            "operation": "submitted",
+            "runtime_id_hash": "f270a3a7b2db088518ab5c6d9c4484072aeb9acc0627c4d8b5a0e04e3bfc7152"
+          }
+        ],
+        "completed": true
+      },
+      "version": 1,
+      "calls": [
+        {
+          "admission_boundary": 1,
+          "release_boundary": 2,
+          "sequence": 1,
+          "kind": "mcp_tool_result",
+          "tool": "submitted",
+          "call_id": "submitted",
+          "usage_known": false
+        },
+        {
+          "admission_boundary": 3,
+          "release_boundary": 4,
+          "sequence": 2,
+          "kind": "mcp_tool_result",
+          "tool": "status",
+          "call_id": "status",
+          "usage_known": false
+        },
+        {
+          "admission_boundary": 5,
+          "release_boundary": 6,
+          "sequence": 3,
+          "kind": "mcp_tool_result",
+          "tool": "retry_considered",
+          "call_id": "retry_considered",
+          "usage_known": false
+        },
+        {
+          "admission_boundary": 7,
+          "release_boundary": 8,
+          "sequence": 4,
+          "kind": "mcp_tool_result",
+          "tool": "client_done",
+          "call_id": "client_done",
+          "usage_known": false
+        },
+        {
+          "admission_boundary": 9,
+          "release_boundary": 10,
+          "sequence": 5,
+          "kind": "mcp_tool_result",
+          "tool": "drained",
+          "call_id": "drained",
+          "usage_known": false
+        },
+        {
+          "admission_boundary": 11,
+          "release_boundary": 12,
+          "sequence": 6,
+          "kind": "mcp_tool_result",
+          "tool": "receipt_read",
+          "call_id": "receipt_read",
+          "usage_known": false
+        }
+      ],
+      "limit_exceeded": false,
+      "schedule_id": "causal_28226cdf8da682500068",
+      "schedule_steps": 12,
+      "schedule_completed": 12
+    }
+  },
+  "assertions": [
+    {
+      "id": "recorded-only",
+      "type": "no_unexpected_calls",
+      "passed": true,
+      "message": "all agent outbound calls stayed within the recorded universe",
+      "coverage": "exercised"
+    },
+    {
+      "id": "schedule:causal_28226cdf8da682500068",
+      "type": "schedule_complete",
+      "passed": true,
+      "message": "schedule admitted 12/12 steps",
+      "coverage": "exercised"
+    },
+    {
+      "id": "state:authorization",
+      "type": "application_state",
+      "passed": true,
+      "message": "independent application-state check passed",
+      "coverage": "exercised"
+    },
+    {
+      "id": "state:destination",
+      "type": "application_state",
+      "passed": true,
+      "message": "independent application-state check passed",
+      "coverage": "exercised"
+    },
+    {
+      "id": "state:knowledge",
+      "type": "application_state",
+      "passed": true,
+      "message": "independent application-state check passed",
+      "coverage": "exercised"
+    }
+  ],
+  "scope_hash": "de6aa1e15589b7a0a4be5fc7a0697bfc9d6b55e2a6f76a3e98009daf96622a45",
+  "restart_after_call": 1,
+  "state_check_hash": "45430ccad09541fa7b2d725bf5040b0ee73522b046e5025c76f746ad5d94b0fe",
+  "setup_command_hash": "3c01e4c1b89f10e290adf879b54ab734830c0e6ebdc2c0e68babbc3fa68ca761"
+}
