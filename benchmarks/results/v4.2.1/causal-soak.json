@@ -1,0 +1,3855 @@
+{
+  "platform": "darwin/arm64",
+  "started": "2026-10-17T21:37:05.724718Z",
+  "duration": 7200294664708,
+  "required_duration": 7200000000000,
+  "binary_sha256": "1d36e8155635743575d058796bebb767f39f0fdd4d22bb7c6ffd7f6e833dd178",
+  "cycles": 4239,
+  "runs": 42390,
+  "passed": true,
+  "baseline": {
+    "cycle": 3,
+    "heap_bytes": 1134160,
+    "rss_bytes": 81575936,
+    "goroutines": 1,
+    "file_descriptors": 6,
+    "remaining_descendants": 0,
+    "orphaned_fixture_processes": 0
+  },
+  "peaks": {
+    "cycle": 0,
+    "heap_bytes": 1427152,
+    "rss_bytes": 82886656,
+    "goroutines": 1,
+    "file_descriptors": 6,
+    "remaining_descendants": 0,
+    "orphaned_fixture_processes": 0
+  },
+  "samples": [
+    {
+      "cycle": 3,
+      "heap_bytes": 1134160,
+      "rss_bytes": 81575936,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 10,
+      "heap_bytes": 1218552,
+      "rss_bytes": 81838080,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 20,
+      "heap_bytes": 1237792,
+      "rss_bytes": 81870848,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 30,
+      "heap_bytes": 1302736,
+      "rss_bytes": 81952768,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 40,
+      "heap_bytes": 1254632,
+      "rss_bytes": 81985536,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 50,
+      "heap_bytes": 1318392,
+      "rss_bytes": 82034688,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 60,
+      "heap_bytes": 1318712,
+      "rss_bytes": 82051072,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 70,
+      "heap_bytes": 1263384,
+      "rss_bytes": 82051072,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 80,
+      "heap_bytes": 1323352,
+      "rss_bytes": 82132992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 90,
+      "heap_bytes": 1317088,
+      "rss_bytes": 82280448,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 100,
+      "heap_bytes": 1324352,
+      "rss_bytes": 82296832,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 110,
+      "heap_bytes": 1313768,
+      "rss_bytes": 82296832,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 120,
+      "heap_bytes": 1342152,
+      "rss_bytes": 82362368,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 130,
+      "heap_bytes": 1298728,
+      "rss_bytes": 82362368,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 140,
+      "heap_bytes": 1309984,
+      "rss_bytes": 82362368,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 150,
+      "heap_bytes": 1363672,
+      "rss_bytes": 82362368,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 160,
+      "heap_bytes": 1360024,
+      "rss_bytes": 82378752,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 170,
+      "heap_bytes": 1326928,
+      "rss_bytes": 82378752,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 180,
+      "heap_bytes": 1319152,
+      "rss_bytes": 82378752,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 190,
+      "heap_bytes": 1354464,
+      "rss_bytes": 82395136,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 200,
+      "heap_bytes": 1360032,
+      "rss_bytes": 82411520,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 210,
+      "heap_bytes": 1358256,
+      "rss_bytes": 82427904,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 220,
+      "heap_bytes": 1368176,
+      "rss_bytes": 82477056,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 230,
+      "heap_bytes": 1342584,
+      "rss_bytes": 82477056,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 240,
+      "heap_bytes": 1362456,
+      "rss_bytes": 82477056,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 250,
+      "heap_bytes": 1354448,
+      "rss_bytes": 82477056,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 260,
+      "heap_bytes": 1360712,
+      "rss_bytes": 82477056,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 270,
+      "heap_bytes": 1360472,
+      "rss_bytes": 82493440,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 280,
+      "heap_bytes": 1354768,
+      "rss_bytes": 82493440,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 290,
+      "heap_bytes": 1365640,
+      "rss_bytes": 82509824,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 300,
+      "heap_bytes": 1352976,
+      "rss_bytes": 82509824,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 310,
+      "heap_bytes": 1348672,
+      "rss_bytes": 82509824,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 320,
+      "heap_bytes": 1361448,
+      "rss_bytes": 82509824,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 330,
+      "heap_bytes": 1321248,
+      "rss_bytes": 82509824,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 340,
+      "heap_bytes": 1354416,
+      "rss_bytes": 82509824,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 350,
+      "heap_bytes": 1358960,
+      "rss_bytes": 82509824,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 360,
+      "heap_bytes": 1355376,
+      "rss_bytes": 82509824,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 370,
+      "heap_bytes": 1352400,
+      "rss_bytes": 82509824,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 380,
+      "heap_bytes": 1344840,
+      "rss_bytes": 82526208,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 390,
+      "heap_bytes": 1357440,
+      "rss_bytes": 82526208,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 400,
+      "heap_bytes": 1370200,
+      "rss_bytes": 82526208,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 410,
+      "heap_bytes": 1359856,
+      "rss_bytes": 82526208,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 420,
+      "heap_bytes": 1374360,
+      "rss_bytes": 82526208,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 430,
+      "heap_bytes": 1366640,
+      "rss_bytes": 82575360,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 440,
+      "heap_bytes": 1364768,
+      "rss_bytes": 82575360,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 450,
+      "heap_bytes": 1329184,
+      "rss_bytes": 82575360,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 460,
+      "heap_bytes": 1327568,
+      "rss_bytes": 82575360,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 470,
+      "heap_bytes": 1325152,
+      "rss_bytes": 82608128,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 480,
+      "heap_bytes": 1333328,
+      "rss_bytes": 82608128,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 490,
+      "heap_bytes": 1357968,
+      "rss_bytes": 82640896,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 500,
+      "heap_bytes": 1370560,
+      "rss_bytes": 82640896,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 510,
+      "heap_bytes": 1330800,
+      "rss_bytes": 82657280,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 520,
+      "heap_bytes": 1378680,
+      "rss_bytes": 82722816,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 530,
+      "heap_bytes": 1320864,
+      "rss_bytes": 82722816,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 540,
+      "heap_bytes": 1312648,
+      "rss_bytes": 82722816,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 550,
+      "heap_bytes": 1361296,
+      "rss_bytes": 82722816,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 560,
+      "heap_bytes": 1345344,
+      "rss_bytes": 82722816,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 570,
+      "heap_bytes": 1354176,
+      "rss_bytes": 82722816,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 580,
+      "heap_bytes": 1361216,
+      "rss_bytes": 82739200,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 590,
+      "heap_bytes": 1380312,
+      "rss_bytes": 82739200,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 600,
+      "heap_bytes": 1372984,
+      "rss_bytes": 82739200,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 610,
+      "heap_bytes": 1321520,
+      "rss_bytes": 82739200,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 620,
+      "heap_bytes": 1358272,
+      "rss_bytes": 82739200,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 630,
+      "heap_bytes": 1373976,
+      "rss_bytes": 82739200,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 640,
+      "heap_bytes": 1380360,
+      "rss_bytes": 82739200,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 650,
+      "heap_bytes": 1365168,
+      "rss_bytes": 82739200,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 660,
+      "heap_bytes": 1368800,
+      "rss_bytes": 82739200,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 670,
+      "heap_bytes": 1356144,
+      "rss_bytes": 82755584,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 680,
+      "heap_bytes": 1363008,
+      "rss_bytes": 82755584,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 690,
+      "heap_bytes": 1311624,
+      "rss_bytes": 82755584,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 700,
+      "heap_bytes": 1361240,
+      "rss_bytes": 82755584,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 710,
+      "heap_bytes": 1373960,
+      "rss_bytes": 82755584,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 720,
+      "heap_bytes": 1318832,
+      "rss_bytes": 82755584,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 730,
+      "heap_bytes": 1366520,
+      "rss_bytes": 82755584,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 740,
+      "heap_bytes": 1372184,
+      "rss_bytes": 82755584,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 750,
+      "heap_bytes": 1367744,
+      "rss_bytes": 82771968,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 760,
+      "heap_bytes": 1364848,
+      "rss_bytes": 82771968,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 770,
+      "heap_bytes": 1367248,
+      "rss_bytes": 82771968,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 780,
+      "heap_bytes": 1368320,
+      "rss_bytes": 82771968,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 790,
+      "heap_bytes": 1379976,
+      "rss_bytes": 82821120,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 800,
+      "heap_bytes": 1363448,
+      "rss_bytes": 82821120,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 810,
+      "heap_bytes": 1379192,
+      "rss_bytes": 82821120,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 820,
+      "heap_bytes": 1380864,
+      "rss_bytes": 82837504,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 830,
+      "heap_bytes": 1333920,
+      "rss_bytes": 82837504,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 840,
+      "heap_bytes": 1346072,
+      "rss_bytes": 82837504,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 850,
+      "heap_bytes": 1390448,
+      "rss_bytes": 82837504,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 860,
+      "heap_bytes": 1381176,
+      "rss_bytes": 82837504,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 870,
+      "heap_bytes": 1386552,
+      "rss_bytes": 82837504,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 880,
+      "heap_bytes": 1385840,
+      "rss_bytes": 82837504,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 890,
+      "heap_bytes": 1345640,
+      "rss_bytes": 82837504,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 900,
+      "heap_bytes": 1349592,
+      "rss_bytes": 82837504,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 910,
+      "heap_bytes": 1386736,
+      "rss_bytes": 82853888,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 920,
+      "heap_bytes": 1339600,
+      "rss_bytes": 82853888,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 930,
+      "heap_bytes": 1386016,
+      "rss_bytes": 82853888,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 940,
+      "heap_bytes": 1378808,
+      "rss_bytes": 82853888,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 950,
+      "heap_bytes": 1384688,
+      "rss_bytes": 82853888,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 960,
+      "heap_bytes": 1357872,
+      "rss_bytes": 82853888,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 970,
+      "heap_bytes": 1380640,
+      "rss_bytes": 82853888,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 980,
+      "heap_bytes": 1364736,
+      "rss_bytes": 82853888,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 990,
+      "heap_bytes": 1379472,
+      "rss_bytes": 82853888,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1000,
+      "heap_bytes": 1319152,
+      "rss_bytes": 82853888,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1010,
+      "heap_bytes": 1371640,
+      "rss_bytes": 82853888,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1020,
+      "heap_bytes": 1381712,
+      "rss_bytes": 82853888,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1030,
+      "heap_bytes": 1373624,
+      "rss_bytes": 82853888,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1040,
+      "heap_bytes": 1335240,
+      "rss_bytes": 82853888,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1050,
+      "heap_bytes": 1361656,
+      "rss_bytes": 82853888,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1060,
+      "heap_bytes": 1366936,
+      "rss_bytes": 82853888,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1070,
+      "heap_bytes": 1325632,
+      "rss_bytes": 82853888,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1080,
+      "heap_bytes": 1335696,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1090,
+      "heap_bytes": 1397216,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1100,
+      "heap_bytes": 1398432,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1110,
+      "heap_bytes": 1392864,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1120,
+      "heap_bytes": 1342448,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1130,
+      "heap_bytes": 1395248,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1140,
+      "heap_bytes": 1339648,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1150,
+      "heap_bytes": 1343976,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1160,
+      "heap_bytes": 1387104,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1170,
+      "heap_bytes": 1381320,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1180,
+      "heap_bytes": 1391680,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1190,
+      "heap_bytes": 1348568,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1200,
+      "heap_bytes": 1346776,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1210,
+      "heap_bytes": 1396032,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1220,
+      "heap_bytes": 1395136,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1230,
+      "heap_bytes": 1393920,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1240,
+      "heap_bytes": 1370752,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1250,
+      "heap_bytes": 1363976,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1260,
+      "heap_bytes": 1369480,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1270,
+      "heap_bytes": 1382944,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1280,
+      "heap_bytes": 1372456,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1290,
+      "heap_bytes": 1391528,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1300,
+      "heap_bytes": 1349896,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1310,
+      "heap_bytes": 1389984,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1320,
+      "heap_bytes": 1390272,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1330,
+      "heap_bytes": 1374136,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1340,
+      "heap_bytes": 1374952,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1350,
+      "heap_bytes": 1335648,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1360,
+      "heap_bytes": 1389072,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1370,
+      "heap_bytes": 1376680,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1380,
+      "heap_bytes": 1347352,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1390,
+      "heap_bytes": 1372472,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1400,
+      "heap_bytes": 1326896,
+      "rss_bytes": 82886656,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1410,
+      "heap_bytes": 1389344,
+      "rss_bytes": 82886656,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1420,
+      "heap_bytes": 1390832,
+      "rss_bytes": 82886656,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1430,
+      "heap_bytes": 1368872,
+      "rss_bytes": 82886656,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1440,
+      "heap_bytes": 1336216,
+      "rss_bytes": 82886656,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1450,
+      "heap_bytes": 1388760,
+      "rss_bytes": 82886656,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1460,
+      "heap_bytes": 1389232,
+      "rss_bytes": 82886656,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1470,
+      "heap_bytes": 1378936,
+      "rss_bytes": 82886656,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1480,
+      "heap_bytes": 1373448,
+      "rss_bytes": 82886656,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1490,
+      "heap_bytes": 1390880,
+      "rss_bytes": 82886656,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1500,
+      "heap_bytes": 1385464,
+      "rss_bytes": 82886656,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1510,
+      "heap_bytes": 1383160,
+      "rss_bytes": 82886656,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1520,
+      "heap_bytes": 1396000,
+      "rss_bytes": 82886656,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1530,
+      "heap_bytes": 1329664,
+      "rss_bytes": 82886656,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1540,
+      "heap_bytes": 1346088,
+      "rss_bytes": 82886656,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1550,
+      "heap_bytes": 1353048,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1560,
+      "heap_bytes": 1349928,
+      "rss_bytes": 82870272,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1570,
+      "heap_bytes": 1385880,
+      "rss_bytes": 32833536,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1580,
+      "heap_bytes": 1393312,
+      "rss_bytes": 32833536,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1590,
+      "heap_bytes": 1395120,
+      "rss_bytes": 31408128,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1600,
+      "heap_bytes": 1399472,
+      "rss_bytes": 31522816,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1610,
+      "heap_bytes": 1396376,
+      "rss_bytes": 31997952,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1620,
+      "heap_bytes": 1396672,
+      "rss_bytes": 31997952,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1630,
+      "heap_bytes": 1395352,
+      "rss_bytes": 31997952,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1640,
+      "heap_bytes": 1347088,
+      "rss_bytes": 31997952,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1650,
+      "heap_bytes": 1409760,
+      "rss_bytes": 32063488,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1660,
+      "heap_bytes": 1400544,
+      "rss_bytes": 32063488,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1670,
+      "heap_bytes": 1374632,
+      "rss_bytes": 32063488,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1680,
+      "heap_bytes": 1378568,
+      "rss_bytes": 32063488,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1690,
+      "heap_bytes": 1375728,
+      "rss_bytes": 32063488,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1700,
+      "heap_bytes": 1378840,
+      "rss_bytes": 32063488,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1710,
+      "heap_bytes": 1385496,
+      "rss_bytes": 32079872,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1720,
+      "heap_bytes": 1377848,
+      "rss_bytes": 32079872,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1730,
+      "heap_bytes": 1396288,
+      "rss_bytes": 32079872,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1740,
+      "heap_bytes": 1386512,
+      "rss_bytes": 32079872,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1750,
+      "heap_bytes": 1393240,
+      "rss_bytes": 32079872,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1760,
+      "heap_bytes": 1402216,
+      "rss_bytes": 32079872,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1770,
+      "heap_bytes": 1413040,
+      "rss_bytes": 32079872,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1780,
+      "heap_bytes": 1360376,
+      "rss_bytes": 32079872,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1790,
+      "heap_bytes": 1408608,
+      "rss_bytes": 32079872,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1800,
+      "heap_bytes": 1394696,
+      "rss_bytes": 32079872,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1810,
+      "heap_bytes": 1340112,
+      "rss_bytes": 32079872,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1820,
+      "heap_bytes": 1397800,
+      "rss_bytes": 32079872,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1830,
+      "heap_bytes": 1391704,
+      "rss_bytes": 32079872,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1840,
+      "heap_bytes": 1392616,
+      "rss_bytes": 32079872,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1850,
+      "heap_bytes": 1408056,
+      "rss_bytes": 32079872,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1860,
+      "heap_bytes": 1337040,
+      "rss_bytes": 32079872,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1870,
+      "heap_bytes": 1392416,
+      "rss_bytes": 32096256,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1880,
+      "heap_bytes": 1341032,
+      "rss_bytes": 32096256,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1890,
+      "heap_bytes": 1375688,
+      "rss_bytes": 32096256,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1900,
+      "heap_bytes": 1395360,
+      "rss_bytes": 32096256,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1910,
+      "heap_bytes": 1380408,
+      "rss_bytes": 32096256,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1920,
+      "heap_bytes": 1383112,
+      "rss_bytes": 32096256,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1930,
+      "heap_bytes": 1349064,
+      "rss_bytes": 32112640,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1940,
+      "heap_bytes": 1389104,
+      "rss_bytes": 32440320,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1950,
+      "heap_bytes": 1350056,
+      "rss_bytes": 32440320,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1960,
+      "heap_bytes": 1387112,
+      "rss_bytes": 32440320,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1970,
+      "heap_bytes": 1341984,
+      "rss_bytes": 32440320,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1980,
+      "heap_bytes": 1404952,
+      "rss_bytes": 32768000,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 1990,
+      "heap_bytes": 1399664,
+      "rss_bytes": 32768000,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2000,
+      "heap_bytes": 1345280,
+      "rss_bytes": 32768000,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2010,
+      "heap_bytes": 1348464,
+      "rss_bytes": 32768000,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2020,
+      "heap_bytes": 1397296,
+      "rss_bytes": 32768000,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2030,
+      "heap_bytes": 1352216,
+      "rss_bytes": 32768000,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2040,
+      "heap_bytes": 1340944,
+      "rss_bytes": 32768000,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2050,
+      "heap_bytes": 1399984,
+      "rss_bytes": 32768000,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2060,
+      "heap_bytes": 1399136,
+      "rss_bytes": 32768000,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2070,
+      "heap_bytes": 1385576,
+      "rss_bytes": 32768000,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2080,
+      "heap_bytes": 1384088,
+      "rss_bytes": 32768000,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2090,
+      "heap_bytes": 1337856,
+      "rss_bytes": 32768000,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2100,
+      "heap_bytes": 1401480,
+      "rss_bytes": 32768000,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2110,
+      "heap_bytes": 1390816,
+      "rss_bytes": 32784384,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2120,
+      "heap_bytes": 1389248,
+      "rss_bytes": 32784384,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2130,
+      "heap_bytes": 1378296,
+      "rss_bytes": 32784384,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2140,
+      "heap_bytes": 1378152,
+      "rss_bytes": 32784384,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2150,
+      "heap_bytes": 1367760,
+      "rss_bytes": 32784384,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2160,
+      "heap_bytes": 1392384,
+      "rss_bytes": 32784384,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2170,
+      "heap_bytes": 1406608,
+      "rss_bytes": 32784384,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2180,
+      "heap_bytes": 1393168,
+      "rss_bytes": 32784384,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2190,
+      "heap_bytes": 1352360,
+      "rss_bytes": 32784384,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2200,
+      "heap_bytes": 1383064,
+      "rss_bytes": 32800768,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2210,
+      "heap_bytes": 1353896,
+      "rss_bytes": 32833536,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2220,
+      "heap_bytes": 1389512,
+      "rss_bytes": 32833536,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2230,
+      "heap_bytes": 1398288,
+      "rss_bytes": 32833536,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2240,
+      "heap_bytes": 1403328,
+      "rss_bytes": 32833536,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2250,
+      "heap_bytes": 1404400,
+      "rss_bytes": 32833536,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2260,
+      "heap_bytes": 1397648,
+      "rss_bytes": 32833536,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2270,
+      "heap_bytes": 1389496,
+      "rss_bytes": 32833536,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2280,
+      "heap_bytes": 1342976,
+      "rss_bytes": 32833536,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2290,
+      "heap_bytes": 1399072,
+      "rss_bytes": 32833536,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2300,
+      "heap_bytes": 1399968,
+      "rss_bytes": 32833536,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2310,
+      "heap_bytes": 1392032,
+      "rss_bytes": 32833536,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2320,
+      "heap_bytes": 1353672,
+      "rss_bytes": 32833536,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2330,
+      "heap_bytes": 1399776,
+      "rss_bytes": 32833536,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2340,
+      "heap_bytes": 1393856,
+      "rss_bytes": 32833536,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2350,
+      "heap_bytes": 1401568,
+      "rss_bytes": 32833536,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2360,
+      "heap_bytes": 1335408,
+      "rss_bytes": 32833536,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2370,
+      "heap_bytes": 1348984,
+      "rss_bytes": 32833536,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2380,
+      "heap_bytes": 1398576,
+      "rss_bytes": 32833536,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2390,
+      "heap_bytes": 1340816,
+      "rss_bytes": 32899072,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2400,
+      "heap_bytes": 1399240,
+      "rss_bytes": 32931840,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2410,
+      "heap_bytes": 1357656,
+      "rss_bytes": 32931840,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2420,
+      "heap_bytes": 1388216,
+      "rss_bytes": 32931840,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2430,
+      "heap_bytes": 1389800,
+      "rss_bytes": 32931840,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2440,
+      "heap_bytes": 1395576,
+      "rss_bytes": 32931840,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2450,
+      "heap_bytes": 1370024,
+      "rss_bytes": 32931840,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2460,
+      "heap_bytes": 1397400,
+      "rss_bytes": 32948224,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2470,
+      "heap_bytes": 1399112,
+      "rss_bytes": 32948224,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2480,
+      "heap_bytes": 1410736,
+      "rss_bytes": 32948224,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2490,
+      "heap_bytes": 1398888,
+      "rss_bytes": 32948224,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2500,
+      "heap_bytes": 1401912,
+      "rss_bytes": 32948224,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2510,
+      "heap_bytes": 1397752,
+      "rss_bytes": 32948224,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2520,
+      "heap_bytes": 1400104,
+      "rss_bytes": 32948224,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2530,
+      "heap_bytes": 1368920,
+      "rss_bytes": 32948224,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2540,
+      "heap_bytes": 1356904,
+      "rss_bytes": 32948224,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2550,
+      "heap_bytes": 1397016,
+      "rss_bytes": 32948224,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2560,
+      "heap_bytes": 1393112,
+      "rss_bytes": 32948224,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2570,
+      "heap_bytes": 1390280,
+      "rss_bytes": 32948224,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2580,
+      "heap_bytes": 1391096,
+      "rss_bytes": 32948224,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2590,
+      "heap_bytes": 1409888,
+      "rss_bytes": 32948224,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2600,
+      "heap_bytes": 1399768,
+      "rss_bytes": 32948224,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2610,
+      "heap_bytes": 1390832,
+      "rss_bytes": 32948224,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2620,
+      "heap_bytes": 1361976,
+      "rss_bytes": 32948224,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2630,
+      "heap_bytes": 1393000,
+      "rss_bytes": 32948224,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2640,
+      "heap_bytes": 1414384,
+      "rss_bytes": 32948224,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2650,
+      "heap_bytes": 1402008,
+      "rss_bytes": 32948224,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2660,
+      "heap_bytes": 1360112,
+      "rss_bytes": 32948224,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2670,
+      "heap_bytes": 1420672,
+      "rss_bytes": 32948224,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2680,
+      "heap_bytes": 1395144,
+      "rss_bytes": 32948224,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2690,
+      "heap_bytes": 1402960,
+      "rss_bytes": 32948224,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2700,
+      "heap_bytes": 1412976,
+      "rss_bytes": 32948224,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2710,
+      "heap_bytes": 1404760,
+      "rss_bytes": 32948224,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2720,
+      "heap_bytes": 1358048,
+      "rss_bytes": 32964608,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2730,
+      "heap_bytes": 1404216,
+      "rss_bytes": 32964608,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2740,
+      "heap_bytes": 1408504,
+      "rss_bytes": 32964608,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2750,
+      "heap_bytes": 1418984,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2760,
+      "heap_bytes": 1414920,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2770,
+      "heap_bytes": 1405192,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2780,
+      "heap_bytes": 1379992,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2790,
+      "heap_bytes": 1354592,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2800,
+      "heap_bytes": 1419296,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2810,
+      "heap_bytes": 1409632,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2820,
+      "heap_bytes": 1396344,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2830,
+      "heap_bytes": 1410576,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2840,
+      "heap_bytes": 1397568,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2850,
+      "heap_bytes": 1394760,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2860,
+      "heap_bytes": 1405464,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2870,
+      "heap_bytes": 1423088,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2880,
+      "heap_bytes": 1409512,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2890,
+      "heap_bytes": 1402472,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2900,
+      "heap_bytes": 1394208,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2910,
+      "heap_bytes": 1352464,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2920,
+      "heap_bytes": 1397864,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2930,
+      "heap_bytes": 1386568,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2940,
+      "heap_bytes": 1386104,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2950,
+      "heap_bytes": 1383048,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2960,
+      "heap_bytes": 1376648,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2970,
+      "heap_bytes": 1416408,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2980,
+      "heap_bytes": 1424440,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 2990,
+      "heap_bytes": 1415400,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3000,
+      "heap_bytes": 1381160,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3010,
+      "heap_bytes": 1411896,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3020,
+      "heap_bytes": 1427136,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3030,
+      "heap_bytes": 1411672,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3040,
+      "heap_bytes": 1427152,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3050,
+      "heap_bytes": 1422400,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3060,
+      "heap_bytes": 1423520,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3070,
+      "heap_bytes": 1364432,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3080,
+      "heap_bytes": 1414280,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3090,
+      "heap_bytes": 1404688,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3100,
+      "heap_bytes": 1421248,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3110,
+      "heap_bytes": 1414560,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3120,
+      "heap_bytes": 1404152,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3130,
+      "heap_bytes": 1399736,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3140,
+      "heap_bytes": 1362992,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3150,
+      "heap_bytes": 1403224,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3160,
+      "heap_bytes": 1367208,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3170,
+      "heap_bytes": 1398664,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3180,
+      "heap_bytes": 1404216,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3190,
+      "heap_bytes": 1411760,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3200,
+      "heap_bytes": 1363288,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3210,
+      "heap_bytes": 1387920,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3220,
+      "heap_bytes": 1409640,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3230,
+      "heap_bytes": 1373656,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3240,
+      "heap_bytes": 1407320,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3250,
+      "heap_bytes": 1412320,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3260,
+      "heap_bytes": 1419296,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3270,
+      "heap_bytes": 1377512,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3280,
+      "heap_bytes": 1372216,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3290,
+      "heap_bytes": 1403848,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3300,
+      "heap_bytes": 1409168,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3310,
+      "heap_bytes": 1401112,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3320,
+      "heap_bytes": 1344736,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3330,
+      "heap_bytes": 1413792,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3340,
+      "heap_bytes": 1388968,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3350,
+      "heap_bytes": 1408840,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3360,
+      "heap_bytes": 1403624,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3370,
+      "heap_bytes": 1365864,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3380,
+      "heap_bytes": 1388152,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3390,
+      "heap_bytes": 1356344,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3400,
+      "heap_bytes": 1397480,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3410,
+      "heap_bytes": 1397704,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3420,
+      "heap_bytes": 1388624,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3430,
+      "heap_bytes": 1389368,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3440,
+      "heap_bytes": 1349808,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3450,
+      "heap_bytes": 1398344,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3460,
+      "heap_bytes": 1408728,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3470,
+      "heap_bytes": 1404560,
+      "rss_bytes": 32980992,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3480,
+      "heap_bytes": 1408376,
+      "rss_bytes": 32997376,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3490,
+      "heap_bytes": 1419792,
+      "rss_bytes": 32997376,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3500,
+      "heap_bytes": 1374360,
+      "rss_bytes": 32997376,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3510,
+      "heap_bytes": 1381784,
+      "rss_bytes": 32997376,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3520,
+      "heap_bytes": 1421680,
+      "rss_bytes": 33062912,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3530,
+      "heap_bytes": 1413512,
+      "rss_bytes": 33079296,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3540,
+      "heap_bytes": 1367688,
+      "rss_bytes": 33079296,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3550,
+      "heap_bytes": 1414680,
+      "rss_bytes": 33079296,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3560,
+      "heap_bytes": 1418800,
+      "rss_bytes": 33079296,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3570,
+      "heap_bytes": 1404088,
+      "rss_bytes": 33079296,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3580,
+      "heap_bytes": 1395384,
+      "rss_bytes": 33079296,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3590,
+      "heap_bytes": 1403056,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3600,
+      "heap_bytes": 1383200,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3610,
+      "heap_bytes": 1391568,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3620,
+      "heap_bytes": 1397744,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3630,
+      "heap_bytes": 1405984,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3640,
+      "heap_bytes": 1360600,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3650,
+      "heap_bytes": 1356056,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3660,
+      "heap_bytes": 1364104,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3670,
+      "heap_bytes": 1407744,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3680,
+      "heap_bytes": 1400536,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3690,
+      "heap_bytes": 1409104,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3700,
+      "heap_bytes": 1364584,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3710,
+      "heap_bytes": 1363432,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3720,
+      "heap_bytes": 1394008,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3730,
+      "heap_bytes": 1402168,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3740,
+      "heap_bytes": 1408584,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3750,
+      "heap_bytes": 1391880,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3760,
+      "heap_bytes": 1401176,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3770,
+      "heap_bytes": 1415152,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3780,
+      "heap_bytes": 1363768,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3790,
+      "heap_bytes": 1374136,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3800,
+      "heap_bytes": 1409216,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3810,
+      "heap_bytes": 1358920,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3820,
+      "heap_bytes": 1411664,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3830,
+      "heap_bytes": 1407376,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3840,
+      "heap_bytes": 1403568,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3850,
+      "heap_bytes": 1410272,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3860,
+      "heap_bytes": 1410960,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3870,
+      "heap_bytes": 1410992,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3880,
+      "heap_bytes": 1398184,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3890,
+      "heap_bytes": 1394136,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3900,
+      "heap_bytes": 1411072,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3910,
+      "heap_bytes": 1355040,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3920,
+      "heap_bytes": 1393800,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3930,
+      "heap_bytes": 1391192,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3940,
+      "heap_bytes": 1401248,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3950,
+      "heap_bytes": 1341760,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3960,
+      "heap_bytes": 1388072,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3970,
+      "heap_bytes": 1403264,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3980,
+      "heap_bytes": 1367864,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 3990,
+      "heap_bytes": 1414240,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 4000,
+      "heap_bytes": 1392296,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 4010,
+      "heap_bytes": 1349792,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 4020,
+      "heap_bytes": 1358440,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 4030,
+      "heap_bytes": 1409280,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 4040,
+      "heap_bytes": 1357568,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 4050,
+      "heap_bytes": 1405864,
+      "rss_bytes": 33095680,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 4060,
+      "heap_bytes": 1410568,
+      "rss_bytes": 32030720,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 4070,
+      "heap_bytes": 1409704,
+      "rss_bytes": 32391168,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 4080,
+      "heap_bytes": 1423584,
+      "rss_bytes": 32735232,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 4090,
+      "heap_bytes": 1375976,
+      "rss_bytes": 32735232,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 4100,
+      "heap_bytes": 1407976,
+      "rss_bytes": 32735232,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 4110,
+      "heap_bytes": 1378536,
+      "rss_bytes": 32882688,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 4120,
+      "heap_bytes": 1415184,
+      "rss_bytes": 32882688,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 4130,
+      "heap_bytes": 1401416,
+      "rss_bytes": 32882688,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 4140,
+      "heap_bytes": 1402328,
+      "rss_bytes": 32882688,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 4150,
+      "heap_bytes": 1402640,
+      "rss_bytes": 32882688,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 4160,
+      "heap_bytes": 1407680,
+      "rss_bytes": 32882688,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 4170,
+      "heap_bytes": 1353808,
+      "rss_bytes": 32882688,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 4180,
+      "heap_bytes": 1391368,
+      "rss_bytes": 32882688,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 4190,
+      "heap_bytes": 1399064,
+      "rss_bytes": 32882688,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 4200,
+      "heap_bytes": 1403640,
+      "rss_bytes": 32882688,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 4210,
+      "heap_bytes": 1393856,
+      "rss_bytes": 32882688,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 4220,
+      "heap_bytes": 1411440,
+      "rss_bytes": 32882688,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    },
+    {
+      "cycle": 4230,
+      "heap_bytes": 1421792,
+      "rss_bytes": 32882688,
+      "goroutines": 1,
+      "file_descriptors": 6,
+      "remaining_descendants": 0,
+      "orphaned_fixture_processes": 0
+    }
+  ],
+  "growth_limits": {
+    "cycle": 0,
+    "heap_bytes": 33554432,
+    "rss_bytes": 100663296,
+    "goroutines": 8,
+    "file_descriptors": 8,
+    "remaining_descendants": 0,
+    "orphaned_fixture_processes": 0
+  }
+}

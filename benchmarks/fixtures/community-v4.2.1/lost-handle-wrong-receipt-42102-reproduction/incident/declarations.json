@@ -1,0 +1,30 @@
+{
+  "review": "bounded synthetic provider; all application dependencies declared; retry/cancel branches may interleave",
+  "edges": [
+    {
+      "from": "submitted:release",
+      "to": "status:admit",
+      "reason": "explicit fixture checkpoint or awaited continuation; provider commit is separate from response delivery"
+    },
+    {
+      "from": "status:release",
+      "to": "retry_considered:admit",
+      "reason": "explicit fixture checkpoint or awaited continuation; provider commit is separate from response delivery"
+    },
+    {
+      "from": "retry_considered:release",
+      "to": "client_done:admit",
+      "reason": "explicit fixture checkpoint or awaited continuation; provider commit is separate from response delivery"
+    },
+    {
+      "from": "client_done:release",
+      "to": "drained:admit",
+      "reason": "explicit fixture checkpoint or awaited continuation; provider commit is separate from response delivery"
+    },
+    {
+      "from": "drained:release",
+      "to": "receipt_read:admit",
+      "reason": "explicit fixture checkpoint or awaited continuation; provider commit is separate from response delivery"
+    }
+  ]
+}

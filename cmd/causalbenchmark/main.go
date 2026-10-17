@@ -141,6 +141,7 @@ func run(binary, python, app, out string, iterations int, minimize bool) error {
 			}
 			var retained *agentrunner.Trial
 			var proof *causal.Execution
+			var checker *agentrunner.CheckerFingerprint
 			for _, trial := range plan.Trials {
 				for _, mode := range []string{"safe", "unsafe"} {
 					result, err := execute(trial, mode)
@@ -168,6 +169,7 @@ func run(binary, python, app, out string, iterations int, minimize bool) error {
 							copy := trial
 							retained = &copy
 							proof = result.CausalExecution
+							checker = result.Checker
 						}
 					}
 				}
@@ -176,6 +178,7 @@ func run(binary, python, app, out string, iterations int, minimize bool) error {
 				return fmt.Errorf("campaign did not detect deliberate %s defect", scene)
 			}
 			if minimize {
+				base.StateCheck.Expected = checker
 				reduced, err := agentrunner.MinimizeTrial(ctx, *retained, "state:database", 80, func(ctx context.Context, t agentrunner.Trial) (agentrunner.Result, error) {
 					return execute(t, "unsafe")
 				})
@@ -203,6 +206,7 @@ func run(binary, python, app, out string, iterations int, minimize bool) error {
 			}
 			entry.Reproduction = filepath.Join(out, name+"-reproduction")
 			manifest := agentrunner.Reproduction{Trial: *retained, CausalExecution: proof, Assertion: "state:database", CheckIDs: base.StateCheck.IDs, RequiresSetup: true, Timeout: base.Timeout, CheckTimeout: base.StateCheck.Timeout, RestartAfterCall: base.RestartAfterCall}
+			manifest.Checker = checker
 			if err := agentrunner.ExportReproduction(entry.Reproduction, incident, prepared.ConfigPath, manifest); err != nil {
 				return err
 			}

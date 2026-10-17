@@ -73,6 +73,8 @@ jobs:
         run: bash scripts/causal-smoke.sh
       - name: Verify streamed tool mutations with official provider SDK consumers
         run: bash scripts/provider-stream-smoke.sh
+      - name: Verify community recovery contracts and pinned portable reproductions
+        run: bash scripts/community-smoke.sh
       - name: Verify pinned official MCP SDK integration
         working-directory: integrations/mcp-go
         run: |

@@ -154,13 +154,21 @@ func planCausalExploration(config agentreliability.Config, scope string, o Explo
 	if o.Budget < 1 || o.Budget > 1000 {
 		return p, fmt.Errorf("case budget must be 1..1000")
 	}
-	schedules, err := causal.Generate(*o.CausalGraph, o.Seed, o.ScheduleBudget)
+	var schedules causal.Plan
+	var err error
+	if o.ObservedSchedule != nil {
+		err = o.ObservedSchedule.Validate(*o.CausalGraph)
+		schedules = causal.Plan{Version: 1, GraphHash: causal.Hash(*o.CausalGraph), Budget: 1, Attempts: 1, Schedules: []causal.Schedule{*o.ObservedSchedule}}
+	} else {
+		schedules, err = causal.Generate(*o.CausalGraph, o.Seed, o.ScheduleBudget)
+	}
 	if err != nil {
 		return p, err
 	}
 	p.CausalPlan = &schedules
 	baseOptions := o
 	baseOptions.CausalGraph = nil
+	baseOptions.ObservedSchedule = nil
 	baseOptions.Budget = 1000
 	base, err := PlanExploration(config, scope, baseOptions)
 	if err != nil {

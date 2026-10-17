@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "scope": "declared-inputs",
+  "files": {"provider": "provider.py", "contract": "contract.json"},
+  "versions": {"dependencies": "Python standard library sqlite3/json/pathlib only"}
+}

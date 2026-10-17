@@ -16,11 +16,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"infernosim/pkg/agentreliability"
+	"infernosim/pkg/traceorder"
 )
 
 const (
@@ -32,33 +34,66 @@ const (
 var ErrResponseLost = errors.New("injected MCP stdio response loss")
 
 type Record struct {
-	Version   int             `json:"version"`
-	Sequence  int64           `json:"sequence"`
-	Direction string          `json:"direction"`
-	Timestamp time.Time       `json:"timestamp"`
-	Message   json.RawMessage `json:"message"`
+	Received     *traceorder.Stamp `json:"received,omitempty"`
+	ForwardStart *traceorder.Stamp `json:"forward_start,omitempty"`
+	Version      int               `json:"version"`
+	Sequence     int64             `json:"sequence"`
+	Direction    string            `json:"direction"`
+	Timestamp    time.Time         `json:"timestamp"`
+	Message      json.RawMessage   `json:"message"`
 }
 
 type recorder struct {
-	mu       sync.Mutex
-	encoder  *json.Encoder
-	sequence int64
+	mu        sync.Mutex
+	encoder   *json.Encoder
+	sequence  int64
+	order     *traceorder.Clock
+	transform func([]byte) ([]byte, error)
+	bytes     int
 }
 
-func (r *recorder) write(direction string, message []byte) error {
+func (r *recorder) forward(direction string, message []byte, output io.Writer) error {
 	if len(message) == 0 || len(message) > MaximumMessageSize || !json.Valid(message) {
-		return fmt.Errorf("MCP stdio message is invalid or exceeds %d bytes", MaximumMessageSize)
+		return fmt.Errorf("invalid or oversized MCP message")
+	}
+	r.mu.Lock()
+	r.sequence++
+	sequence := r.sequence
+	r.bytes += len(message)
+	received := r.order.Next()
+	tooLarge := r.bytes > 64<<20 || sequence > MaximumRecords
+	r.mu.Unlock()
+	if tooLarge {
+		return fmt.Errorf("MCP recording exceeds 64 MiB or record limit")
+	}
+	stored := append([]byte(nil), message...)
+	var err error
+	if r.transform != nil {
+		stored, err = r.transform(stored)
+		if err != nil {
+			return fmt.Errorf("MCP privacy transform failed")
+		}
+	}
+	if !json.Valid(stored) {
+		return fmt.Errorf("MCP privacy transform did not retain JSON")
+	}
+	forwarded := r.order.Next()
+	line := append(append([]byte(nil), message...), '\n')
+	n, err := output.Write(line)
+	if err != nil {
+		return err
+	}
+	if n != len(line) {
+		return io.ErrShortWrite
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.sequence++
-	return r.encoder.Encode(Record{
-		Version: TranscriptVersion, Sequence: r.sequence, Direction: direction,
-		Timestamp: time.Now().UTC(), Message: append(json.RawMessage(nil), message...),
-	})
+	return r.encoder.Encode(Record{Version: TranscriptVersion, Sequence: sequence, Direction: direction, Timestamp: time.Now().UTC(), Message: stored, Received: received, ForwardStart: forwarded})
 }
 
 type RecordOptions struct {
+	Order      *traceorder.Clock
+	Transform  func([]byte) ([]byte, error)
 	OutputPath string
 	Command    []string
 	Stdin      io.Reader
@@ -105,7 +140,11 @@ func RecordCommand(ctx context.Context, opts RecordOptions) error {
 		_ = file.Close()
 		return err
 	}
-	log := &recorder{encoder: json.NewEncoder(file)}
+	standalone := opts.Order == nil
+	if standalone {
+		opts.Order = traceorder.New()
+	}
+	log := &recorder{encoder: json.NewEncoder(file), order: opts.Order, transform: opts.Transform}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	command := exec.CommandContext(ctx, opts.Command[0], opts.Command[1:]...)
@@ -119,6 +158,14 @@ func RecordCommand(ctx context.Context, opts RecordOptions) error {
 		return err
 	}
 	defer childOutput.Close()
+	stop := context.AfterFunc(ctx, func() {
+		_ = childOutput.Close()
+		_ = childInput.Close()
+		if c, ok := opts.Stdin.(io.Closer); ok {
+			_ = c.Close()
+		}
+	})
+	defer stop()
 	command.Stderr = opts.Stderr
 	if err := command.Start(); err != nil {
 		_ = file.Close()
@@ -126,16 +173,16 @@ func RecordCommand(ctx context.Context, opts RecordOptions) error {
 	}
 	serverErr := make(chan error, 1)
 	go func() {
-		err := copyLines(childOutput, opts.Stdout, func(message []byte) error {
-			return log.write("server_to_client", message)
+		err := copyLines(childOutput, io.Discard, func(message []byte) error {
+			return log.forward("server_to_client", message, opts.Stdout)
 		})
 		if err != nil {
 			cancel()
 		}
 		serverErr <- err
 	}()
-	clientErr := copyLines(opts.Stdin, childInput, func(message []byte) error {
-		return log.write("client_to_server", message)
+	clientErr := copyLines(opts.Stdin, io.Discard, func(message []byte) error {
+		return log.forward("client_to_server", message, childInput)
 	})
 	_ = childInput.Close()
 	if clientErr != nil {
@@ -152,7 +199,27 @@ func RecordCommand(ctx context.Context, opts RecordOptions) error {
 			return err
 		}
 	}
-	return os.Rename(tempPath, opts.OutputPath)
+	if err := os.Rename(tempPath, opts.OutputPath); err != nil {
+		return err
+	}
+	if standalone {
+		seal, err := os.CreateTemp(directory, ".infernosim-mcp-seal-*")
+		if err != nil {
+			return err
+		}
+		defer os.Remove(seal.Name())
+		if err := errors.Join(json.NewEncoder(seal).Encode(opts.Order.Snapshot()), seal.Sync(), seal.Close()); err != nil {
+			return err
+		}
+		sealPath := opts.OutputPath + ".capture-session.json"
+		if runtime.GOOS == "windows" {
+			if err := os.Remove(sealPath); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+		}
+		return os.Rename(seal.Name(), sealPath)
+	}
+	return nil
 }
 
 func copyLines(input io.Reader, output io.Writer, observe func([]byte) error) error {
@@ -364,6 +431,11 @@ func Load(path string) ([]Record, error) {
 	}
 	if len(records) == 0 {
 		return nil, fmt.Errorf("MCP transcript is empty")
+	}
+	// ForwardStart responses can finish before an earlier request writer resumes.
+	// The receive sequence is assigned before forwarding and remains canonical.
+	if records[0].Received != nil {
+		sort.Slice(records, func(i, j int) bool { return records[i].Sequence < records[j].Sequence })
 	}
 	return records, nil
 }

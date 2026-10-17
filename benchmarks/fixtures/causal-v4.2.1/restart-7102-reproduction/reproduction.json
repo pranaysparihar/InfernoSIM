@@ -1,0 +1,177 @@
+{
+  "checker": {
+    "version": 1,
+    "digest": "16cd68142588348bd73d4697e7a7438c7298a97eed34f0ff54cbb7dc87fba920",
+    "scope": "direct-inputs-only",
+    "files": {
+      "executable": "b502cb4c5b46b8d4192ec6bcb600ce8922f1afc396fcf646e8765c6eba74a0bf",
+      "script": "09b5db50a90d2f16dc536113acb098c67b1bbfc8536988b1eabb019de8c5fbe0"
+    },
+    "contract": "ff8e95f3ace7bd93da287b0f759f8e34685175908229990564bd2a42cdee81fb",
+    "declarations": "316c0cb23da2a6975124fcffbd629f0af819f05ae36d7049aff3b7011680260b"
+  },
+  "case_identity": "case_2bd4e0a06d798bd489e85df5",
+  "integrity": "5c6bc2c38fde83804874817c6611cc6851988305fdfb4db77c499addd3fda14f",
+  "causal_execution": {
+    "schedule_id": "causal_68b982137a5ba5971b22",
+    "graph_hash": "4b7fae4c2fb4e687cad65d8f6b37cdda787b4900ef27e29150093ae77846c58f",
+    "observed": [
+      "refund:admit",
+      "refund:release",
+      "audit:admit",
+      "audit:release",
+      "refund_status:admit",
+      "refund_status:release"
+    ],
+    "bindings": [
+      {
+        "operation": "audit",
+        "runtime_id_hash": "9e547cd59b8ef3e07dbe9cddc6dc109e6a574dfed5b5a25b3dd169ede612a63f"
+      },
+      {
+        "operation": "refund",
+        "runtime_id_hash": "ab7e40ac8df95d3a6377aa3a044cec8198cf94a34b3cafda91734e0e8aec4812"
+      },
+      {
+        "operation": "refund_status",
+        "runtime_id_hash": "ddbf87128bc357b54f99de8068a49b747d4f1bb34fd39e9c4072a669eec2f45f"
+      }
+    ],
+    "completed": true
+  },
+  "version": 3,
+  "trial": {
+    "causal": {
+      "graph": {
+        "version": 1,
+        "operations": [
+          {
+            "id": "audit",
+            "protocol": "http",
+            "fingerprint": "80ed3a2561614f633c2d7258b2777e9538f2fbf7e77daf3e0c80997c13999a2d",
+            "record": "event:audit",
+            "request_id": "\"audit\""
+          },
+          {
+            "id": "refund",
+            "protocol": "http",
+            "fingerprint": "7cc6c49e40c9d63a7975774f9cace3d89fa737656a2f4f1bf754f3ec63203e30",
+            "record": "event:refund",
+            "request_id": "\"refund\""
+          },
+          {
+            "id": "refund_status",
+            "protocol": "http",
+            "fingerprint": "767813841f58954f78e366a86265c686cecd3e1295e49ac591725a816690e20b",
+            "record": "event:refund_status",
+            "request_id": "\"refund_status\""
+          }
+        ],
+        "edges": [
+          {
+            "from": "audit:admit",
+            "to": "audit:release",
+            "evidence": [
+              {
+                "rule": "request_before_response",
+                "source": "event:audit",
+                "sha256": "e0ea069dbeebe980405ec6d7b69f63e6e5cfde883d48b9d1a49ea35271a1922e"
+              }
+            ]
+          },
+          {
+            "from": "refund:admit",
+            "to": "refund:release",
+            "evidence": [
+              {
+                "rule": "request_before_response",
+                "source": "event:refund",
+                "sha256": "9e3839ecf9be7b1df5b8dfc339d67b34a14c5ed13762f966cee1cd09f14c9ca4"
+              }
+            ]
+          },
+          {
+            "from": "refund:release",
+            "to": "audit:admit",
+            "evidence": [
+              {
+                "rule": "user_declaration",
+                "source": "declarations",
+                "sha256": "1358a316a90fa9bf754b0096b28d9349dfcf347e1ea89883bba8827fd61ea5db",
+                "detail": "application awaits this response before issuing the continuation"
+              }
+            ]
+          },
+          {
+            "from": "refund:release",
+            "to": "refund_status:admit",
+            "evidence": [
+              {
+                "rule": "user_declaration",
+                "source": "declarations",
+                "sha256": "6b46fc33b72d8f24ec23f10bb732775ef4ceaf2b33bf4cbe518a00e25a1c73ea",
+                "detail": "application awaits this response before issuing the continuation"
+              }
+            ]
+          },
+          {
+            "from": "refund_status:admit",
+            "to": "refund_status:release",
+            "evidence": [
+              {
+                "rule": "request_before_response",
+                "source": "event:refund_status",
+                "sha256": "378ca2f55341cd8dad007af5c62474ad2c6f21608a3fbfa68acf4d0525a663b7"
+              }
+            ]
+          }
+        ],
+        "issues": [
+          {
+            "id": "unobserved_dependencies_1af39a22f6df",
+            "kind": "unobserved_dependencies",
+            "detail": "recordings cannot establish the absence of hidden application dependencies; review before scheduling",
+            "blocking": false
+          }
+        ],
+        "review": "fixture dependencies are explicitly declared; remaining requests are independent"
+      },
+      "schedule": {
+        "id": "causal_68b982137a5ba5971b22",
+        "graph_hash": "4b7fae4c2fb4e687cad65d8f6b37cdda787b4900ef27e29150093ae77846c58f",
+        "order": [
+          "refund:admit",
+          "refund:release",
+          "audit:admit",
+          "audit:release",
+          "refund_status:admit",
+          "refund_status:release"
+        ]
+      },
+      "timeout": "5s"
+    },
+    "case": {
+      "id": "explore_03e06f163ccc7a3d6b57",
+      "description": "causal admission and response-release exploration",
+      "category": "exploration",
+      "severity": "high",
+      "schedule_id": "causal_68b982137a5ba5971b22"
+    }
+  },
+  "assertion": "state:database",
+  "check_ids": [
+    "database",
+    "filesystem"
+  ],
+  "requires_setup": true,
+  "timeout": 10000000000,
+  "check_timeout": 5000000000,
+  "restart_after_call": 1,
+  "files": {
+    "incident/declarations.json": "d83677c6db18954f56fed095c04affc7ca8cfe8d606abb1dc11aa2d74b10d416",
+    "incident/inbound.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "incident/incident.json": "0421214960441d55a9859ecf90ddb72f90b7ca185481b2154652c40f392d63af",
+    "incident/outbound.log": "6e0d2e29732a975d4841ddd8b0853ce7aac46d8bc73f8303cb409487016542e1",
+    "incident/replay.yaml": "c7ceaa083a75eb31a5d12854a179a119798a05050114653dc80ce04c3ba975ca"
+  }
+}

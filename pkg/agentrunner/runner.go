@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"io"
 	"os"
 	"os/exec"
@@ -22,6 +23,7 @@ import (
 
 	"infernosim/pkg/agentreliability"
 	"infernosim/pkg/causal"
+	"infernosim/pkg/liverecovery"
 	"infernosim/pkg/mcpproxy"
 	"infernosim/pkg/replaydriver"
 	"infernosim/pkg/reporting"
@@ -35,6 +37,8 @@ const (
 )
 
 type Options struct {
+	Trial            *Trial
+	LiveRecovery     *liverecovery.Options
 	IncidentDir      string
 	ConfigPath       string
 	Case             agentreliability.Case
@@ -58,19 +62,25 @@ type ProcessResult struct {
 }
 
 type Result struct {
-	CausalExecution  *causal.Execution                  `json:"causal_execution,omitempty"`
-	Version          int                                `json:"version"`
-	Case             agentreliability.Case              `json:"case"`
-	Passed           bool                               `json:"passed"`
-	Duration         time.Duration                      `json:"duration"`
-	Process          ProcessResult                      `json:"process"`
-	Simulator        any                                `json:"simulator"`
-	Assertions       []agentreliability.AssertionResult `json:"assertions"`
-	Failure          string                             `json:"failure,omitempty"`
-	ScopeHash        string                             `json:"scope_hash,omitempty"`
-	RestartAfterCall int                                `json:"restart_after_call,omitempty"`
-	InvalidRun       bool                               `json:"invalid_run,omitempty"`
-	StateCheckHash   string                             `json:"state_check_hash,omitempty"`
+	CaseIdentity          string                             `json:"case_identity,omitempty"`
+	Recovery              *liverecovery.Snapshot             `json:"recovery,omitempty"`
+	RecoveryCaptureStatus string                             `json:"recovery_capture_status,omitempty"`
+	Checker               *CheckerFingerprint                `json:"checker,omitempty"`
+	CheckerStatus         string                             `json:"checker_status,omitempty"`
+	CausalExecution       *causal.Execution                  `json:"causal_execution,omitempty"`
+	Version               int                                `json:"version"`
+	Case                  agentreliability.Case              `json:"case"`
+	Passed                bool                               `json:"passed"`
+	Duration              time.Duration                      `json:"duration"`
+	Process               ProcessResult                      `json:"process"`
+	Simulator             any                                `json:"simulator"`
+	Assertions            []agentreliability.AssertionResult `json:"assertions"`
+	Failure               string                             `json:"failure,omitempty"`
+	ScopeHash             string                             `json:"scope_hash,omitempty"`
+	RestartAfterCall      int                                `json:"restart_after_call,omitempty"`
+	InvalidRun            bool                               `json:"invalid_run,omitempty"`
+	StateCheckHash        string                             `json:"state_check_hash,omitempty"`
+	SetupCommandHash      string                             `json:"setup_command_hash,omitempty"`
 }
 
 type Prepared struct {
@@ -145,7 +155,15 @@ func ResolveCase(cases []agentreliability.Case, value string) (agentreliability.
 }
 
 func Run(ctx context.Context, opts Options) (Result, error) {
+	opts.StateCheck.Environment = opts.Environment
 	if err := opts.StateCheck.Validate(); err != nil {
+		return Result{}, err
+	}
+	checker, err := opts.StateCheck.Fingerprint()
+	if err != nil {
+		return Result{}, err
+	}
+	if err = opts.StateCheck.VerifyFingerprint(opts.StateCheck.Expected); err != nil {
 		return Result{}, err
 	}
 	if len(opts.Command) == 0 || strings.TrimSpace(opts.Command[0]) == "" {
@@ -200,11 +218,27 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 			return Result{}, err
 		}
 	}
+	var recovery *liverecovery.Recovery
+	if opts.LiveRecovery != nil {
+		bundle, e := replaydriver.OpenBundle(opts.IncidentDir)
+		if e != nil {
+			return Result{}, e
+		}
+		if prepared.Config.Agent.Causal != nil || len(prepared.Config.Agent.Schedules) > 0 || bundle.HasMCP() || opts.RestartAfterCall > 0 {
+			return Result{}, fmt.Errorf("live recovery supports HTTP replay without an existing causal/admission schedule, stdio session or restart; capture the branch and discover its new graph afterward")
+		}
+		recovery, err = liverecovery.New(*opts.LiveRecovery)
+		if err != nil {
+			return Result{}, err
+		}
+		defer recovery.Close()
+	}
 	runContext, cancel := context.WithTimeout(ctx, opts.Timeout)
 	defer cancel()
 	boundary := make(chan struct{}, 1)
 	resume := make(chan struct{})
 	server, err := simserver.New(simserver.Options{
+		Recovery:    recovery,
 		IncidentDir: opts.IncidentDir, ConfigPath: prepared.ConfigPath,
 		Listen: "127.0.0.1:0", AdminListen: "127.0.0.1:0",
 		AgentFaultIDs: faultIDs(opts.Case), AgentCaseID: opts.Case.ID,
@@ -280,6 +314,14 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		}
 	}
 	duration := time.Since(started)
+	if recovery != nil {
+		closeContext, stop := context.WithTimeout(context.Background(), 5*time.Second)
+		err := server.Close(closeContext)
+		stop()
+		if err != nil {
+			return Result{}, err
+		}
+	}
 	if runErr != nil {
 		process.ExitCode = -1
 		var exitError *exec.ExitError
@@ -293,13 +335,84 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	snapshot := server.Snapshot()
 	result := Result{Version: 1, Case: opts.Case, Passed: true, Duration: duration, Process: process, Simulator: snapshot, ScopeHash: prepared.ScopeHash, RestartAfterCall: opts.RestartAfterCall}
 	result.StateCheckHash = opts.StateCheck.Hash()
+	if len(opts.StateCheck.SetupCommand) > 0 {
+		result.SetupCommandHash = agentreliability.StableHash(opts.StateCheck.SetupCommand)
+	}
+	if recovery != nil {
+		snapshot := recovery.Snapshot()
+		result.Recovery = &snapshot
+		// The captured branch includes the faulted bytes actually delivered.
+		// Re-injecting original faults would test a different execution.
+		branch := prepared.Config
+		branch.Agent.Faults = nil
+		branch.Agent.Schedules = nil
+		branch.Agent.Causal = nil
+		var branchAssertions []agentreliability.Assertion
+		for _, assertion := range branch.Agent.Assertions {
+			applies := len(assertion.Faults) == 0 || (opts.Case.Baseline() && assertion.IncludeBaseline)
+			for _, id := range assertion.Faults {
+				applies = applies || contains(opts.Case.ActiveFaults(), id)
+			}
+			if applies {
+				assertion.Faults = nil
+				assertion.IncludeBaseline = true
+				branchAssertions = append(branchAssertions, assertion)
+			}
+		}
+		branch.Agent.Assertions = branchAssertions
+		branch.Scenarios = nil
+		data, e := yaml.Marshal(branch)
+		if e != nil {
+			return Result{}, e
+		}
+		provenance := struct {
+			SourceScope string                `json:"source_scope"`
+			Case        agentreliability.Case `json:"source_case"`
+			Recovery    liverecovery.Snapshot `json:"recovery"`
+		}{prepared.ScopeHash, opts.Case, snapshot}
+		if e = recovery.Seal(data, provenance); e != nil {
+			return Result{}, e
+		}
+		observed, e := ConvertObserved(opts.LiveRecovery.OutputDir, causal.Declarations{Review: opts.LiveRecovery.Review})
+		if e != nil {
+			result.RecoveryCaptureStatus = "not-replayable: " + e.Error()
+		} else {
+			result.RecoveryCaptureStatus = observed.Status
+			if e = WriteJSON(filepath.Join(opts.LiveRecovery.OutputDir, "observed.json"), observed); e != nil {
+				return Result{}, e
+			}
+		}
+	}
+	result.Checker = checker
+	identityTrial := Trial{Case: opts.Case}
+	if opts.Trial != nil {
+		identityTrial = *opts.Trial
+	}
+	result.CaseIdentity = CaseIdentity(identityTrial, checker)
+	result.CheckerStatus = checkerStatus(checker, len(opts.StateCheck.Command) > 0)
+	if checker != nil {
+		result.StateCheckHash = checker.Digest
+	}
+	if opts.StateCheck.Legacy {
+		result.CheckerStatus = "legacy-unpinned"
+	}
 	if snapshot.Agent != nil {
 		result.CausalExecution = snapshot.Agent.Causal
 		result.Assertions = agentreliability.Evaluate(prepared.Config.Agent, *snapshot.Agent, snapshot.Unexpected, duration)
 	}
 	var failures []string
+	if result.Recovery != nil && (result.Recovery.Failure != "" || result.Recovery.CaptureFailure != "") {
+		result.InvalidRun = true
+		failures = append(failures, result.Recovery.Failure, result.Recovery.CaptureFailure)
+	}
 	if len(opts.StateCheck.Command) > 0 {
+		if err := opts.StateCheck.VerifyFingerprint(checker); err != nil {
+			return Result{}, fmt.Errorf("checker changed during execution: %w", err)
+		}
 		checks, checkErr := evaluateStateCheck(ctx, opts.StateCheck, hookEnvironment)
+		if err := opts.StateCheck.VerifyFingerprint(checker); err != nil {
+			return Result{}, fmt.Errorf("checker changed during verification: %w", err)
+		}
 		result.Assertions = append(result.Assertions, checks...)
 		if checkErr != nil {
 			result.InvalidRun = true
@@ -440,10 +553,27 @@ func WriteJSON(path string, value any) error {
 
 func ReportingResult(results []Result) reporting.Result {
 	passed := 0
+	hybrid := false
 	var findings []reporting.Finding
 	cases := make([]reporting.Case, 0, len(results))
 	for _, result := range results {
 		var messages []string
+		if result.Recovery != nil {
+			hybrid = hybrid || result.Recovery.Hybrid
+			messages = append(messages, "Recovery: "+result.Recovery.Mode+"; capture="+result.RecoveryCaptureStatus)
+			findings = append(findings, reporting.Finding{RuleID: "RECOVERY_MODE", Level: "note", Title: "Recovery provenance", Message: result.Recovery.Mode, Location: result.Case.ID})
+		}
+		status := result.CheckerStatus
+		if status == "" {
+			status = checkerStatus(result.Checker, result.StateCheckHash != "")
+		}
+		messages = append(messages, "Checker: "+status)
+		if result.CaseIdentity != "" {
+			messages = append(messages, "Case identity: "+result.CaseIdentity)
+		}
+		if status == "legacy-unpinned" || status == "pinned/direct-inputs-only" {
+			findings = append(findings, reporting.Finding{RuleID: "CHECKER_SCOPE", Level: "note", Title: "Checker verification scope", Message: status, Location: result.Case.ID})
+		}
 		if result.Failure != "" {
 			messages = append(messages, result.Failure)
 		}
@@ -479,9 +609,13 @@ func ReportingResult(results []Result) reporting.Result {
 	if passed != len(results) {
 		outcome = "FAIL_AGENT_RELIABILITY"
 	}
+	summary := fmt.Sprintf("%d/%d deterministic agent reliability cases passed", passed, len(results))
+	if hybrid {
+		summary = fmt.Sprintf("%d/%d agent reliability cases passed; includes non-deterministic live model recovery", passed, len(results))
+	}
 	return reporting.Result{
 		Tool: "InfernoSIM", Category: "agent-reliability", Outcome: outcome,
-		Summary:  fmt.Sprintf("%d/%d deterministic agent reliability cases passed", passed, len(results)),
+		Summary:  summary,
 		Findings: findings, Cases: cases,
 	}
 }

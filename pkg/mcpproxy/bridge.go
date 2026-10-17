@@ -42,6 +42,22 @@ func StartBridge(ctx context.Context, path string, engine *agentreliability.Engi
 	if _, err := Load(path); err != nil {
 		return nil, err
 	}
+	return startBridge(ctx, func(ctx context.Context, input io.ReadCloser, output io.Writer) error {
+		return Replay(ReplayOptions{Context: ctx, TranscriptPath: path, Stdin: input, Stdout: output, Engine: engine, SharedController: true})
+	})
+}
+
+// StartRecordBridge records an explicit test server under the same observation
+// clock as the HTTP proxy. It accepts exactly one authenticated client session.
+func StartRecordBridge(ctx context.Context, opts RecordOptions) (*Bridge, error) {
+	return startBridge(ctx, func(ctx context.Context, input io.ReadCloser, output io.Writer) error {
+		opts.Stdin = input
+		opts.Stdout = output
+		return RecordCommand(ctx, opts)
+	})
+}
+
+func startBridge(ctx context.Context, serve func(context.Context, io.ReadCloser, io.Writer) error) (*Bridge, error) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, err
@@ -74,7 +90,7 @@ func StartBridge(ctx context.Context, path string, engine *agentreliability.Engi
 				continue
 			}
 			_ = conn.SetReadDeadline(time.Time{})
-			err = Replay(ReplayOptions{Context: ctx, TranscriptPath: path, Stdin: &bufferedConnection{Conn: conn, reader: reader}, Stdout: conn, Engine: engine, SharedController: true})
+			err = serve(ctx, &bufferedConnection{Conn: conn, reader: reader}, conn)
 			_ = conn.Close()
 			if err != nil {
 				b.setError(err)

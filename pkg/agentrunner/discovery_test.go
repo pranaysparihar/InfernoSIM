@@ -184,6 +184,40 @@ func TestStateHooksCheckActualFilesAndRejectInvalidOutput(t *testing.T) {
 		})
 	}
 }
+func TestComparisonRejectsChangedSetupArgumentsWithIdenticalChecker(t *testing.T) {
+	incident := writeAgentIncident(t)
+	prepared, err := Prepare(incident, "", 0, 1, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared.Config.Agent.Assertions = nil
+	run := func(setupArg string) Result {
+		t.Helper()
+		r, err := Run(context.Background(), Options{
+			IncidentDir: incident, AgentConfig: &prepared.Config.Agent,
+			Command: stateHelper("app"), Environment: []string{"GORACE=atexit_sleep_ms=0"},
+			StateCheck: StateCheckOptions{
+				SetupCommand: append(stateHelper("setup"), setupArg),
+				Command:      stateHelper("check-safe"), IDs: []string{"balance"}, Timeout: time.Second,
+			},
+		})
+		if err != nil || !r.Passed || r.InvalidRun || r.SetupCommandHash == "" {
+			t.Fatalf("setup run: %+v, %v", r, err)
+		}
+		return r
+	}
+	baseline, identical, changed := run("original"), run("original"), run("changed")
+	if baseline.StateCheckHash != changed.StateCheckHash {
+		t.Fatal("setup arguments incorrectly changed checker identity")
+	}
+	if comparison, err := CompareResults([]Result{baseline}, []Result{identical}); err != nil || !comparison.Passed {
+		t.Fatalf("identical setup rejected: %+v, %v", comparison, err)
+	}
+	if _, err := CompareResults([]Result{baseline}, []Result{changed}); err == nil {
+		t.Fatal("different setup arguments accepted with identical checker")
+	}
+}
+
 func TestStateHookTimeoutAndScope(t *testing.T) {
 	_, err := runStateCommand(context.Background(), stateHelper("sleep"), os.Environ(), 20*time.Millisecond)
 	if err == nil {

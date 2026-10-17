@@ -127,10 +127,11 @@ func runSoak(binary, python, app, input, out string, duration time.Duration) (re
 		return err
 	}
 	sum := sha256.Sum256(bytes)
-	r := soakReport{Platform: runtime.GOOS + "/" + runtime.GOARCH, Started: time.Now().UTC(), Required: duration,
+	started := time.Now()
+	r := soakReport{Platform: runtime.GOOS + "/" + runtime.GOARCH, Started: started.UTC(), Required: duration,
 		BinarySHA256: hex.EncodeToString(sum[:]), Limits: resources{HeapBytes: 32 << 20, RSSBytes: 96 << 20, Goroutines: 8, FDs: 8}}
 	write := func() error {
-		r.Duration = time.Since(r.Started)
+		r.Duration = time.Since(started)
 		return agentrunner.WriteJSON(filepath.Join(out, "soak.json"), r)
 	}
 	defer func() {
@@ -186,7 +187,7 @@ func runSoak(binary, python, app, input, out string, duration time.Duration) (re
 		base := agentrunner.Options{IncidentDir: incident, ConfigPath: prepared.ConfigPath, Timeout: manifest.Timeout,
 			RestartAfterCall: manifest.RestartAfterCall, MCPConnector: []string{binary, "agent", "mcp", "connect"},
 			StateCheck: agentrunner.StateCheckOptions{SetupCommand: []string{python, app, "--scenario", entry.Scenario, "--setup"},
-				Command: []string{python, app, "--scenario", entry.Scenario, "--check"}, IDs: manifest.CheckIDs, Timeout: manifest.CheckTimeout}}
+				Command: []string{python, app, "--scenario", entry.Scenario, "--check"}, IDs: manifest.CheckIDs, Timeout: manifest.CheckTimeout, Expected: manifest.Checker, Legacy: manifest.Checker == nil}}
 		opts, err := agentrunner.RunTrial(base, prepared.Config.Agent, manifest.Trial)
 		if err != nil {
 			return err
@@ -197,7 +198,7 @@ func runSoak(binary, python, app, input, out string, duration time.Duration) (re
 		return fmt.Errorf("soak requires all five application scenarios")
 	}
 	ctx := context.Background()
-	for time.Since(r.Started) < duration || r.Cycles < 4 {
+	for time.Since(started) < duration || r.Cycles < 4 {
 		for _, f := range fixtures {
 			for _, mode := range []string{"safe", "unsafe"} {
 				opts := f.options
@@ -247,7 +248,7 @@ func runSoak(binary, python, app, input, out string, duration time.Duration) (re
 		if err := write(); err != nil {
 			return err
 		}
-		fmt.Printf("soak cycles=%d runs=%d elapsed=%s heap=%d rss=%d goroutines=%d fds=%d children=%d\n", r.Cycles, r.Runs, time.Since(r.Started).Round(time.Second), s.HeapBytes, s.RSSBytes, s.Goroutines, s.FDs, s.Children)
+		fmt.Printf("soak cycles=%d runs=%d elapsed=%s heap=%d rss=%d goroutines=%d fds=%d children=%d\n", r.Cycles, r.Runs, time.Since(started).Round(time.Second), s.HeapBytes, s.RSSBytes, s.Goroutines, s.FDs, s.Children)
 	}
 	r.Passed = true
 	return nil

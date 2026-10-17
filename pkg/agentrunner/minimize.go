@@ -100,6 +100,8 @@ func shrinkTrials(t Trial) []Trial {
 // not global trace minimality. Every accepted candidate must reproduce twice.
 func MinimizeTrial(ctx context.Context, t Trial, assertion string, budget int, run func(context.Context, Trial) (Result, error)) (Minimization, error) {
 	r := Minimization{Version: 1, Trial: t, Assertion: assertion}
+	checkerDigest := ""
+	checkerSeen := false
 	if assertion == "" || strings.HasPrefix(assertion, "schedule:") || budget < 2 || budget > 1000 {
 		return r, fmt.Errorf("minimization requires an application assertion and budget 2..1000")
 	}
@@ -114,8 +116,19 @@ func MinimizeTrial(ctx context.Context, t Trial, assertion string, budget int, r
 			if err != nil {
 				return false, err
 			}
+			digest, err := resultCheckerDigest(result)
+			if err != nil {
+				return false, err
+			}
+			if checkerSeen && checkerDigest != digest {
+				return false, fmt.Errorf("checker changed during reduction; create a new case")
+			}
+			checkerSeen, checkerDigest = true, digest
 			if result.InvalidRun || result.Process.TimedOut || result.Process.ExitCode != 0 {
 				return false, nil
+			}
+			if result.Recovery != nil && result.Recovery.Hybrid {
+				return false, fmt.Errorf("capture and validate the hybrid branch before offline minimization")
 			}
 			if c.Causal != nil {
 				if result.CausalExecution == nil {

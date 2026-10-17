@@ -12,14 +12,15 @@ import (
 )
 
 type ExploreOptions struct {
-	CausalGraph     *causal.Graph `json:"causal_graph,omitempty"`
-	ScheduleBudget  int           `json:"schedule_budget,omitempty"`
-	BoundaryTimeout string        `json:"boundary_timeout,omitempty"`
-	Seed            int64         `json:"seed"`
-	Budget          int           `json:"budget"`
-	MaxFaults       int           `json:"max_faults"`
-	Occurrences     int           `json:"occurrences"`
-	PermuteSchedule string        `json:"permute_schedule,omitempty"`
+	ObservedSchedule *causal.Schedule `json:"observed_schedule,omitempty"`
+	CausalGraph      *causal.Graph    `json:"causal_graph,omitempty"`
+	ScheduleBudget   int              `json:"schedule_budget,omitempty"`
+	BoundaryTimeout  string           `json:"boundary_timeout,omitempty"`
+	Seed             int64            `json:"seed"`
+	Budget           int              `json:"budget"`
+	MaxFaults        int              `json:"max_faults"`
+	Occurrences      int              `json:"occurrences"`
+	PermuteSchedule  string           `json:"permute_schedule,omitempty"`
 }
 
 // Trial modifies only explicitly selected fault occurrences and admission
@@ -267,6 +268,7 @@ func PlanExploration(config agentreliability.Config, scope string, o ExploreOpti
 }
 
 func RunTrial(ctxOpts Options, base agentreliability.Config, t Trial) (Options, error) {
+	ctxOpts.Trial = &t
 	c, err := t.AgentConfig(base)
 	if err != nil {
 		return ctxOpts, err

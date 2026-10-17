@@ -1,0 +1,10 @@
+{
+  "review": "fixture dependencies are explicitly declared; remaining requests are independent",
+  "edges": [
+    {
+      "from": "reserve:release",
+      "to": "commit:admit",
+      "reason": "application awaits this response before issuing the continuation"
+    }
+  ]
+}

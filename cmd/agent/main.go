@@ -2360,6 +2360,7 @@ func runAgentExecution(args []string, stress bool) int {
 	outputLimit := fs.Int("output-limit", agentrunner.DefaultOutputLimit, "Maximum captured stdout and stderr bytes per stream")
 	restartAfterCall := fs.Int("restart-after-call", 0, "Kill and restart the agent once before response delivery at this exchange (0 disables)")
 	stateFlags := registerStateFlags(fs)
+	liveFlags := registerRecoveryFlags(fs)
 	incident, remaining := positionalBeforeFlags(flagArgs)
 	if err := fs.Parse(remaining); err != nil {
 		return 2
@@ -2374,6 +2375,15 @@ func runAgentExecution(args []string, stress bool) int {
 	stateCheck, err := stateFlags.options()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	live, err := liveFlags.options()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	if stress && live != nil {
+		fmt.Fprintln(os.Stderr, "live recovery is an agent run option; validate the captured branch before deterministic stress/exploration")
 		return 2
 	}
 	timeout, err := time.ParseDuration(*timeoutValue)
@@ -2399,7 +2409,8 @@ func runAgentExecution(args []string, stress bool) int {
 	for _, plannedCase := range cases {
 		fmt.Printf("Running %s (%s)...\n", plannedCase.ID, plannedCase.Description)
 		result, runErr := agentrunner.Run(context.Background(), agentrunner.Options{
-			IncidentDir: incident, ConfigPath: prepared.ConfigPath, Case: plannedCase,
+			LiveRecovery: live,
+			IncidentDir:  incident, ConfigPath: prepared.ConfigPath, Case: plannedCase,
 			Command: command, Timeout: timeout, OutputLimit: *outputLimit,
 			RestartAfterCall: *restartAfterCall, StateCheck: stateCheck,
 		})

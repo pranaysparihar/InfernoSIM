@@ -20,7 +20,10 @@ InfernoSIM releases are produced from annotated `v*` tags by
    `bash scripts/provider-stream-smoke.sh` with pinned independent SDK consumers,
    and a two-hour `cmd/causalbenchmark -soak 2h` run of the retained regressions.
    Save resource samples, exact execution checks and source provenance with the
-   release evidence. Use the patched Go toolchain pinned in CI and run
+   release evidence. For v4.2.1 also require `scripts/community-smoke.sh`,
+   three seeds of `cmd/communitybenchmark` with 12 retry/cancel schedules per
+   seed, and the capture/live-recovery/checker CLI regression tests. The optional
+   local Ollama smoke now checks live recovery JSON and NDJSON budget accounting. Use the patched Go toolchain pinned in CI and run
    `govulncheck`; a previously passing scan is not evidence for a new release.
    Do not equate cross-compilation with native
    execution on every release platform.

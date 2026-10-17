@@ -294,6 +294,21 @@ func TestCausalApplicationHelper(t *testing.T) {
 		return
 	}
 	mode := os.Args[index+1]
+	if mode == "record-server" {
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			v, err := causal.Decode(scanner.Bytes())
+			if err != nil {
+				os.Exit(9)
+			}
+			m := v.(map[string]any)
+			p, _ := m["params"].(map[string]any)
+			if _, ok := m["id"]; ok {
+				_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"jsonrpc": "2.0", "id": m["id"], "result": map[string]any{"name": p["name"]}})
+			}
+		}
+		os.Exit(0)
+	}
 	if mode == "connect" {
 		if err := mcpproxy.Connect(context.Background(), os.Getenv("INFERNOSIM_MCP_ENDPOINT"), os.Getenv("INFERNOSIM_MCP_TOKEN"), os.Stdin, os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -309,9 +324,13 @@ func TestCausalApplicationHelper(t *testing.T) {
 		transport := &http.Transport{Proxy: http.ProxyURL(proxy)}
 		defer transport.CloseIdleConnections()
 		client := &http.Client{Transport: transport, Timeout: 3 * time.Second}
-		id := "runtime-" + name
+		id := "runtime-" + name + event.GenerateID()
 		body := fmt.Sprintf(`{"jsonrpc":"2.0","id":%q,"method":"tools/call","params":{"name":%q}}`, id, name)
-		response, err := client.Post("http://mcp.test/mcp", "application/json", strings.NewReader(body))
+		target := os.Getenv("INFERNOSIM_TEST_TARGET")
+		if target == "" {
+			target = "http://mcp.test/mcp"
+		}
+		response, err := client.Post(target, "application/json", strings.NewReader(body))
 		if err != nil {
 			errors <- err
 			return

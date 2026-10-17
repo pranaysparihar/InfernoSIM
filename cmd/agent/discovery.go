@@ -37,6 +37,7 @@ func runAgentExplore(args []string) int {
 	occurrences := fs.Int("occurrences", 0, "Also explore occurrence positions 1..N (0..16)")
 	permute := fs.String("permute-schedule", "", "Explicitly allow permutations of this schedule's independent calls (at most six)")
 	graphPath := fs.String("causal-graph", "", "Reviewed graph JSON from agent causal discover")
+	observedPath := fs.String("observed-schedule", "", "Exact captured schedule from agent causal convert; preserves observed baseline order")
 	scheduleBudget := fs.Int("schedule-budget", 16, "Maximum seeded causal schedules (1..1000)")
 	boundaryTimeout := fs.String("boundary-timeout", "10s", "Timeout per causal admission or release boundary (<=60s)")
 	out := fs.String("report-dir", "./infernosim-exploration", "New private report directory; never overwrite")
@@ -64,6 +65,18 @@ func runAgentExplore(args []string) int {
 		return fail(err)
 	}
 	var graph *causal.Graph
+	var observedSchedule *causal.Schedule
+	if *observedPath != "" {
+		if *graphPath != "" {
+			return fail(fmt.Errorf("supply observed-schedule or causal-graph, not both"))
+		}
+		observed, e := agentrunner.ReadObserved(*observedPath, incident)
+		if e != nil {
+			return fail(e)
+		}
+		graph = &observed.Graph
+		observedSchedule = observed.Schedule
+	}
 	if *graphPath != "" {
 		g, e := agentrunner.ReadGraph(*graphPath)
 		if e != nil {
@@ -71,7 +84,7 @@ func runAgentExplore(args []string) int {
 		}
 		graph = &g
 	}
-	plan, err := agentrunner.PlanExploration(p.Config.Agent, p.ScopeHash, agentrunner.ExploreOptions{Seed: *seed, Budget: *budget, MaxFaults: *depth, Occurrences: *occurrences, PermuteSchedule: *permute, CausalGraph: graph, ScheduleBudget: *scheduleBudget, BoundaryTimeout: *boundaryTimeout})
+	plan, err := agentrunner.PlanExploration(p.Config.Agent, p.ScopeHash, agentrunner.ExploreOptions{Seed: *seed, Budget: *budget, MaxFaults: *depth, Occurrences: *occurrences, PermuteSchedule: *permute, CausalGraph: graph, ObservedSchedule: observedSchedule, ScheduleBudget: *scheduleBudget, BoundaryTimeout: *boundaryTimeout})
 	if err != nil {
 		return fail(err)
 	}
@@ -127,6 +140,7 @@ func runAgentExplore(args []string) int {
 				destination := filepath.Join(*out, "reproductions", trial.Case.ID)
 				manifest := agentrunner.Reproduction{Trial: trial, Assertion: assertion, CheckIDs: check.IDs, RequiresSetup: len(check.SetupCommand) > 0, Timeout: *timeout, CheckTimeout: *sf.timeout, RestartAfterCall: *restart}
 				manifest.CausalExecution = result.CausalExecution
+				manifest.Checker = result.Checker
 				if e = agentrunner.ExportReproduction(destination, incident, p.ConfigPath, manifest); e != nil {
 					return fail(e)
 				}
@@ -151,6 +165,7 @@ func runAgentReproduce(args []string, minimize bool) int {
 	flags, command := splitCommand(args)
 	fs := flag.NewFlagSet("agent reproduce/minimize", flag.ContinueOnError)
 	out := fs.String("out", "", "New reduced reproduction directory (minimize only)")
+	newCase := fs.String("new-case-out", "", "Explicitly fork a changed checker into a new case without running it")
 	budget := fs.Int("budget", 100, "Maximum minimization executions (2..1000)")
 	assertion := fs.String("assertion", "", "Named assertion to preserve (defaults to manifest)")
 	reportDir := fs.String("report-dir", "", "Optional reproduction results directory outside the artifact")
@@ -163,7 +178,7 @@ func runAgentReproduce(args []string, minimize bool) int {
 		dir = fs.Arg(0)
 	}
 	fail := func(err error) int { fmt.Fprintln(os.Stderr, "agent reproduction:", err); return 1 }
-	if dir == "" || len(command) == 0 || (minimize && *out == "") {
+	if dir == "" || (len(command) == 0 && *newCase == "") || (minimize && *out == "") {
 		return fail(fmt.Errorf("requires artifact, explicit application command, and --out for minimize"))
 	}
 	manifest, err := agentrunner.LoadReproduction(dir)
@@ -178,10 +193,51 @@ func runAgentReproduce(args []string, minimize bool) int {
 	got := append([]string{}, check.IDs...)
 	sort.Strings(want)
 	sort.Strings(got)
-	if !reflect.DeepEqual(want, got) || manifest.RequiresSetup != (len(check.SetupCommand) > 0) {
+	if *newCase == "" && (!reflect.DeepEqual(want, got) || manifest.RequiresSetup != (len(check.SetupCommand) > 0)) {
 		return fail(fmt.Errorf("supply the same required state check IDs and setup contract explicitly"))
 	}
-	check.Timeout = manifest.CheckTimeout
+	checkTimeoutExplicit := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "check-timeout" {
+			checkTimeoutExplicit = true
+		}
+	})
+	if !checkTimeoutExplicit {
+		check.Timeout = manifest.CheckTimeout
+	}
+	fingerprint, err := check.Fingerprint()
+	if err != nil {
+		return fail(err)
+	}
+	if *newCase != "" {
+		if minimize {
+			return fail(fmt.Errorf("new-case-out is for reproduce, not minimize"))
+		}
+		fork, e := agentrunner.NewCheckerCase(manifest, fingerprint)
+		if e != nil {
+			return fail(e)
+		}
+		fork.CheckTimeout = check.Timeout
+		fork.CheckIDs = append([]string(nil), check.IDs...)
+		fork.RequiresSetup = len(check.SetupCommand) > 0
+		fork.Assertion = ""
+		if e = agentrunner.ExportReproduction(*newCase, filepath.Join(dir, "incident"), "", fork); e != nil {
+			return fail(e)
+		}
+		fmt.Printf("New case %s; parent=%s; outcome not evaluated; artifact=%s\n", fork.CaseIdentity, fork.ParentCase, *newCase)
+		return 0
+	}
+	if err = check.VerifyFingerprint(manifest.Checker); err != nil {
+		return fail(err)
+	}
+	check.Expected = manifest.Checker
+	check.Legacy = manifest.Checker == nil && len(manifest.CheckIDs) > 0
+	if check.Legacy {
+		fmt.Println("Checker: legacy-unpinned (original checker contents were not retained)")
+	}
+	if fingerprint != nil {
+		fmt.Printf("Checker: %s %s\n", fingerprint.Scope, fingerprint.Digest)
+	}
 	incident := filepath.Join(dir, "incident")
 	p, err := agentrunner.Prepare(incident, "", 0, 1, true)
 	if err != nil {

@@ -1,0 +1,176 @@
+{
+  "checker": {
+    "version": 1,
+    "digest": "908e94415c1e6fa741b61ab1f31b2c96d76ed46811fe49e57afe8755876560ba",
+    "scope": "direct-inputs-only",
+    "files": {
+      "executable": "b502cb4c5b46b8d4192ec6bcb600ce8922f1afc396fcf646e8765c6eba74a0bf",
+      "script": "09b5db50a90d2f16dc536113acb098c67b1bbfc8536988b1eabb019de8c5fbe0"
+    },
+    "contract": "eb1c30bfb32abebde2dc0840e4a906efa6be0c64dcff1793167fae69a18232fc",
+    "declarations": "316c0cb23da2a6975124fcffbd629f0af819f05ae36d7049aff3b7011680260b"
+  },
+  "case_identity": "case_0ad14f191915891cc8ac03d3",
+  "integrity": "ff58437f8c5c4b30b613aef135cab7796f18c8fe0be7d4d1ae2a97299d993472",
+  "causal_execution": {
+    "schedule_id": "causal_0e7b442c7747b49517d6",
+    "graph_hash": "e6feb7a94d98dfff723db4d565d02e923bf9137184fc2593096c2571be0f8201",
+    "observed": [
+      "read_new:admit",
+      "read_new:release",
+      "checkpoint_new:admit",
+      "checkpoint_new:release",
+      "read_old:admit",
+      "read_old:release"
+    ],
+    "bindings": [
+      {
+        "operation": "checkpoint_new",
+        "runtime_id_hash": "fe098132e394c31a2392abbd1e33d9c88173bc07d68281a4d9b46a0054adf891"
+      },
+      {
+        "operation": "read_new",
+        "runtime_id_hash": "c8afa54ec01a50c0db42cb3e66a873c85cf002c15b326a4d2e52de151c6439e8"
+      },
+      {
+        "operation": "read_old",
+        "runtime_id_hash": "983f4ded653b1b402abb91d46c3b920abcea351a9068eb352cf0d731b559b01f"
+      }
+    ],
+    "completed": true
+  },
+  "version": 3,
+  "trial": {
+    "causal": {
+      "graph": {
+        "version": 1,
+        "operations": [
+          {
+            "id": "checkpoint_new",
+            "protocol": "http",
+            "fingerprint": "ed44a6ede80a0554405c61eb70f38232d8d2c8010dc904fff94a34b6b290ba5c",
+            "record": "event:checkpoint_new",
+            "request_id": "\"checkpoint_new\""
+          },
+          {
+            "id": "read_new",
+            "protocol": "http",
+            "fingerprint": "74c8ee9fb2f391b9001fec02705a91d13d720d27de547b9db5a4c322c3ad3acb",
+            "record": "event:read_new",
+            "request_id": "\"read_new\""
+          },
+          {
+            "id": "read_old",
+            "protocol": "http",
+            "fingerprint": "2b0da3d9daa505476a0c68fd66028e58ce23587f5ff06c22a23ffb031bd5e085",
+            "record": "event:read_old",
+            "request_id": "\"read_old\""
+          }
+        ],
+        "edges": [
+          {
+            "from": "checkpoint_new:admit",
+            "to": "checkpoint_new:release",
+            "evidence": [
+              {
+                "rule": "request_before_response",
+                "source": "event:checkpoint_new",
+                "sha256": "a3a0814e925e88e1b1b3765050e845bdb24d42d4ac9a21dca17032bd80da3863"
+              }
+            ]
+          },
+          {
+            "from": "checkpoint_new:admit",
+            "to": "read_old:release",
+            "evidence": [
+              {
+                "rule": "user_declaration",
+                "source": "declarations",
+                "sha256": "c102aaeb2f22b638f7ddb0e5ae56a8c35f0faca2886184b73dcaca0a1aa26404",
+                "detail": "Explore the stale-response regression after the new-value transaction checkpoint is observed."
+              }
+            ]
+          },
+          {
+            "from": "read_new:admit",
+            "to": "read_new:release",
+            "evidence": [
+              {
+                "rule": "request_before_response",
+                "source": "event:read_new",
+                "sha256": "e827bb359da444a95d273dff169ac204a2e00952fa459437aaa7e7a8fd01f136"
+              }
+            ]
+          },
+          {
+            "from": "read_new:release",
+            "to": "checkpoint_new:admit",
+            "evidence": [
+              {
+                "rule": "user_declaration",
+                "source": "declarations",
+                "sha256": "80d9dfd0591070626b03862561f779394e0f50277c5cc8fbb1c14efee022501e",
+                "detail": "application awaits this response before issuing the continuation"
+              }
+            ]
+          },
+          {
+            "from": "read_old:admit",
+            "to": "read_old:release",
+            "evidence": [
+              {
+                "rule": "request_before_response",
+                "source": "event:read_old",
+                "sha256": "83150ca27139251fa055a2d3979d2c050c607cd63eb8a0d6b791e3383e6d1f30"
+              }
+            ]
+          }
+        ],
+        "issues": [
+          {
+            "id": "unobserved_dependencies_1af39a22f6df",
+            "kind": "unobserved_dependencies",
+            "detail": "recordings cannot establish the absence of hidden application dependencies; review before scheduling",
+            "blocking": false
+          }
+        ],
+        "review": "fixture dependencies are explicitly declared; remaining requests are independent"
+      },
+      "schedule": {
+        "id": "causal_0e7b442c7747b49517d6",
+        "graph_hash": "e6feb7a94d98dfff723db4d565d02e923bf9137184fc2593096c2571be0f8201",
+        "order": [
+          "read_new:admit",
+          "read_new:release",
+          "checkpoint_new:admit",
+          "checkpoint_new:release",
+          "read_old:admit",
+          "read_old:release"
+        ]
+      },
+      "timeout": "5s"
+    },
+    "case": {
+      "id": "explore_f4e80802157dabee3afa",
+      "description": "causal admission and response-release exploration",
+      "category": "exploration",
+      "severity": "high",
+      "schedule_id": "causal_0e7b442c7747b49517d6"
+    }
+  },
+  "assertion": "state:database",
+  "check_ids": [
+    "database",
+    "filesystem"
+  ],
+  "requires_setup": true,
+  "timeout": 10000000000,
+  "check_timeout": 5000000000,
+  "files": {
+    "incident/declarations.json": "f7d708c95aff39a89419e5d2ccd9e1f6e9ff4ad7ba2d9fe5ade63a03d223b29d",
+    "incident/inbound.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "incident/incident.json": "0421214960441d55a9859ecf90ddb72f90b7ca185481b2154652c40f392d63af",
+    "incident/outbound.log": "b395dc36d483d41d3bdd7926e5252eddc67263f496d98c6b823ec5939d47c934",
+    "incident/replay.yaml": "f263b4ba1fb3c3b22ed8a5ec459d576b60e5527c42e218ae1fb18db5ded27e1c"
+  }
+}

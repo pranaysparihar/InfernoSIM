@@ -16,4 +16,4 @@ if ! curl --fail --silent --max-time 2 "$OLLAMA_ENDPOINT/api/tags" >/dev/null 2>
   exit 0
 fi
 
-go run ./cmd/ollamasmoke --endpoint "$OLLAMA_ENDPOINT" --model "$OLLAMA_MODEL"
+go run ./cmd/ollamasmoke --endpoint "$OLLAMA_ENDPOINT" --model "$OLLAMA_MODEL" --live-recovery
