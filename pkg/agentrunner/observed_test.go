@@ -173,7 +173,7 @@ func TestObservedMCPProgressAndCancellationTerminal(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i, m := range messages {
-		json.NewEncoder(f).Encode(mcpproxy.Record{Version: 1, Sequence: int64(i + 1), Direction: m.direction, Message: json.RawMessage(m.body), Received: clock.Next(), Forwarded: clock.Next()})
+		json.NewEncoder(f).Encode(mcpproxy.Record{Version: 1, Sequence: int64(i + 1), Direction: m.direction, Message: json.RawMessage(m.body), Received: clock.Next(), ForwardStart: clock.Next()})
 	}
 	f.Close()
 	WriteJSON(filepath.Join(incident, "capture-session.json"), clock.Snapshot())

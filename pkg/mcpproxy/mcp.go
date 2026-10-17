@@ -34,13 +34,13 @@ const (
 var ErrResponseLost = errors.New("injected MCP stdio response loss")
 
 type Record struct {
-	Received  *traceorder.Stamp `json:"received,omitempty"`
-	Forwarded *traceorder.Stamp `json:"forwarded,omitempty"`
-	Version   int               `json:"version"`
-	Sequence  int64             `json:"sequence"`
-	Direction string            `json:"direction"`
-	Timestamp time.Time         `json:"timestamp"`
-	Message   json.RawMessage   `json:"message"`
+	Received     *traceorder.Stamp `json:"received,omitempty"`
+	ForwardStart *traceorder.Stamp `json:"forward_start,omitempty"`
+	Version      int               `json:"version"`
+	Sequence     int64             `json:"sequence"`
+	Direction    string            `json:"direction"`
+	Timestamp    time.Time         `json:"timestamp"`
+	Message      json.RawMessage   `json:"message"`
 }
 
 type recorder struct {
@@ -77,13 +77,18 @@ func (r *recorder) forward(direction string, message []byte, output io.Writer) e
 	if !json.Valid(stored) {
 		return fmt.Errorf("MCP privacy transform did not retain JSON")
 	}
-	if _, err = output.Write(append(append([]byte(nil), message...), '\n')); err != nil {
+	forwarded := r.order.Next()
+	line := append(append([]byte(nil), message...), '\n')
+	n, err := output.Write(line)
+	if err != nil {
 		return err
 	}
-	forwarded := r.order.Next()
+	if n != len(line) {
+		return io.ErrShortWrite
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.encoder.Encode(Record{Version: TranscriptVersion, Sequence: sequence, Direction: direction, Timestamp: time.Now().UTC(), Message: stored, Received: received, Forwarded: forwarded})
+	return r.encoder.Encode(Record{Version: TranscriptVersion, Sequence: sequence, Direction: direction, Timestamp: time.Now().UTC(), Message: stored, Received: received, ForwardStart: forwarded})
 }
 
 type RecordOptions struct {
@@ -427,7 +432,7 @@ func Load(path string) ([]Record, error) {
 	if len(records) == 0 {
 		return nil, fmt.Errorf("MCP transcript is empty")
 	}
-	// Forwarded responses can finish before an earlier request writer resumes.
+	// ForwardStart responses can finish before an earlier request writer resumes.
 	// The receive sequence is assigned before forwarding and remains canonical.
 	if records[0].Received != nil {
 		sort.Slice(records, func(i, j int) bool { return records[i].Sequence < records[j].Sequence })

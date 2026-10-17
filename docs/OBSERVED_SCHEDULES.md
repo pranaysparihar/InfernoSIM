@@ -26,16 +26,23 @@ session in one runner process. HTTPS CONNECT tunneling is not an HTTP body
 capture. Existing standalone HTTP/MITM recording remains available, but old
 exchange timestamps/durations cannot prove exact mixed boundary order.
 
-HTTP admissions are observed before forwarding; releases are observed after
-the complete response write and flush succeeds. MCP observations bracket each
-complete message write. These callbacks share one monotonic observation counter
-and session ID. A sealed session identifies missing observations. Standalone MCP recordings
+HTTP admissions are observed before forwarding. A response release is stamped
+immediately before the proxy starts delivering its headers/body, matching the
+replay controller's release gate. MCP messages have receive and forward-start
+observations; request releases use the corresponding response's forward-start.
+Complete writes/flushes are validated before sealing. A failed or truncated
+write cannot become a complete replay response.
+
+These callbacks share one monotonic observation counter and session ID. A
+sealed session identifies missing observations. Standalone MCP recordings
 retain this seal in `mcp.log.capture-session.json`; keep that sidecar with the
-transcript. Unsealed captures remain partial. They describe
-the proxy's observation points, not OS scheduling, socket packet arrival, client
-processing or internal database commits. A client may begin processing bytes
-before the writer observes completion. Conflicting reviewed dependencies are
-diagnosed instead of rewriting the observation order to fit them.
+transcript. Unsealed captures remain partial. These boundaries describe proxy
+admission and delivery initiation, not delivery completion, OS scheduling,
+socket packet arrival, client processing or internal database commits. Streams
+retain their payload frames and delays but not separate schedule nodes for each
+chunk. No post-write timestamp is used as proof that release preceded a new
+request: the consumer can react before the writer resumes. Conflicting reviewed
+dependencies are diagnosed instead of rewriting order to fit them.
 
 Conversion retains source references/digests, all participants and the reviewed
 graph. It validates correlation, complete responses, stable identities and the

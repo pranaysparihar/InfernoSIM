@@ -85,7 +85,7 @@ func ConvertObserved(incident string, d causal.Declarations) (ObservedCapture, e
 		cancels := map[string]mcpproxy.Record{}
 		for _, v := range records {
 			observe(v.Received)
-			observe(v.Forwarded)
+			observe(v.ForwardStart)
 			x, err := causal.Decode(v.Message)
 			if err != nil {
 				return r, err
@@ -101,7 +101,7 @@ func ConvertObserved(incident string, d causal.Declarations) (ObservedCapture, e
 				if hasID {
 					requests[key] = op
 				} else {
-					add(causal.Release(op), v.Forwarded, source, causal.Hash(v), false)
+					add(causal.Release(op), v.ForwardStart, source, causal.Hash(v), false)
 				}
 				if method == "notifications/cancelled" {
 					p, _ := m["params"].(map[string]any)
@@ -111,7 +111,7 @@ func ConvertObserved(incident string, d causal.Declarations) (ObservedCapture, e
 				if requests[key] == "" {
 					return r, fmt.Errorf("response precedes its captured request")
 				}
-				add(causal.Release(requests[key]), v.Forwarded, source, causal.Hash(v), false)
+				add(causal.Release(requests[key]), v.ForwardStart, source, causal.Hash(v), false)
 				completed[key] = true
 			}
 		}
@@ -121,7 +121,7 @@ func ConvertObserved(incident string, d causal.Declarations) (ObservedCapture, e
 				if !ok {
 					return r, fmt.Errorf("missing response/terminal cancellation")
 				}
-				add(causal.Release(op), v.Forwarded, fmt.Sprintf("mcp:%d", v.Sequence), causal.Hash(v), true)
+				add(causal.Release(op), v.ForwardStart, fmt.Sprintf("mcp:%d", v.Sequence), causal.Hash(v), true)
 			}
 		}
 	}

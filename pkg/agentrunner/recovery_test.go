@@ -150,7 +150,8 @@ func TestLiveRecoveryApplicationHelper(t *testing.T) {
 		}
 		defer response.Body.Close()
 		var v map[string]any
-		if json.NewDecoder(response.Body).Decode(&v) != nil {
+		data, readErr := io.ReadAll(response.Body)
+		if readErr != nil || json.Unmarshal(data, &v) != nil {
 			os.Exit(5)
 		}
 		return response.StatusCode, v

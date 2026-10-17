@@ -15,21 +15,27 @@ import (
 
 	"infernosim/pkg/causal"
 	"infernosim/pkg/event"
+	"infernosim/pkg/traceorder"
 )
 
 type observedWriter struct {
 	http.ResponseWriter
-	status int
-	body   bytes.Buffer
-	bad    bool
-	frames []event.StreamFrame
-	last   time.Time
+	status  int
+	body    bytes.Buffer
+	bad     bool
+	frames  []event.StreamFrame
+	last    time.Time
+	clock   *traceorder.Clock
+	release *traceorder.Stamp
 }
 
 func (w *observedWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 func (w *observedWriter) WriteHeader(code int) {
 	if w.status == 0 {
 		w.status = code
+		// Match the replay controller's release boundary: immediately before
+		// starting delivery, with complete delivery validated before sealing.
+		w.release = w.clock.Next()
 	}
 	w.ResponseWriter.WriteHeader(code)
 }
@@ -48,6 +54,9 @@ func (w *observedWriter) Write(b []byte) (int, error) {
 	return n, err
 }
 func (w *observedWriter) Flush() {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
 	if err := http.NewResponseController(w.ResponseWriter).Flush(); err != nil {
 		w.bad = true
 	}
@@ -67,13 +76,10 @@ func (r *Recovery) Observe(w http.ResponseWriter, req *http.Request, body []byte
 	}
 	admit := r.clock.Next()
 	start := time.Now()
-	capture := &observedWriter{ResponseWriter: w, last: start}
+	capture := &observedWriter{ResponseWriter: w, last: start, clock: r.clock}
 	return capture, func() {
-		if capture.status == 0 {
-			capture.status = 200
-		}
 		capture.Flush()
-		release := r.clock.Next()
+		release := capture.release
 		if capture.bad {
 			r.captureFailure("incomplete transport response cannot become an offline branch")
 			return

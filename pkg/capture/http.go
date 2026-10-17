@@ -539,16 +539,18 @@ func handleHTTP(w http.ResponseWriter, req *http.Request, ctx *ProxyContext) {
 		statusCode = resp.StatusCode
 		respStream = responseStreamFormat(resp.Header.Get("Content-Type"))
 		if respStream != "" {
+			release = ctx.Order.Next()
 			respBodyBytes, respBodyTruncated, respFrames = copyStreamingResponse(w, resp)
 		} else {
 			respBodyBytes, respBodyTruncated, resp.Body, _ = peekBody(resp.Body)
+			release = ctx.Order.Next()
 			if copyErr := copyResponse(w, resp); copyErr != nil {
 				respBodyTruncated = true
 			}
 		}
 		if !respBodyTruncated && ctx.Order != nil {
-			if flushErr := http.NewResponseController(w).Flush(); flushErr == nil {
-				release = ctx.Order.Next()
+			if flushErr := http.NewResponseController(w).Flush(); flushErr != nil {
+				respBodyTruncated = true
 			}
 		}
 		if IsGRPCRequest(req) {

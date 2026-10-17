@@ -12,7 +12,42 @@ import (
 
 	"infernosim/pkg/event"
 	"infernosim/pkg/privacy"
+	"infernosim/pkg/traceorder"
 )
+
+type reactingWriter struct {
+	*httptest.ResponseRecorder
+	react func()
+}
+
+func (w reactingWriter) Write(data []byte) (int, error) {
+	n, err := w.ResponseRecorder.Write(data)
+	w.react() // The reader starts its next request before this Write returns.
+	return n, err
+}
+
+func TestReleasePrecedesReaderReactionBeforeWriteReturns(t *testing.T) {
+	r := recoveryFor(t, "http://127.0.0.1:11434")
+	var nextAdmission *traceorder.Stamp
+	writer := reactingWriter{httptest.NewRecorder(), func() { nextAdmission = r.clock.Next() }}
+	w, finish := r.Observe(writer, httptest.NewRequest("POST", "http://model.test/api/chat", nil), []byte(`{}`))
+	w.Write([]byte(`{"ok":true}`))
+	finish()
+	if err := r.Close(); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(r.options.OutputDir, "outbound.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var event event.Event
+	if err := json.Unmarshal(b, &event); err != nil {
+		t.Fatal(err)
+	}
+	if event.CaptureRelease == nil || event.CaptureRelease.Sequence >= nextAdmission.Sequence {
+		t.Fatal("post-write callback reordered a causal reader reaction")
+	}
+}
 
 func TestCaptureRedactsPrefixAndStreamAndNeverRetainsAuthorization(t *testing.T) {
 	r := recoveryFor(t, "http://127.0.0.1:11434")
