@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,6 +12,36 @@ import (
 
 	"infernosim/pkg/agentreliability"
 )
+
+func TestPythonCheckerOptionOperandsAndModuleScope(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("Python unavailable")
+	}
+	for _, prefix := range [][]string{{"-W", "ignore"}, {"-X", "utf8"}, {"-B"}, {"--"}} {
+		o := checkerFixture(t, t.TempDir())
+		o.Command = append(append([]string{python}, prefix...), o.Command[1:]...)
+		before, err := o.Fingerprint()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if before.Files["script"] == "" {
+			t.Fatal("interpreter flag hid the script")
+		}
+		os.WriteFile(filepath.Join(filepath.Dir(o.Manifest), "checker.py"), []byte("weakened"), 0600)
+		if err := o.VerifyFingerprint(before); err == nil {
+			t.Fatal("edited script passed behind interpreter option")
+		}
+	}
+	o := checkerFixture(t, t.TempDir())
+	o.Manifest = ""
+	for _, args := range [][]string{{"-m", "checker"}, {"-mchecker"}} {
+		o.Command = append([]string{python}, args...)
+		if _, err := o.Fingerprint(); err == nil {
+			t.Fatal("module source was not pinned or declared")
+		}
+	}
+}
 
 func TestReductionAndComparisonRejectUnpinnedOrChangedChecker(t *testing.T) {
 	o := checkerFixture(t, t.TempDir())

@@ -29,8 +29,10 @@ Paths are relative to the manifest. Logical names and content hashes make an
 identical checker relocatable; local absolute paths are not retained. Put every
 import/helper/plugin/config that affects the verdict in the manifest. The
 runner hashes the executable actually resolved and direct `.py`, `.sh`, `.js`
-or `.rb` scripts. `-m`, `-c`, custom launchers and dynamic imports need explicit
-declarations. Package and runtime versions are declared provenance, not a claim
+or `.rb` scripts. Python script operands also support `-W`/`-X` option values
+and extensionless scripts. Python `-m` requires a manifest naming the module
+source. Inline `-c` code is hashed in the argument contract; its referenced
+files, custom launchers and dynamic imports need explicit declarations. Package and runtime versions are declared provenance, not a claim
 that the runner independently queried or verified a package manager. Pin the
 actual installed dependency files or immutable container in your CI environment.
 

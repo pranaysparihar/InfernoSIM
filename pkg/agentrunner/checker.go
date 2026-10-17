@@ -141,17 +141,31 @@ func (o StateCheckOptions) Fingerprint() (*CheckerFingerprint, error) {
 	if err = add("executable", program); err != nil {
 		return nil, err
 	}
-	// Support direct interpreter scripts, including interpreter flags preceding
-	// them. -c/-m and arbitrary launchers need an explicit dependency manifest.
-	for _, arg := range o.Command[1:] {
-		if arg == "-c" || arg == "-m" {
+	// Resolve the first script operand, including Python flags with separate
+	// operands. Inline source remains part of the argument contract; module
+	// execution needs a declaration of the module's actual files.
+	base := strings.TrimSuffix(strings.ToLower(filepath.Base(o.Command[0])), ".exe")
+	python := strings.HasPrefix(base, "python")
+	for i := 1; i < len(o.Command); i++ {
+		arg := o.Command[i]
+		if arg == "-c" || arg == "-m" || (python && (strings.HasPrefix(arg, "-c") || strings.HasPrefix(arg, "-m"))) {
+			if python && strings.HasPrefix(arg, "-m") && o.Manifest == "" {
+				return nil, fmt.Errorf("Python module checkers require a dependency manifest containing the module source")
+			}
 			break
+		}
+		if python && (arg == "-W" || arg == "-X") {
+			i++
+			if i >= len(o.Command) {
+				return nil, fmt.Errorf("missing Python checker option operand")
+			}
+			continue
 		}
 		if strings.HasPrefix(arg, "-") {
 			continue
 		}
 		ext := strings.ToLower(filepath.Ext(arg))
-		if ext == ".py" || ext == ".sh" || ext == ".js" || ext == ".rb" {
+		if python || ext == ".py" || ext == ".sh" || ext == ".js" || ext == ".rb" {
 			if err = add("script", arg); err != nil {
 				return nil, err
 			}
