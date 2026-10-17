@@ -80,6 +80,7 @@ type Result struct {
 	RestartAfterCall      int                                `json:"restart_after_call,omitempty"`
 	InvalidRun            bool                               `json:"invalid_run,omitempty"`
 	StateCheckHash        string                             `json:"state_check_hash,omitempty"`
+	SetupCommandHash      string                             `json:"setup_command_hash,omitempty"`
 }
 
 type Prepared struct {
@@ -334,6 +335,9 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	snapshot := server.Snapshot()
 	result := Result{Version: 1, Case: opts.Case, Passed: true, Duration: duration, Process: process, Simulator: snapshot, ScopeHash: prepared.ScopeHash, RestartAfterCall: opts.RestartAfterCall}
 	result.StateCheckHash = opts.StateCheck.Hash()
+	if len(opts.StateCheck.SetupCommand) > 0 {
+		result.SetupCommandHash = agentreliability.StableHash(opts.StateCheck.SetupCommand)
+	}
 	if recovery != nil {
 		snapshot := recovery.Snapshot()
 		result.Recovery = &snapshot

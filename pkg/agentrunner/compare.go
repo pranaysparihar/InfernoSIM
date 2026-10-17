@@ -47,7 +47,7 @@ func CompareResults(baseline, candidate []Result) (Comparison, error) {
 		if _, err := resultCheckerDigest(c); err != nil {
 			return r, err
 		}
-		if b.ScopeHash == "" || b.ScopeHash != c.ScopeHash || b.StateCheckHash != c.StateCheckHash || b.RestartAfterCall != c.RestartAfterCall || agentreliability.StableHash(b.Case) != agentreliability.StableHash(c.Case) {
+		if b.ScopeHash == "" || b.ScopeHash != c.ScopeHash || b.StateCheckHash != c.StateCheckHash || b.SetupCommandHash != c.SetupCommandHash || b.RestartAfterCall != c.RestartAfterCall || agentreliability.StableHash(b.Case) != agentreliability.StableHash(c.Case) {
 			return r, fmt.Errorf("case %s has different evidence or execution settings", c.Case.ID)
 		}
 		if !c.Passed {

@@ -44,6 +44,9 @@ files (each at most 256 MiB), and a 1 MiB manifest.
 Do not list mutable databases or destination files being checked. Their contents
 must change the verdict without changing the checker identity. Application and
 setup commands remain caller-supplied; pin setup infrastructure separately.
+Result comparisons also require identical setup command arguments, recorded as
+a separate hash. This preserves execution-setting checks without treating the
+application's setup implementation as part of the checker.
 
 Only deliberately public config belongs in `public_environment` or config
 files. Never declare secrets: even a public hash can disclose a guessable secret.
