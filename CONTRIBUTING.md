@@ -5,7 +5,7 @@ changes reviewable, deterministic, and safe to run on real incident data.
 
 ## Development setup
 
-1. Install Go 1.26.9 or a newer patched Go release.
+1. Install Go 1.26.10 or a newer patched Go release.
 2. Install Docker with Compose if you will run the container smoke profiles.
 3. Clone the repository and build the CLI:
 

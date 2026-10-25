@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26.9"
+          go-version: "1.26.10"
           cache: true
       - name: Check formatting
         run: |
@@ -125,7 +125,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26.9"
+          go-version: "1.26.10"
           cache: true
       - name: Unit tests
         run: go test -count=1 ./...
@@ -144,8 +144,8 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           # Includes the fuzztime deadline-race fix: golang/go#75804.
-          # Release builds and the other Go gates remain on 1.26.9.
-          go-version: "1.27.2"
+          # Release builds and the other Go gates remain on 1.26.10.
+          go-version: "1.27.3"
           cache: true
       - run: go test ./pkg/matcher -run=^$ -fuzz=FuzzJSONPathValue -fuzztime=10s
       - run: go test ./pkg/grpcsim -run=^$ -fuzz=FuzzSplitFrames -fuzztime=10s

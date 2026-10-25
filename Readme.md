@@ -157,7 +157,7 @@ macOS, and Windows users who do not use Homebrew.
 
 ## Requirements
 
-- Go 1.26.9 or newer
+- Go 1.26.10 or newer
 - Docker with Compose for the container examples
 - Linux with `NET_ADMIN` only for optional transparent replay
 - Ollama only for the optional local model-envelope compatibility smoke; it is
