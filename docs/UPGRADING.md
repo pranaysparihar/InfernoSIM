@@ -1,3 +1,9 @@
+# Current source build toolchain
+
+Source builds now require Go 1.26.10 or newer; fuzz CI uses Go 1.27.3.
+These patched toolchains address [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809).
+This source update does not rebuild or replace previously published binaries.
+
 # Upgrading to v4.2.1
 
 Existing replay stays offline unless you explicitly configure live recovery.

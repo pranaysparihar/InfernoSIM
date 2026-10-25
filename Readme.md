@@ -1,5 +1,18 @@
 # InfernoSIM
 
+## Hands-on engineering help
+
+InfernoSIM is free, open-source software. If your team wants help integrating
+failure tests into a customer-facing workflow, the separate
+[Reliability Sprint](docs/RELIABILITY_SPRINT.md) is a proposed **US$1,500
+fixed-fee engineering engagement**, delivered by
+[Pranay Singh Parihar](https://www.linkedin.com/in/pranaysparihar/), the builder
+behind InfernoSIM. You keep the editable fixtures, independent outcome checks,
+CI integration and readable results. Technical fit, scope and invoicing are
+agreed before payment; no hosted subscription is required.
+
+## Open-source engine
+
 InfernoSIM is an open-source Go sidecar for capturing HTTP traffic and replaying
 incidents against an isolated service. It supports inbound request capture,
 outbound dependency stubbing, state-aware replay, fault injection, replay diffs,
@@ -144,7 +157,7 @@ macOS, and Windows users who do not use Homebrew.
 
 ## Requirements
 
-- Go 1.26.9 or newer
+- Go 1.26.10 or newer
 - Docker with Compose for the container examples
 - Linux with `NET_ADMIN` only for optional transparent replay
 - Ollama only for the optional local model-envelope compatibility smoke; it is
